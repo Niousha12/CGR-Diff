@@ -1,0 +1,8 @@
+numpy
+natsort
+tqdm
+scikit-image
+scipy
+matplotlib
+pillow
+customtkinter
