@@ -872,8 +872,15 @@ class App(customtkinter.CTk):
             self.window_s_toggle.set(0)
             self.window_s.set("")
             self.window_entry.configure(state="disable")
-            for key, value in self.t1_ds.items():
-                self.sync_text_vars(self.t1_ds, key, keep_annotation=False)
+            # end scales
+            for key, value in self.end_seq_scale.items():
+                if len(self.t1_ds[key].seq) > 0:
+                    value.configure(state="normal", button_color=self.scale_normal_color)
+            for key, value in self.t1_end_seq_entry.items():
+                if len(self.t1_ds[key].seq) > 0:
+                    value.configure(state="normal")
+            # for key, value in self.t1_ds.items():
+            self.sync_text_vars(self.t1_ds, sender, keep_annotation=False)
 
             self.t1_ds[sender].seq = sequence
             self.t1_ds[sender].end_seq.set(len(self.t1_ds[sender].seq))
@@ -897,10 +904,18 @@ class App(customtkinter.CTk):
 
             # clear window_s
             self.window_s_toggle.set(0)
+            # end scales
+            for key, value in self.end_seq_scale.items():
+                if len(self.t1_ds[key].seq) > 0:
+                    value.configure(state="normal", button_color=self.scale_normal_color)
+            for key, value in self.t1_end_seq_entry.items():
+                if len(self.t1_ds[key].seq) > 0:
+                    value.configure(state="normal")
             self.window_s.set("")
             self.window_entry.configure(state="disable")
-            for key, value in self.t1_ds.items():
-                self.sync_text_vars(self.t1_ds, key, keep_annotation=False)
+            self.sync_text_vars(self.t1_ds, sender, keep_annotation=False)
+            # for key, value in self.t1_ds.items():
+            #     self.sync_text_vars(self.t1_ds, key, keep_annotation=False)
 
             self.start_seq_scale[sender].configure(state="disabled", button_color="#888888")
             self.end_seq_scale[sender].configure(state="disabled", button_color="#888888")
