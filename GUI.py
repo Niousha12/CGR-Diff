@@ -73,6 +73,15 @@ class App(customtkinter.CTk):
         # self.geometry(f"{2300}x{1500}")
         self.header_font = ('Cambria', 14, 'bold')
 
+        self.status_label = customtkinter.CTkLabel(
+            self,
+            text="💡 If buttons are unresponsive, click on the title bar to activate the window, "
+                 "or use a force click on the buttons (macOS focus issue).",
+            text_color="gray",
+            font=("Cambria", 12, "italic")
+        )
+        self.status_label.place(relx=0.5, rely=0.032, anchor="s")  # Bottom center
+
         # configure grid layout (4x4)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -804,6 +813,24 @@ class App(customtkinter.CTk):
                                                       width=10, command=partial(self.move_next, "t4", None))
         self.t4_next_button.grid(row=0, column=2)
 
+        # Should be the last line of init
+        # self.bind_all("<Button-1>", self._refocus_window)
+        self.after_idle(self.bring_to_front)
+
+    def bring_to_front(self):
+        """Ensure window gets focus and is brought to front on macOS."""
+        self.lift()
+        self.attributes('-topmost', True)
+        self.after_idle(self.attributes, '-topmost', False)
+        self.focus_force()
+
+    # def _refocus_window(self, event):
+    #     try:
+    #         self.focus_force()
+    #         self.lift()
+    #     except:
+    #         pass
+
     @staticmethod
     def resource_path(relative_path):
         """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -1335,7 +1362,8 @@ class App(customtkinter.CTk):
             fig.subplots_adjust(bottom=0.2)  # Adjust the bottom margin
             cbar_ax2 = fig.add_axes([0.36, 0.1, 0.3, 0.02])  # Adjust position as needed
             cbar = fig.colorbar(im2, cax=cbar_ax2, orientation='horizontal')
-            cbar.set_label('Red: Greater k-mer value in Representative , Blue: Greater k-mer value in Segment', fontsize=10)
+            cbar.set_label('Red: Greater k-mer value in Representative , Blue: Greater k-mer value in Segment',
+                           fontsize=10)
             cbar.ax.xaxis.set_label_position('top')  # Position label at top of colorbar
             cbar.ax.xaxis.labelpad = 5
             cbar.ax.tick_params(labelsize=8)
@@ -1867,6 +1895,11 @@ class App(customtkinter.CTk):
 
 if __name__ == "__main__":
     app = App()
+    # # Fix focus issue
+    # app.lift()
+    # app.attributes('-topmost', True)
+    # app.after_idle(app.attributes, '-topmost', False)
+    # app.focus_force()
     app.mainloop()
 
     # pyinstaller --onefile --windowed --name "MyApp" --add-data "assets:assets" GUI.py

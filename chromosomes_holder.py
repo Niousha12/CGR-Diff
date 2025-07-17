@@ -539,58 +539,67 @@ class ChromosomesHolder:
             self.cytobands[chromosome_name] = {}
         if self.species == "Human":
             file_path = os.path.join(self.root_path, self.species, 'bedfiles', 'telomere.bed')
-            switch = 0
-            with open(file_path) as file:
-                for line in file:
-                    line = line.strip()
-                    parts = line.split("\t")
-                    chr_name = parts[0][3:]
-                    self.cytobands[chr_name][f"tel_{switch + 1}"] = AnnotationRecord(chr_name=parts[0],
-                                                                                     start=int(parts[1]),
-                                                                                     end=int(parts[2]),
-                                                                                     name=f"tel_{switch + 1}",
-                                                                                     group=f"telomere",
-                                                                                     color=None)
+            if os.path.exists(file_path):
+                switch = 0
+                with open(file_path) as file:
+                    for line in file:
+                        line = line.strip()
+                        parts = line.split("\t")
+                        chr_name = parts[0][3:]
+                        if chr_name not in self.cytobands:
+                            continue
+                        self.cytobands[chr_name][f"tel_{switch + 1}"] = AnnotationRecord(chr_name=parts[0],
+                                                                                         start=int(parts[1]),
+                                                                                         end=int(parts[2]),
+                                                                                         name=f"tel_{switch + 1}",
+                                                                                         group=f"telomere",
+                                                                                         color=None)
 
-                    switch = 1 - switch
+                        switch = 1 - switch
 
             file_path = os.path.join(self.root_path, self.species, 'bedfiles', 'centromere.bed')
-            chr_name = None
-            last_start = None
-            last_end = None
-            with open(file_path) as file:
-                for index, line in enumerate(file):
-                    if index == 0:
-                        continue
-                    line = line.strip()
-                    parts = line.split("\t")
+            if os.path.exists(file_path):
+                chr_name = None
+                last_start = None
+                last_end = None
+                with open(file_path) as file:
+                    for index, line in enumerate(file):
+                        if index == 0:
+                            continue
+                        line = line.strip()
+                        parts = line.split("\t")
 
-                    if chr_name != parts[0]:
-                        if last_end is not None:
-                            self.cytobands[chr_name]["centromere"] = AnnotationRecord(chr_name=chr_name,
-                                                                                      start=last_start,
-                                                                                      end=last_end,
-                                                                                      name="cent",
-                                                                                      group="centromere",
-                                                                                      color=None)
+                        if chr_name != parts[0]:
+                            if last_end is not None:
+                                if chr_name not in self.cytobands:
+                                    continue
+                                self.cytobands[chr_name]["centromere"] = AnnotationRecord(chr_name=chr_name,
+                                                                                          start=last_start,
+                                                                                          end=last_end,
+                                                                                          name="cent",
+                                                                                          group="centromere",
+                                                                                          color=None)
 
-                        last_start = int(parts[1])
-                        chr_name = parts[0][3:]
+                            last_start = int(parts[1])
+                            chr_name = parts[0][3:]
 
-                    last_end = int(parts[2])
+                        last_end = int(parts[2])
 
             file_path = os.path.join(self.root_path, self.species, 'bedfiles', 'cytobands.bed')
-            with open(file_path) as file:
-                for line in file:
-                    line = line.strip()
-                    parts = line.split("\t")
-                    chr_name = parts[0][3:]
-                    self.cytobands[chr_name][f"{parts[3]}"] = AnnotationRecord(chr_name=parts[0],
-                                                                               start=int(parts[1]),
-                                                                               end=int(parts[2]),
-                                                                               name=f"{parts[3]}",
-                                                                               group="cytoband",
-                                                                               color=parts[4])
+            if os.path.exists(file_path):
+                with open(file_path) as file:
+                    for line in file:
+                        line = line.strip()
+                        parts = line.split("\t")
+                        chr_name = parts[0][3:]
+                        if chr_name not in self.cytobands:
+                            continue
+                        self.cytobands[chr_name][f"{parts[3]}"] = AnnotationRecord(chr_name=parts[0],
+                                                                                   start=int(parts[1]),
+                                                                                   end=int(parts[2]),
+                                                                                   name=f"{parts[3]}",
+                                                                                   group="cytoband",
+                                                                                   color=parts[4])
 
     @staticmethod
     def _extract_chromosome_number(string):
