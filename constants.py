@@ -65,39 +65,10 @@ DISTANCE_METRICS_LIST = ["Normalized Euclidean", "Cosine", "Manhattan",
                          "Descriptor", "DSSIM",
                          "K-S", "Wasserstein"]
 
-SCIENTIFIC_NAMES = {
-    "Human": 'H. sapiens',
-    "Chimp": 'P. troglodytes',
-    "Mouse": 'M. musculus',
-    "Drosophila melanogaster": 'D. melanogaster',
-    "Saccharomyces cerevisiae": 'S. cerevisiae',
-    "Arabidopsis thailana": 'A. thaliana',
-    "Paramecium caudatum": 'P. caudatum',
-    "Pyrococcus furiosus": 'P. furiosus',
-    "Escherichia coli": 'E. coli',
-    "Maize": 'Z. mays',
-    "Dictyostelium discoideum": 'D. discoideum',
-    "Aspergillus terreus": 'A. terreus',
-    "Aspergillus nidulans": 'A. nidulans'
-}
+SCIENTIFIC_NAMES = {"Human": 'H. sapiens'}
 
-GENOME_LENGTH = {"Human": 3117,
-                 "Chimp": 3178,
-                 "Mouse": 2723,
-                 "Drosophila melanogaster": 80,
-                 "Saccharomyces cerevisiae": 12,
-                 "Arabidopsis thailana": 119,
-                 "Paramecium caudatum": 30,
-                 "Pyrococcus furiosus": 2,
-                 "Escherichia coli": 5,
-                 "Maize": 2179,
-                 "Dictyostelium discoideum": 34,
-                 "Aspergillus terreus": 29,
-                 "Aspergillus nidulans": 30}
+GENOME_LENGTH = {"Human": 3117}
 REVERSE_SCIENTIFIC_NAMES = {v: k for k, v in SCIENTIFIC_NAMES.items()}
 
 RESOLUTION_DICT = {2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 4, 9: 4, 10: 4, 11: 4, 12: 4}
-BITS_DICT = {"Human": 8, "Chimp": 8, "Mouse": 8, "Drosophila melanogaster": 8, "Saccharomyces cerevisiae": 6,
-             "Arabidopsis thailana": 8, "Paramecium caudatum": 8, "Pyrococcus furiosus": 6,
-             "Escherichia coli": 5, "Maize": 6, "Dictyostelium discoideum": 9, "Aspergillus terreus": 8,
-             "Aspergillus nidulans": 8, "Custom": 8}
+BITS_DICT = {"Human": 8, "Custom": 8}

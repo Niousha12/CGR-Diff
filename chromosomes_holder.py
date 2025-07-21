@@ -6,6 +6,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from natsort import natsorted
 import random
+import time
 
 from tqdm import tqdm
 
@@ -60,6 +61,8 @@ class ChromosomesHolder:
         # if species is not in the genome_length list, find its genome_length
         if species not in GENOME_LENGTH.keys():
             self.genome_length = self._get_genome_length()
+            # add it to the GENOME_LENGTH dictionary
+            GENOME_LENGTH[species] = self.genome_length // 1_000_000
         else:
             self.genome_length = GENOME_LENGTH[species] * 1_000_000  # self._get_genome_length()
 
@@ -67,9 +70,6 @@ class ChromosomesHolder:
         self._fill_cytobands_info()
 
     def get_all_chromosomes_name(self, include_whole_genome=False):
-        # if self.genome_length is None:
-        #     self.genome_length = self._get_genome_length()
-
         chr_name_list = natsorted(list(self._chromosomes_path.keys()))
         if include_whole_genome:
             if self.genome_length < 1e9:
@@ -516,7 +516,8 @@ class ChromosomesHolder:
     def _fill_chromosomes_path(self):
         chromosomes_path = os.path.join(self.root_path, self.species, 'chromosomes')
         for filename in os.listdir(chromosomes_path):
-            if filename.lower().endswith('.fna'):
+            if filename.lower().endswith('.fna') or filename.lower().endswith('.fa') or \
+                    filename.lower().endswith('.fasta'):
                 chr_path = os.path.join(chromosomes_path, filename)
                 chr_name = self._extract_chromosome_number(filename)
                 self._chromosomes_path[chr_name] = chr_path
@@ -603,11 +604,14 @@ class ChromosomesHolder:
 
     @staticmethod
     def _extract_chromosome_number(string):
-        match = re.search(r'(chromosome\s*|chr|scaffold_|contig_)(\d+|[A-Za-z]+)', string, re.IGNORECASE)
+        # match = re.search(r'(chromosome\s*|chr|scaffold_|contig_)(\d+|[A-Za-z]+)', string, re.IGNORECASE)
+        match = re.search(r'\b(chromosome|chr|scaffold|contig)[ _\-]+([A-Za-z0-9]+)\b', string, re.IGNORECASE)
         if match:
             return match.group(2)
-        if match is None:
-            return "N"
+
+        # Unique fallback if nothing is found
+        timestamp = int(time.time() * 1000)  # milliseconds since epoch
+        return f"N_{timestamp}"
 
     @staticmethod
     def get_reverse_complement(sequence):

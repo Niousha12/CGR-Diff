@@ -16,6 +16,7 @@ from tkinter import ttk
 
 # import mplcursors
 import numpy as np
+from Bio import Entrez
 from PIL import Image
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -23,7 +24,7 @@ from matplotlib import pyplot as plt
 
 from chaos_game_representation import CGR
 from chromosomes_holder import ChromosomesHolder
-from constants import DISTANCE_METRICS_LIST, SCIENTIFIC_NAMES, RESOLUTION_DICT, REVERSE_SCIENTIFIC_NAMES, BITS_DICT
+from constants import DISTANCE_METRICS_LIST, RESOLUTION_DICT, BITS_DICT
 from distances.distance_metrics import get_dist
 from representative_selection import ChromosomeRepresentativeSelection
 
@@ -108,7 +109,6 @@ class App(customtkinter.CTk):
         self.t1_config_frame.grid(row=0, column=0, rowspan=2, sticky="ns")
         self.t1_slider_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[0]), corner_radius=20,
                                                       border_color="#333333", border_width=2)
-        # fg_color="#333333")
         self.t1_slider_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
         self.t1_display_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[0]), corner_radius=20,
                                                        fg_color="#707370")  # , width=600, height=200)
@@ -118,38 +118,53 @@ class App(customtkinter.CTk):
         for row in range(10):  # Increased row count to account for empty rows
             self.t1_config_frame.grid_rowconfigure(row, weight=1)
 
+        # Search button some variables
+        self.download_path = customtkinter.StringVar(value=str(self.resource_path("Data")))
+        self.email_var = customtkinter.StringVar(value="")
+        self.selected_title = customtkinter.StringVar(value="")
+        self.checkbox_frame = None
+        self.id_map = {}
+        self.checkbox_vars = {}  # dict to store which boxes are selected
+        # Search button
+        search_image = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/search.png"),
+                                              size=(12, 12))
+        search_button = customtkinter.CTkButton(self.t1_config_frame, image=search_image,
+                                                text="Search and Download Genomes", command=self.open_popup,
+                                                width=180, height=25)
+        search_button.grid(row=0, columnspan=2, pady=(5, 0))
         # Creating frames for chromosome 1 and chromosome 2
         self.t1_chr_frame = customtkinter.CTkFrame(self.t1_config_frame, corner_radius=20)
-        self.t1_chr_frame.grid(row=0, columnspan=2, padx=5, pady=10, sticky="ew")
+        self.t1_chr_frame.grid(row=1, columnspan=2, padx=5, pady=(5, 5), sticky="ew")
 
         # Chromosomes Widget
-        species_list = list(SCIENTIFIC_NAMES.values())
+        # get all the folders name in DATA path
+        species_list = [str(f) for f in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, f))]
+        # species_list = list(SCIENTIFIC_NAME.values())
         self.t1_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
         self.t1_species_combobox = {}
         self.t1_chr_combobox = {}
         upload_image = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/upload-sign.png"),
                                               size=(12, 12))
         for i in range(2):
-            label = customtkinter.CTkLabel(self.t1_chr_frame, text=f"Genome {i + 1}: ", font=self.header_font)
-            label.grid(row=i * 3, column=0, sticky="w", padx=10, pady=(5, 0))
+            customtkinter.CTkLabel(self.t1_chr_frame, text=f"Genome {i + 1}: ", font=self.header_font) \
+                .grid(row=i * 3, column=0, sticky="w", padx=10, pady=(5, 0))
 
             # upload button
-            upload_button = customtkinter.CTkButton(self.t1_chr_frame, image=upload_image, text="",
-                                                    command=partial(self.t1_upload_event, f"{str(i + 1)}", None),
-                                                    width=15, height=10)
-            upload_button.grid(row=i * 3, column=1, sticky="w", padx=10, pady=(5, 0))
+            customtkinter.CTkButton(self.t1_chr_frame, image=upload_image, text="", width=15, height=10,
+                                    command=partial(self.t1_upload_event, f"{str(i + 1)}", None)) \
+                .grid(row=i * 3, column=1, sticky="w", padx=10, pady=(5, 0))
 
-            specie_label = customtkinter.CTkLabel(self.t1_chr_frame, text="Species: ", font=self.header_font)
-            specie_label.grid(row=(i * 3) + 1, column=0, sticky="w", padx=10)
-            chr_label = customtkinter.CTkLabel(self.t1_chr_frame, text="Chromosome name: ", font=self.header_font)
-            chr_label.grid(row=(i * 3) + 1, column=1, sticky="w", padx=10)
+            customtkinter.CTkLabel(self.t1_chr_frame, text="Species: ", font=self.header_font) \
+                .grid(row=(i * 3) + 1, column=0, sticky="w", padx=10)
+            customtkinter.CTkLabel(self.t1_chr_frame, text="Chromosome name: ", font=self.header_font) \
+                .grid(row=(i * 3) + 1, column=1, sticky="w", padx=10)
             self.t1_species_combobox[f"{i + 1}"] = customtkinter.CTkComboBox(self.t1_chr_frame, values=species_list,
                                                                              width=100,
                                                                              # variable=self.t1_ds[str(i + 1)].specie,
                                                                              command=partial(self.specie_change_event,
                                                                                              f"{i + 1}"))
 
-            self.t1_species_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=0, sticky="w", padx=10, pady=(0, 10))
+            self.t1_species_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=0, sticky="w", padx=10, pady=(0, 12))
             self.t1_species_combobox[f"{i + 1}"].set("")
 
             self.t1_chr_combobox[f"{i + 1}"] = customtkinter.CTkComboBox(self.t1_chr_frame, values=[],
@@ -157,7 +172,7 @@ class App(customtkinter.CTk):
                                                                          width=100,
                                                                          command=partial(self.chromosome_change_event,
                                                                                          f"{i + 1}"))
-            self.t1_chr_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=1, sticky="w", padx=10, pady=(0, 10))
+            self.t1_chr_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=1, sticky="w", padx=10, pady=(0, 12))
             self.t1_chr_combobox[f"{i + 1}"].set("")
 
         # Radio Button (Window size)
@@ -166,8 +181,8 @@ class App(customtkinter.CTk):
         self.t1_window_size_frame = customtkinter.CTkFrame(self.t1_config_frame, fg_color=config_frame_color)
         self.t1_window_size_frame.grid(row=2, columnspan=2, padx=10, pady=5, sticky="w")
 
-        window_s_label = customtkinter.CTkLabel(self.t1_window_size_frame, text="Segment Size:", font=self.header_font)
-        window_s_label.grid(row=0, column=0, padx=10)
+        customtkinter.CTkLabel(self.t1_window_size_frame, text="Segment Size:", font=self.header_font) \
+            .grid(row=0, column=0, padx=10)
         self.window_s_toggle = tkinter.IntVar(value=0)
         self.t1_window_s_1 = customtkinter.CTkRadioButton(self.t1_window_size_frame, text="Variable",
                                                           variable=self.window_s_toggle,
@@ -186,8 +201,8 @@ class App(customtkinter.CTk):
 
         # k_mer combo box
         self.k_var = customtkinter.IntVar()
-        k_mer_label = customtkinter.CTkLabel(self.t1_config_frame, text="k-mer: ", font=self.header_font)
-        k_mer_label.grid(row=3, column=0, padx=10, pady=(10, 10))
+        customtkinter.CTkLabel(self.t1_config_frame, text="k-mer: ", font=self.header_font) \
+            .grid(row=3, column=0, padx=10, pady=(10, 10))
         values_list = ["2", "3", "4", "5", "6", "7", "8", "9"]
         k_mer_combobox = customtkinter.CTkComboBox(self.t1_config_frame, values=values_list, width=100,
                                                    state="normal", variable=self.k_var)
@@ -226,7 +241,7 @@ class App(customtkinter.CTk):
         self.t1_display_frame.grid_rowconfigure(0, weight=1)
         self.t1_display_frame.grid_columnconfigure(0, weight=1)
         t1_plot_button = customtkinter.CTkButton(self.t1_config_frame, text="Plot", width=120, command=self.t1_plot)
-        t1_plot_button.grid(row=8, columnspan=2, pady=(10, 10))
+        t1_plot_button.grid(row=8, columnspan=2, pady=(10, 5))
 
         # Appearance mode
         self.appearance = customtkinter.StringVar(value="Dark")
@@ -340,9 +355,16 @@ class App(customtkinter.CTk):
         for row in range(10):
             self.t2_config_frame.grid_rowconfigure(row, weight=1)
 
+        # Search button
+        search_image = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/search.png"),
+                                              size=(12, 12))
+        search_button = customtkinter.CTkButton(self.t2_config_frame, image=search_image,
+                                                text="Search and Download Genomes", command=self.open_popup,
+                                                width=180, height=25)
+        search_button.grid(row=0, columnspan=2, pady=(5, 0))
         # Creating frames for chromosome
         self.t2_chr_frame = customtkinter.CTkFrame(self.t2_config_frame, corner_radius=20)
-        self.t2_chr_frame.grid(row=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        self.t2_chr_frame.grid(row=1, columnspan=2, padx=5, pady=5, sticky="ew")
 
         self.t2_ds = {'1': GUIDataStructure()}
 
@@ -373,42 +395,42 @@ class App(customtkinter.CTk):
 
         # Window size
         window_s_label = customtkinter.CTkLabel(self.t2_config_frame, text="Segment Size:", font=self.header_font)
-        window_s_label.grid(row=1, column=0, padx=10, pady=(20, 5))
+        window_s_label.grid(row=2, column=0, padx=10, pady=(20, 5))
         self.t2_window_s = tkinter.StringVar(value="")
         self.t2_window_entry = customtkinter.CTkEntry(self.t2_config_frame, textvariable=self.t2_window_s)
         self.t2_window_entry.configure(state="disable")
-        self.t2_window_entry.grid(row=1, column=1, pady=(20, 5), padx=(0, 20), sticky="w")
+        self.t2_window_entry.grid(row=2, column=1, pady=(20, 5), padx=(0, 20), sticky="w")
 
         # k_mer combo box
         k_mer_label = customtkinter.CTkLabel(self.t2_config_frame, text="k-mer: ", font=self.header_font)
-        k_mer_label.grid(row=2, column=0, padx=10, pady=(10, 10))
+        k_mer_label.grid(row=3, column=0, padx=10, pady=(10, 10))
         k_mer_combobox = customtkinter.CTkComboBox(self.t2_config_frame, values=values_list, width=100,
                                                    state="normal", variable=self.k_var)
-        k_mer_combobox.grid(row=2, column=1, sticky="w", pady=(10, 10))
+        k_mer_combobox.grid(row=3, column=1, sticky="w", pady=(10, 10))
 
         # Distance metrics
         dist_metric_l = customtkinter.CTkLabel(self.t2_config_frame, text="Distance Measure: ", font=self.header_font)
-        dist_metric_l.grid(row=3, column=0, pady=(20, 5), padx=(5, 0))
+        dist_metric_l.grid(row=4, column=0, pady=(20, 5), padx=(5, 0))
         dist_metric_combobox = customtkinter.CTkComboBox(self.t2_config_frame, values=DISTANCE_METRICS_LIST,
                                                          width=120, variable=self.dist_metric)
-        dist_metric_combobox.grid(row=3, column=1, pady=(20, 5), sticky="w")
+        dist_metric_combobox.grid(row=4, column=1, pady=(20, 5), sticky="w")
         dist_metric_combobox.set("")
 
         switch = customtkinter.CTkSwitch(self.t2_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        switch.grid(row=4, columnspan=2, pady=(20, 5))
+        switch.grid(row=5, columnspan=2, pady=(20, 5))
 
         # run button
         run_button = customtkinter.CTkButton(self.t2_config_frame, text="Run",
                                              command=partial(self.run_consecutive, None))
-        run_button.grid(row=7, columnspan=2)  # , sticky="ns")
+        run_button.grid(row=8, columnspan=2)  # , sticky="ns")
 
         # Appearance mode
         appearance_label = customtkinter.CTkLabel(self.t2_config_frame, text="Theme: ", font=self.header_font)
-        appearance_label.grid(row=8, column=0, padx=10, pady=(20, 10))
+        appearance_label.grid(row=9, column=0, padx=10, pady=(20, 10))
         appearance_mode = customtkinter.CTkOptionMenu(self.t2_config_frame, values=["Dark", "Light"], width=100,
                                                       variable=self.appearance,
                                                       command=self.change_appearance_mode_event)
-        appearance_mode.grid(row=8, column=1, sticky="w", pady=(20, 10))
+        appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
 
         # placing the progress bars
         self.cgr_distance_history = None
@@ -489,11 +511,18 @@ class App(customtkinter.CTk):
         for row in range(10):
             self.t3_config_frame.grid_rowconfigure(row, weight=1)
 
-        self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
+        # Search button
+        search_image = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/search.png"),
+                                              size=(12, 12))
+        search_button = customtkinter.CTkButton(self.t3_config_frame, image=search_image,
+                                                text="Search and Download Genomes", command=self.open_popup,
+                                                width=180, height=25)
+        search_button.grid(row=0, columnspan=2, pady=(5, 0))
 
+        self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
         # Creating frame for reference sequence
         self.t3_chr_frame = customtkinter.CTkFrame(self.t3_config_frame, corner_radius=20)
-        self.t3_chr_frame.grid(row=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        self.t3_chr_frame.grid(row=1, columnspan=2, padx=5, pady=5, sticky="ew")
 
         label = customtkinter.CTkLabel(self.t3_chr_frame, text=f"Reference: ", font=self.header_font)
         label.grid(row=0, column=0, sticky="w", padx=10, pady=(5, 0))
@@ -544,7 +573,7 @@ class App(customtkinter.CTk):
 
         # Creating frame for the other sequence
         self.t3_chr_frame_2 = customtkinter.CTkFrame(self.t3_config_frame, corner_radius=20)
-        self.t3_chr_frame_2.grid(row=1, columnspan=2, padx=5, pady=5, sticky="ew")
+        self.t3_chr_frame_2.grid(row=2, columnspan=2, padx=5, pady=5, sticky="ew")
 
         label = customtkinter.CTkLabel(self.t3_chr_frame_2, text=f"Genome: ", font=self.header_font)
         label.grid(row=0, columnspan=2, sticky="w", padx=10, pady=(5, 0))
@@ -579,34 +608,34 @@ class App(customtkinter.CTk):
 
         # k_mer combo box
         k_mer_label = customtkinter.CTkLabel(self.t3_config_frame, text="k-mer: ", font=self.header_font)
-        k_mer_label.grid(row=2, column=0, padx=10, pady=(10, 10))
+        k_mer_label.grid(row=3, column=0, padx=10, pady=(10, 10))
         k_mer_combobox = customtkinter.CTkComboBox(self.t3_config_frame, values=values_list, width=100,
                                                    state="normal", variable=self.k_var)
-        k_mer_combobox.grid(row=2, column=1, sticky="w", padx=10, pady=(10, 10))
+        k_mer_combobox.grid(row=3, column=1, sticky="w", padx=10, pady=(10, 10))
 
         # Distance metrics
         dist_metric_l = customtkinter.CTkLabel(self.t3_config_frame, text="Distance Measure: ", font=self.header_font)
-        dist_metric_l.grid(row=3, column=0, pady=(20, 5), padx=(5, 0))
+        dist_metric_l.grid(row=4, column=0, pady=(20, 5), padx=(5, 0))
         dist_metric_combobox = customtkinter.CTkComboBox(self.t3_config_frame, values=DISTANCE_METRICS_LIST,
                                                          width=120, variable=self.dist_metric)
-        dist_metric_combobox.grid(row=3, column=1, pady=(20, 5), sticky="w")
+        dist_metric_combobox.grid(row=4, column=1, pady=(20, 5), sticky="w")
         dist_metric_combobox.set("")
 
         switch = customtkinter.CTkSwitch(self.t3_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        switch.grid(row=4, columnspan=2, pady=(20, 5))
+        switch.grid(row=5, columnspan=2, pady=(20, 5))
 
         # run button
         run_button = customtkinter.CTkButton(self.t3_config_frame, text="Run",
                                              command=partial(self.run_common_ref, None))
-        run_button.grid(row=7, columnspan=2)  # , sticky="ns")
+        run_button.grid(row=8, columnspan=2)  # , sticky="ns")
 
         # Appearance mode
         appearance_label = customtkinter.CTkLabel(self.t3_config_frame, text="Theme: ", font=self.header_font)
-        appearance_label.grid(row=8, column=0, padx=10, pady=(20, 10))
+        appearance_label.grid(row=9, column=0, padx=10, pady=(20, 10))
         appearance_mode = customtkinter.CTkOptionMenu(self.t3_config_frame, values=["Dark", "Light"], width=100,
                                                       variable=self.appearance,
                                                       command=self.change_appearance_mode_event)
-        appearance_mode.grid(row=8, column=1, sticky="w", pady=(20, 10))
+        appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
 
         # placing the progress bars
         self.t3_cgr_distance_history = None
@@ -692,9 +721,17 @@ class App(customtkinter.CTk):
         for row in range(10):
             self.t4_config_frame.grid_rowconfigure(row, weight=1)
 
+        # Search button
+        search_image = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/search.png"),
+                                              size=(12, 12))
+        search_button = customtkinter.CTkButton(self.t4_config_frame, image=search_image,
+                                                text="Search and Download Genomes", command=self.open_popup,
+                                                width=180, height=25)
+        search_button.grid(row=0, columnspan=2, pady=(5, 0))
+
         # Creating frames for chromosome
         self.t4_chr_frame = customtkinter.CTkFrame(self.t4_config_frame, corner_radius=20)
-        self.t4_chr_frame.grid(row=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        self.t4_chr_frame.grid(row=1, columnspan=2, padx=5, pady=5, sticky="ew")
 
         self.t4_ds = {'1': GUIDataStructure()}
 
@@ -744,42 +781,42 @@ class App(customtkinter.CTk):
 
         # Window size
         window_s_label = customtkinter.CTkLabel(self.t4_config_frame, text="Segment Size:", font=self.header_font)
-        window_s_label.grid(row=1, column=0, padx=10, pady=(20, 5))
+        window_s_label.grid(row=2, column=0, padx=10, pady=(20, 5))
         self.t4_window_s = tkinter.StringVar(value="")
         self.t4_window_entry = customtkinter.CTkEntry(self.t4_config_frame, textvariable=self.t4_window_s)
         self.t4_window_entry.configure(state="disable")
-        self.t4_window_entry.grid(row=1, column=1, pady=(20, 5), padx=(0, 20), sticky="w")
+        self.t4_window_entry.grid(row=2, column=1, pady=(20, 5), padx=(0, 20), sticky="w")
 
         # k_mer combo box
         k_mer_label = customtkinter.CTkLabel(self.t4_config_frame, text="k-mer: ", font=self.header_font)
-        k_mer_label.grid(row=2, column=0, padx=10, pady=(10, 10))
+        k_mer_label.grid(row=3, column=0, padx=10, pady=(10, 10))
         k_mer_combobox = customtkinter.CTkComboBox(self.t4_config_frame, values=values_list, width=100,
                                                    state="normal", variable=self.k_var)
-        k_mer_combobox.grid(row=2, column=1, sticky="w", pady=(10, 10))
+        k_mer_combobox.grid(row=3, column=1, sticky="w", pady=(10, 10))
 
         # Distance metrics
         dist_metric_l = customtkinter.CTkLabel(self.t4_config_frame, text="Distance Measure: ", font=self.header_font)
-        dist_metric_l.grid(row=3, column=0, pady=(20, 5), padx=(5, 0))
+        dist_metric_l.grid(row=4, column=0, pady=(20, 5), padx=(5, 0))
         dist_metric_combobox = customtkinter.CTkComboBox(self.t4_config_frame, values=DISTANCE_METRICS_LIST,
                                                          width=120, variable=self.dist_metric)
-        dist_metric_combobox.grid(row=3, column=1, pady=(20, 5), sticky="w")
+        dist_metric_combobox.grid(row=4, column=1, pady=(20, 5), sticky="w")
         dist_metric_combobox.set("")
 
         switch = customtkinter.CTkSwitch(self.t4_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        switch.grid(row=4, columnspan=2, pady=(20, 5))
+        switch.grid(row=5, columnspan=2, pady=(20, 5))
 
         # run button
         run_button = customtkinter.CTkButton(self.t4_config_frame, text="Run",
                                              command=partial(self.run_representative, None))
-        run_button.grid(row=7, columnspan=2)  # , sticky="ns")
+        run_button.grid(row=8, columnspan=2)  # , sticky="ns")
 
         # Appearance mode
         appearance_label = customtkinter.CTkLabel(self.t4_config_frame, text="Theme: ", font=self.header_font)
-        appearance_label.grid(row=8, column=0, padx=10, pady=(20, 10))
+        appearance_label.grid(row=9, column=0, padx=10, pady=(20, 10))
         appearance_mode = customtkinter.CTkOptionMenu(self.t4_config_frame, values=["Dark", "Light"], width=100,
                                                       variable=self.appearance,
                                                       command=self.change_appearance_mode_event)
-        appearance_mode.grid(row=8, column=1, sticky="w", pady=(20, 10))
+        appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
 
         # placing the progress bars
         self.execution_time = None
@@ -830,6 +867,304 @@ class App(customtkinter.CTk):
     #         self.lift()
     #     except:
     #         pass
+
+    def open_popup(self):
+        # Slightly larger than half size (e.g., 60%)
+        popup_width = int(self.winfo_width() * 0.6)
+        popup_height = int(self.winfo_height() * 0.6)
+
+        # Center position
+        x = self.winfo_x() + (self.winfo_width() - popup_width) // 2
+        y = self.winfo_y() + (self.winfo_height() - popup_height) // 2
+
+        # Create popup window
+        popup = customtkinter.CTkToplevel(self)
+        popup.title("Search and Download genomes from NCBI")
+        popup.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
+
+        # Centered content in popup is in two frames
+        popup.grid_columnconfigure(0, weight=1)
+        popup.grid_columnconfigure(1, weight=5)
+        popup.grid_rowconfigure(0, weight=1)
+        # Frames
+        popup_f1 = customtkinter.CTkFrame(popup, corner_radius=10, border_color="#333333", border_width=2)
+        popup_f1.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        popup_f1.grid_columnconfigure(0, weight=1)
+        popup_f1.grid_rowconfigure(0, weight=1)
+        popup_f1.grid_rowconfigure(1, weight=10)
+        popup_f2 = customtkinter.CTkFrame(popup, corner_radius=10, border_color="#333333", border_width=2)
+        popup_f2.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        popup_f2.grid_columnconfigure(0, weight=1)
+        popup_f2.grid_rowconfigure(0, weight=1)
+        popup_f2.grid_rowconfigure(1, weight=1)
+        popup_f2.grid_rowconfigure(2, weight=10)
+        popup_f2.grid_rowconfigure(3, weight=1)
+
+        # Designing the first frame
+        # Download path and Browse button in a frame
+        download_frame = customtkinter.CTkFrame(popup_f1, fg_color=popup_f1.fg_color)
+        download_frame.grid(row=0, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
+        download_frame.grid_columnconfigure(0, weight=5)
+        download_frame.grid_columnconfigure(1, weight=1)
+
+        # Bring a list of species available (downloaded) in the folder selected
+        file_scrollable_frame = customtkinter.CTkScrollableFrame(popup_f1)
+        file_scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=(10, 10), pady=(5, 5))
+        # download path label and entry
+        customtkinter.CTkLabel(download_frame, text="Enter download path:") \
+            .grid(row=0, column=0, sticky="w", padx=(5, 0), pady=(5, 0))
+        download_entry = customtkinter.CTkEntry(download_frame, textvariable=self.download_path)
+        self.display_downloaded_files(file_scrollable_frame, self.download_path.get())
+        download_entry.bind('<FocusOut>', partial(self.display_downloaded_files, file_scrollable_frame))
+        download_entry.bind('<Key-Return>', partial(self.display_downloaded_files, file_scrollable_frame))
+        download_entry.grid(row=1, column=0, sticky="we", padx=(5, 0), pady=(5, 0))
+        # Browse button
+        browse_button = customtkinter.CTkButton(download_frame, text="Browse...", width=80,
+                                                command=lambda: self.browse_folder(file_scrollable_frame))
+        browse_button.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=(5, 0))
+
+        # Designing the second frame
+        # Enter email in a frame
+        email_frame = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.fg_color)
+        email_frame.grid(row=0, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
+        email_frame.grid_columnconfigure(0, weight=1)
+        customtkinter.CTkLabel(email_frame, text="Enter your email (required by NCBI):") \
+            .grid(row=0, column=0, sticky="w", padx=(5, 0), pady=(5, 0))
+        email_entry = customtkinter.CTkEntry(email_frame, textvariable=self.email_var)
+        email_entry.grid(row=1, column=0, sticky="we", padx=(5, 5), pady=(5, 0))
+
+        # Search label and entry in a frame
+        search_frame = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.fg_color)
+        search_frame.grid(row=1, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
+        search_frame.grid_columnconfigure(0, weight=10)
+        search_frame.grid_columnconfigure(1, weight=1)
+
+        customtkinter.CTkLabel(search_frame, text="Enter organism name:") \
+            .grid(row=0, column=0, sticky="w", padx=(5, 0), pady=(5, 0))
+        search_organism = customtkinter.StringVar(value="")
+        search_entry = customtkinter.CTkEntry(search_frame, textvariable=search_organism)
+        search_entry.grid(row=1, column=0, sticky="we", padx=(5, 0), pady=(5, 0))
+        # # Show the search results
+        # scrollable_frame = customtkinter.CTkScrollableFrame(popup_f2)
+        # scrollable_frame.grid(row=2, column=0, sticky="nsew", padx=(10, 10), pady=(5, 5))
+        scrollable_container = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.fg_color)
+        scrollable_container.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+        scrollable_container.grid_rowconfigure(0, weight=1)
+        scrollable_container.grid_columnconfigure(0, weight=1)
+        # Create a Canvas with custom background
+        # frame_color = str(scrollable_container.cget("fg_color"))
+        canvas = tkinter.Canvas(scrollable_container, bg="#2b2b2b", highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        # Add scrollbars
+        v_scrollbar = customtkinter.CTkScrollbar(scrollable_container, orientation="vertical", command=canvas.yview)
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar = customtkinter.CTkScrollbar(scrollable_container, orientation="horizontal", command=canvas.xview)
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
+        canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+
+        # Frame inside canvas to hold widgets
+        self.checkbox_frame = customtkinter.CTkFrame(canvas, fg_color=popup_f2.fg_color)
+        canvas.create_window((0, 0), window=self.checkbox_frame, anchor="nw")
+
+        def configure_scroll_region(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        self.checkbox_frame.bind("<Configure>", configure_scroll_region)
+
+        # search button
+        search_button = customtkinter.CTkButton(search_frame, text="Search", width=50,
+                                                command=lambda: self.search_ncbi(email_entry, search_organism))
+        search_button.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=(5, 0))
+
+        # download button
+        download_button = customtkinter.CTkButton(popup_f2, text="Download selected fasta",
+                                                  command=lambda: self.download_genomes(email_entry, search_organism,
+                                                                                        file_scrollable_frame))
+        download_button.grid(row=3, column=0, sticky="ew", padx=(10, 10), pady=(5, 5))
+
+    def browse_folder(self, scrollable_frame):
+        default_start_path = self.download_path.get()
+        folder = filedialog.askdirectory(title="Choose Folder", initialdir=default_start_path)
+        if folder:
+            self.download_path.set(folder)
+        self.display_downloaded_files(scrollable_frame, self.download_path.get())
+
+    def display_downloaded_files(self, frame, value):
+        # Clear old widgets
+        for widget in frame.winfo_children():
+            widget.destroy()
+
+        path = self.download_path.get()
+
+        if not os.path.exists(path):
+            customtkinter.CTkLabel(frame, text="Path does not exist", text_color="red").pack(anchor="w", padx=5, pady=2)
+            return
+
+        # Filter only FASTA files
+        all_files = os.listdir(path)
+        fasta_files = [f for f in all_files if f.lower().endswith(('.fasta', '.fa', '.fna'))]
+
+        if not fasta_files:
+            customtkinter.CTkLabel(frame, text="No FASTA files found", text_color="red").pack(anchor="w", padx=5,
+                                                                                              pady=2)
+            return
+
+        for file in sorted(fasta_files):
+            entry = customtkinter.CTkEntry(frame, width=500)
+            entry.insert(0, file)
+            entry.configure(state="readonly")
+            entry.pack(fill="x", padx=5, pady=2)
+
+            # Bind left-click to enable editing
+            entry.bind("<Button-1>", lambda e, ent=entry: ent.configure(state="normal"))
+
+            # Bind Enter key to rename file
+            entry.bind("<Return>",
+                       lambda e, ent=entry, old_name=file, folder=path: self.rename_file(ent, old_name, folder))
+
+    @staticmethod
+    def rename_file(entry_widget, old_name, folder):
+        new_name = entry_widget.get().strip()
+        old_path = os.path.join(folder, old_name)
+        new_path = os.path.join(folder, new_name)
+
+        if not new_name:
+            messagebox.showerror("Invalid Name", "Filename cannot be empty.")
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, old_name)
+            entry_widget.configure(state="readonly")
+            return
+
+        if new_name == old_name:
+            entry_widget.configure(state="readonly")
+            return
+
+        if os.path.exists(new_path):
+            messagebox.showerror("File Exists", "A file with this name already exists.")
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, old_name)
+        else:
+            try:
+                os.rename(old_path, new_path)
+                messagebox.showinfo("Success", f"Renamed to: {new_name}")
+            except Exception as e:
+                messagebox.showerror("Rename Failed", str(e))
+                entry_widget.delete(0, "end")
+                entry_widget.insert(0, old_name)
+
+        entry_widget.configure(state="readonly")
+
+    def search_ncbi(self, email_entry, query, *_):
+        email = email_entry.get().strip()
+        if not email:
+            messagebox.showwarning("Missing Email", "Please enter your email address.")
+            return
+        Entrez.email = email
+
+        query = query.get().strip()
+        if not query:
+            messagebox.showwarning("Input Error", "Please enter an organism name.")
+            return
+
+        try:
+            handle = Entrez.esearch(db="nuccore", term=f"{query}[Organism] AND chromosome[Title] AND complete genome",
+                                    retmax=20)
+            record = Entrez.read(handle)
+            ids = record["IdList"]
+            handle.close()
+
+            if not ids:
+                messagebox.showinfo("No Results", "No matching entries found.")
+                return
+
+            handle = Entrez.esummary(db="nuccore", id=",".join(ids))
+            summary = Entrez.read(handle)
+            handle.close()
+
+            # Clear existing checkboxes
+            for widget in self.checkbox_frame.winfo_children():
+                widget.destroy()
+
+            self.checkbox_vars = {}
+            self.id_map = {}
+
+            for item in summary:
+                title = item["Title"]
+                gi = item["Id"]
+
+                var = customtkinter.BooleanVar()
+                cb = customtkinter.CTkCheckBox(self.checkbox_frame, text=title, variable=var)
+                cb.pack(fill="x", padx=5, pady=2)
+
+                self.checkbox_vars[title] = var
+                self.id_map[title] = gi
+
+        except Exception as e:
+            messagebox.showerror("Search Error", str(e))
+
+    def download_genomes(self, email_entry, query, file_scrollable_frame, *_):
+        email = email_entry.get().strip()
+        if not email:
+            messagebox.showwarning("Missing Email", "Please enter your email address.")
+            return
+        Entrez.email = email
+
+        query = query.get().strip()
+        if not query:
+            messagebox.showwarning("Input Error", "Please enter an organism name.")
+            return
+
+        selected_titles = [title for title, var in self.checkbox_vars.items() if var.get()]
+        if not selected_titles:
+            messagebox.showwarning("No Selection", "Please select at least one entry.")
+            return
+
+        folder = self.download_path.get()
+        if not os.path.exists(folder):
+            messagebox.showerror("Invalid Path", "The specified download path does not exist.")
+            return
+
+        errors = []
+        for title in selected_titles:
+            try:
+                seq_id = self.id_map.get(title)
+                if not seq_id:
+                    continue  # Skip if ID is missing
+
+                handle = Entrez.efetch(db="nuccore", id=seq_id, rettype="fasta", retmode="text")
+                fasta_data = handle.read()
+                handle.close()
+
+                # Sanitize filename
+                filename = "".join(c if c.isalnum() or c in " ._-" else "_" for c in title)
+                file_path = os.path.join(folder, filename + ".fasta")
+
+                with open(file_path, "w") as f:
+                    f.write(fasta_data)
+
+            except Exception as e:
+                errors.append(f"{title}: {str(e)}")
+
+        if errors:
+            messagebox.showerror("Partial Download", f"Some files failed to download:\n\n" + "\n".join(errors))
+        else:
+            messagebox.showinfo("Download Complete", f"All selected FASTA files were saved to:\n{folder}")
+
+        # update the downloaded files display
+        self.display_downloaded_files(file_scrollable_frame, self.download_path.get())
+
+        # update available species in the combobox
+        # get all the folders name in DATA path
+        folders = [str(f) for f in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, f))]
+        # update the combobox values
+        self.t1_species_combobox["1"].configure(values=folders)
+        self.t1_species_combobox["2"].configure(values=folders)
+        self.t2_species_combobox.configure(values=folders)
+        self.t3_species_combobox_1.configure(values=folders)
+        self.t3_species_combobox_2.configure(values=folders)
+        self.t4_species_combobox.configure(values=folders)
+        # add a value of 8 to BITS_DICT for this species
+        BITS_DICT.update({folder: 8 for folder in folders})
 
     @staticmethod
     def resource_path(relative_path):
@@ -895,7 +1230,7 @@ class App(customtkinter.CTk):
     def specie_change_event(self, sender, value):
         try:
             self.t1_species_combobox[sender].set(value)
-            self.t1_ds[sender].specie.set(REVERSE_SCIENTIFIC_NAMES[value])
+            self.t1_ds[sender].specie.set(value)
 
             specie = self.t1_ds[sender].specie.get()
             self.t1_chr_combobox[sender].configure(
@@ -1164,7 +1499,7 @@ class App(customtkinter.CTk):
 
     def t2_specie_change_event(self, value):
         self.t2_species_combobox.set(value)
-        self.t2_ds["1"].specie.set(REVERSE_SCIENTIFIC_NAMES[value])
+        self.t2_ds["1"].specie.set(value)
 
         specie = self.t2_ds["1"].specie.get()
         self.t2_chr_combobox.configure(
@@ -1451,7 +1786,7 @@ class App(customtkinter.CTk):
             self.t3_species_combobox_1.set(value)
         elif sender == "2":
             self.t3_species_combobox_2.set(value)
-        self.t3_ds[sender].specie.set(REVERSE_SCIENTIFIC_NAMES[value])
+        self.t3_ds[sender].specie.set(value)
 
         specie = self.t3_ds[sender].specie.get()
         if sender == "1":
@@ -1465,7 +1800,6 @@ class App(customtkinter.CTk):
             self.t3_window_entry.configure(state="disable")
         self.t3_ds[sender].invalidate_based_specie()
         self.sync_text_vars(self.t3_ds, sender)
-        # self.t3_ds[sender].specie.set(SCIENTIFIC_NAMES[specie])
 
     def t3_chromosome_change_event(self, sender, value):
         specie = self.t3_ds[sender].specie.get()
@@ -1548,7 +1882,7 @@ class App(customtkinter.CTk):
                     chromosome = "Genome"
                 else:
                     chromosome = f'chr {self.t3_ds["1"].chromosome.get()}'
-                ax1.set_title(f'Reference\n{SCIENTIFIC_NAMES[self.t3_ds["1"].specie.get()]} / {chromosome} / '
+                ax1.set_title(f'Reference\n{self.t3_ds["1"].specie.get()} / {chromosome} / '
                               f'{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
 
             # Clear the previous figure from the display frame if any
@@ -1624,7 +1958,7 @@ class App(customtkinter.CTk):
 
     def t4_specie_change_event(self, value):
         self.t4_species_combobox.set(value)
-        self.t4_ds["1"].specie.set(REVERSE_SCIENTIFIC_NAMES[value])
+        self.t4_ds["1"].specie.set(value)
 
         specie = self.t4_ds["1"].specie.get()
         self.t4_chr_combobox.configure(
