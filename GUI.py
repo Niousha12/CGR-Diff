@@ -2259,7 +2259,6 @@ class GenerateSyntheticSequence(customtkinter.CTk):
         tab_names = ["Entropy", "2-mers", "k-mers"]
         for name in tab_names:
             tabview.add(name)
-        tabview.set(tab_names[2])
 
         '''
         Designing the first tab (Entropy method)
@@ -2495,13 +2494,6 @@ class GenerateSyntheticSequence(customtkinter.CTk):
             self.t3_slider_var.set(0.0)
             self.t3_kmer_label.configure(text="0.0000")
             return
-        # if kmer not in self.kmer_to_idx:
-        #     messagebox.showerror("Unknown k-mer", "This k-mer is not in the generated list.")
-        #     self.t3_kmer_slider.configure(state="disabled", button_color="#888888")
-        #     self.current_kmer = None
-        #     self.t3_slider_var.set(0.0)
-        #     self.t3_kmer_label.configure(text="0.0000")
-        #     return
         self.t3_kmer_slider.configure(state="normal", button_color=self.slider_normal_color)
         self.current_kmer = kmer
         idx = self.kmer_to_idx[kmer]
@@ -2526,9 +2518,6 @@ class GenerateSyntheticSequence(customtkinter.CTk):
             idx = self.kmer_to_idx[self.current_kmer]
             self.t3_slider_var.set(float(self.logits[idx]))
         self._refresh_summary()
-
-    def t3_generate_sequence(self, *args):
-        pass
 
     def _refresh_summary(self):
         if self.kmer_entry.get().strip().upper() == "":
