@@ -6,3 +6,5 @@ scipy
 matplotlib
 pillow
 customtkinter
+plotly
+biopython

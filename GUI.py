@@ -6,15 +6,11 @@ import tkinter
 import tkinter.messagebox
 import time
 from functools import partial
-from pathlib import Path
-import glob
 import random
 
 import customtkinter
 from tkinter import filedialog, messagebox
-from tkinter import ttk
 
-# import mplcursors
 import numpy as np
 from Bio import Entrez
 from PIL import Image
@@ -27,6 +23,8 @@ from chromosomes_holder import ChromosomesHolder
 from constants import DISTANCE_METRICS_LIST, RESOLUTION_DICT, BITS_DICT
 from distances.distance_metrics import get_dist
 from representative_selection import ChromosomeRepresentativeSelection
+from sequence_generation.sampling import generate_kmers
+from sequence_generation.sequence_generation import generate_dna_sequence
 
 customtkinter.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
 customtkinter.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -74,14 +72,14 @@ class App(customtkinter.CTk):
         # self.geometry(f"{2300}x{1500}")
         self.header_font = ('Cambria', 14, 'bold')
 
-        self.status_label = customtkinter.CTkLabel(
-            self,
-            text="💡 If buttons are unresponsive, click on the title bar to activate the window, "
-                 "or use a force click on the buttons (macOS focus issue).",
-            text_color="gray",
-            font=("Cambria", 12, "italic")
-        )
-        self.status_label.place(relx=0.5, rely=0.032, anchor="s")  # Bottom center
+        # self.status_label = customtkinter.CTkLabel(
+        #     self,
+        #     text="💡 If buttons are unresponsive, click on the title bar to activate the window, "
+        #          "or use a force click on the buttons (macOS focus issue).",
+        #     text_color="gray",
+        #     font=("Cambria", 12, "italic")
+        # )
+        # self.status_label.place(relx=0.5, rely=0.032, anchor="s")  # Bottom center
 
         # configure grid layout (4x4)
         self.grid_columnconfigure(0, weight=1)
@@ -510,6 +508,9 @@ class App(customtkinter.CTk):
                                                 command=partial(self.t3_upload_event, "1", None),
                                                 width=15, height=10)
         upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
+        # Button for synthetic sequence
+        customtkinter.CTkButton(t3_chr_frame, text="Generate", command=self.t3_gen_synth_seq_event,
+                                width=15, height=10).grid(row=0, column=1, sticky="w", padx=(50, 10), pady=(5, 0))
         customtkinter.CTkLabel(t3_chr_frame, text="Species: ", font=self.header_font) \
             .grid(row=1, column=0, sticky="w", padx=10)
         customtkinter.CTkLabel(t3_chr_frame, text="Chromosome name: ", font=self.header_font) \
@@ -668,8 +669,7 @@ class App(customtkinter.CTk):
         t4_config_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20,
                                                  border_color="#333333", border_width=2)
         t4_config_frame.grid(row=0, column=0, rowspan=5, sticky="ns")
-        self.t4_plot_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20,
-                                                    fg_color="white")
+        self.t4_plot_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20, fg_color="white")
         self.t4_plot_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
 
         t4_output_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20,
@@ -843,12 +843,8 @@ class App(customtkinter.CTk):
         self.after_idle(self.attributes, '-topmost', False)
         self.focus_force()
 
-    # def _refocus_window(self, event):
-    #     try:
-    #         self.focus_force()
-    #         self.lift()
-    #     except:
-    #         pass
+    def t3_gen_synth_seq_event(self):
+        pass
 
     def open_popup(self):
         # Slightly larger than half size (e.g., 60%)
@@ -884,7 +880,7 @@ class App(customtkinter.CTk):
 
         # Designing the first frame
         # Download path and Browse button in a frame
-        download_frame = customtkinter.CTkFrame(popup_f1, fg_color=popup_f1.fg_color)
+        download_frame = customtkinter.CTkFrame(popup_f1, fg_color=popup_f1.cget("fg_color"))
         download_frame.grid(row=0, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
         download_frame.grid_columnconfigure(0, weight=5)
         download_frame.grid_columnconfigure(1, weight=1)
@@ -907,7 +903,7 @@ class App(customtkinter.CTk):
 
         # Designing the second frame
         # Enter email in a frame
-        email_frame = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.fg_color)
+        email_frame = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.cget("fg_color"))
         email_frame.grid(row=0, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
         email_frame.grid_columnconfigure(0, weight=1)
         customtkinter.CTkLabel(email_frame, text="Enter your email (required by NCBI):") \
@@ -916,7 +912,7 @@ class App(customtkinter.CTk):
         email_entry.grid(row=1, column=0, sticky="we", padx=(5, 5), pady=(5, 0))
 
         # Search label and entry in a frame
-        search_frame = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.fg_color)
+        search_frame = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.cget("fg_color"))
         search_frame.grid(row=1, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
         search_frame.grid_columnconfigure(0, weight=10)
         search_frame.grid_columnconfigure(1, weight=1)
@@ -929,12 +925,11 @@ class App(customtkinter.CTk):
         # # Show the search results
         # scrollable_frame = customtkinter.CTkScrollableFrame(popup_f2)
         # scrollable_frame.grid(row=2, column=0, sticky="nsew", padx=(10, 10), pady=(5, 5))
-        scrollable_container = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.fg_color)
+        scrollable_container = customtkinter.CTkFrame(popup_f2, fg_color=popup_f2.cget("fg_color"))
         scrollable_container.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
         scrollable_container.grid_rowconfigure(0, weight=1)
         scrollable_container.grid_columnconfigure(0, weight=1)
         # Create a Canvas with custom background
-        # frame_color = str(scrollable_container.cget("fg_color"))
         canvas = tkinter.Canvas(scrollable_container, bg="#2b2b2b", highlightthickness=0)
         canvas.grid(row=0, column=0, sticky="nsew")
         # Add scrollbars
@@ -945,7 +940,7 @@ class App(customtkinter.CTk):
         canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
 
         # Frame inside canvas to hold widgets
-        self.checkbox_frame = customtkinter.CTkFrame(canvas, fg_color=popup_f2.fg_color)
+        self.checkbox_frame = customtkinter.CTkFrame(canvas, fg_color=popup_f2.cget("fg_color"))
         canvas.create_window((0, 0), window=self.checkbox_frame, anchor="nw")
 
         def configure_scroll_region(event):
@@ -2246,8 +2241,427 @@ class App(customtkinter.CTk):
         self.execution_time = end_time - start_time
 
 
+class GenerateSyntheticSequence(customtkinter.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("Generate Synthetic Sequence")
+
+        screen_width = int(self.winfo_screenwidth() * 0.5)
+        screen_height = int(self.winfo_screenheight() * 0.5)
+        # Center position
+        x = self.winfo_x() + (self.winfo_screenwidth() - screen_width) // 2
+        y = self.winfo_y() + (self.winfo_screenheight() - screen_height) // 2
+        self.geometry(f"{screen_width}x{screen_height}+{x}+{y}")
+
+        # We have different tabviews
+        tabview = customtkinter.CTkTabview(self, width=screen_width - 20, height=screen_height - 20)
+        tabview.pack(padx=10, pady=10, fill="both", expand=True)
+        tab_names = ["Entropy", "2-mers", "k-mers"]
+        for name in tab_names:
+            tabview.add(name)
+        tabview.set(tab_names[2])
+
+        '''
+        Designing the first tab (Entropy method)
+        '''
+        # Content in two frames
+        tabview.tab(tab_names[0]).grid_columnconfigure(0, weight=1)
+        tabview.tab(tab_names[0]).grid_columnconfigure(1, weight=5)
+        tabview.tab(tab_names[0]).grid_rowconfigure(0, weight=50)
+        tabview.tab(tab_names[0]).grid_rowconfigure(1, weight=1)
+        # Frames
+        t1_config = customtkinter.CTkFrame(tabview.tab(tab_names[0]), corner_radius=10, border_color="#333333",
+                                           border_width=2)
+        t1_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        t1_config.grid_columnconfigure(0, weight=1)
+        t1_config.grid_columnconfigure(1, weight=1)
+        t1_config.grid_columnconfigure(2, weight=1)
+
+        self.t1_frame = customtkinter.CTkFrame(tabview.tab(tab_names[0]), corner_radius=10, border_color="#333333",
+                                               border_width=2, fg_color="white")
+        self.t1_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        self.t1_frame.grid_columnconfigure(0, weight=1)
+        self.t1_frame.grid_rowconfigure(0, weight=1)
+
+        # Design the configuration frame
+        # k-mer size
+        customtkinter.CTkLabel(t1_config, text="k-mer: ").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
+        values_list = ["2", "3", "4", "5", "6"]
+        self.t1_k_var = customtkinter.IntVar()
+        k_mer_combobox = customtkinter.CTkComboBox(t1_config, values=values_list, width=80, variable=self.t1_k_var)
+        k_mer_combobox.set("6")  # Default value
+        k_mer_combobox.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(10, 0))
+
+        # sequence length
+        customtkinter.CTkLabel(t1_config, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10,
+                                                                         pady=(10, 0))
+        self.seq_len = tkinter.StringVar(value="10000")  # Default value
+        (customtkinter.CTkEntry(t1_config, textvariable=self.seq_len)
+         .grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
+
+        # entropy scaling factor
+        customtkinter.CTkLabel(t1_config, text="Entropy scaling factor: ").grid(row=2, column=0, sticky="w", padx=10,
+                                                                                pady=(10, 0))
+        self.t1_r_var = customtkinter.DoubleVar(value=1.0)  # Default value
+        (customtkinter.CTkSlider(t1_config, from_=0.25, to=1.0, variable=self.t1_r_var, width=150)
+         .grid(row=2, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
+        self.t1_r_value_label = customtkinter.CTkLabel(t1_config, text=f"{self.t1_r_var.get():.2f}")
+        self.t1_r_value_label.grid(row=2, column=2, padx=(0, 10), pady=(10, 0), sticky="w")
+        self.t1_r_var.trace_add("write", self.update_r_label)
+        # Generate button
+        (customtkinter.CTkButton(t1_config, text="Generate", command=lambda: self.generate_sequence("t1"))
+         .grid(row=3, column=0, columnspan=3, padx=10, pady=(10, 10)))
+
+        # Save button
+        (customtkinter.CTkButton(tabview.tab(tab_names[0]), text="Save Sequence", command=self.save_sequence)
+         .grid(row=1, column=1, padx=(5, 5), pady=(5, 5)))
+
+        '''
+            Designing the second tab (2-mer method)
+        '''
+        tabview.tab(tab_names[1]).grid_columnconfigure(0, weight=1)
+        tabview.tab(tab_names[1]).grid_columnconfigure(1, weight=5)
+        tabview.tab(tab_names[1]).grid_rowconfigure(0, weight=50)
+        tabview.tab(tab_names[1]).grid_rowconfigure(1, weight=1)
+        # Frames
+        t2_config = customtkinter.CTkFrame(tabview.tab(tab_names[1]), corner_radius=10, border_color="#333333",
+                                           border_width=2)
+        t2_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        t2_config.grid_columnconfigure(0, weight=0)
+        t2_config.grid_columnconfigure(1, weight=1)
+        t2_config.grid_columnconfigure(2, weight=0)
+
+        self.t2_frame = customtkinter.CTkFrame(tabview.tab(tab_names[1]), corner_radius=10, border_color="#333333",
+                                               border_width=2, fg_color="white")
+        self.t2_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        self.t2_frame.grid_columnconfigure(0, weight=1)
+        self.t2_frame.grid_rowconfigure(0, weight=1)
+
+        # Design the configuration frame
+        last_row = 0
+        self.k_var_dict = {}
+        self.k_value_label_dict = {}
+        self.t2_kmers = generate_kmers(2)
+        for i, kmer in enumerate(self.t2_kmers):
+            padding = 0 if i > 0 else 5
+            t2_config.grid_rowconfigure(i, weight=1)
+            customtkinter.CTkLabel(t2_config, text=f"{kmer}: ").grid(row=i, column=0, padx=(10, 0), pady=(padding, 0),
+                                                                     sticky="w")
+            # Create a slider
+            var = customtkinter.DoubleVar(value=0.0)
+            self.k_var_dict[kmer] = var
+            r_slider = customtkinter.CTkSlider(t2_config, from_=-3, to=3, variable=var, width=150, height=14)
+            r_slider.grid(row=i, column=1, padx=(10, 0), pady=(padding, 0), sticky="ew")
+            # Create a label for the slider
+            self.k_value_label_dict[kmer] = customtkinter.CTkLabel(t2_config, text="0.0000", width=60)
+            self.k_value_label_dict[kmer].grid(row=i, column=2, padx=(10, 10), pady=(padding, 0), sticky="w")
+            # Bind the slider to update the label
+            try:
+                var.trace_add("write", self.update_all_k_labels)
+            except AttributeError:
+                var.trace("w", self.update_all_k_labels)
+            last_row = i + 1
+        self.update_all_k_labels()
+
+        # put sequence length
+        seq_frame = customtkinter.CTkFrame(t2_config, fg_color="transparent")
+        seq_frame.grid(row=last_row, column=0, columnspan=3, padx=(10, 10), pady=(5, 0), sticky="w")
+
+        customtkinter.CTkLabel(seq_frame, text="Sequence length:").grid(row=0, column=0, padx=(0, 5), sticky="w")
+        customtkinter.CTkEntry(seq_frame, textvariable=self.seq_len, width=150).grid(row=0, column=1, sticky="w")
+
+        # Generate button
+        (customtkinter.CTkButton(t2_config, text="Generate", command=lambda: self.generate_sequence("t2"))
+         .grid(row=last_row + 1, column=0, columnspan=3, padx=10, pady=(10, 10)))
+
+        # Save button
+        (customtkinter.CTkButton(tabview.tab(tab_names[1]), text="Save Sequence", command=self.save_sequence)
+         .grid(row=1, column=1, padx=(5, 5), pady=(5, 5)))
+
+        '''
+            Designing the third tab (k-mer method)
+        '''
+        tabview.tab(tab_names[2]).grid_columnconfigure(0, weight=1)
+        tabview.tab(tab_names[2]).grid_columnconfigure(1, weight=10)
+        tabview.tab(tab_names[2]).grid_rowconfigure(0, weight=50)
+        tabview.tab(tab_names[2]).grid_rowconfigure(1, weight=1)
+        # Frames
+        t3_config = customtkinter.CTkFrame(tabview.tab(tab_names[2]), corner_radius=10, border_color="#333333",
+                                           border_width=2)
+        t3_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        t3_config.grid_columnconfigure(0, weight=1)
+        t3_config.grid_columnconfigure(1, weight=1)
+        for i in range(6):
+            t3_config.grid_rowconfigure(i, weight=1)
+
+        self.t3_frame = customtkinter.CTkFrame(tabview.tab(tab_names[2]), corner_radius=10, border_color="#333333",
+                                               border_width=2, fg_color="white")
+        self.t3_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        self.t3_frame.grid_columnconfigure(0, weight=1)
+        self.t3_frame.grid_rowconfigure(0, weight=1)
+
+        # ========== STATE ==========
+        self.k = 2
+        self.t3_kmers = generate_kmers(self.k)  # order defines p_input order
+        self.kmer_to_idx = {kmer: i for i, kmer in enumerate(self.t3_kmers)}
+        self.logits = np.zeros(len(self.t3_kmers), dtype=float)  # start all equal
+        self.current_kmer = None
+
+        # Design the configuration frame
+        # k combobox
+        customtkinter.CTkLabel(t3_config, text="k-mer length: ").grid(row=0, column=0, padx=10, pady=(10, 0),
+                                                                      sticky="w")
+        k_mer_combobox = customtkinter.CTkComboBox(t3_config, values=values_list, width=80, variable=self.t1_k_var,
+                                                   command=self.set_kmers_event)
+        k_mer_combobox.set("2")
+        k_mer_combobox.grid(row=0, column=1, padx=(0, 10), pady=(10, 0), sticky="w")
+
+        # sequence length
+        customtkinter.CTkLabel(t3_config, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10,
+                                                                         pady=(10, 0))
+        (customtkinter.CTkEntry(t3_config, textvariable=self.seq_len)
+         .grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
+
+        # k-mer entry + checkmark
+        # frame
+        entry_frame = customtkinter.CTkFrame(t3_config, fg_color="transparent")
+        entry_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=(5, 5), sticky="ew")
+        entry_frame.grid_columnconfigure(0, weight=0)
+        entry_frame.grid_columnconfigure(1, weight=1)
+        entry_frame.grid_columnconfigure(2, weight=0)
+        entry_frame.grid_columnconfigure(3, weight=0)
+        customtkinter.CTkLabel(entry_frame, text="k-mer").grid(row=0, column=0, sticky="w")
+
+        # entry
+        self.kmer_entry = customtkinter.CTkEntry(entry_frame, placeholder_text="e.g., ACAC", width=80)
+        self.kmer_entry.grid(row=1, column=0, sticky="w", pady=(0, 5))
+        self.kmer_entry.bind("<Return>", lambda _e: self._load_kmer_into_slider())
+        # Slider
+        self.t3_slider_var = customtkinter.DoubleVar(value=0.0)
+        self.t3_kmer_slider = customtkinter.CTkSlider(entry_frame, from_=-3.0, to=3.0, variable=self.t3_slider_var)
+        self.t3_kmer_slider.grid(row=1, column=1, sticky="ew", pady=(0, 5))
+        self.t3_kmer_label = customtkinter.CTkLabel(entry_frame, text=f"{self.t3_slider_var.get():.4f}")
+        self.t3_kmer_label.grid(row=1, column=2, sticky="w", pady=(0, 5))
+        self.t3_slider_var.trace_add("write", self.update_t3_kmer_label)
+        self.slider_normal_color = self.t3_kmer_slider.cget("button_color")
+        self.t3_kmer_slider.configure(state="disabled",
+                                      button_color="#888888")  # disable the slider until a k-mer is loaded
+        # Save button
+        self.save_btn = customtkinter.CTkButton(entry_frame, text="✓", width=10, command=self._refresh_summary)
+        self.save_btn.grid(row=1, column=3, sticky="w", padx=(10, 0), pady=(0, 5))
+
+        # summary textbox
+        customtkinter.CTkLabel(t3_config, text="Summary").grid(row=3, column=0, padx=10, pady=(5, 0), sticky="w")
+        self.summary_box = customtkinter.CTkTextbox(t3_config, height=160)
+        self.summary_box.grid(row=4, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
+
+        # buttons
+        btn_frame = customtkinter.CTkFrame(t3_config, fg_color="transparent")
+        btn_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
+        self.reset_btn = customtkinter.CTkButton(btn_frame, text="Reset logits", command=self._reset_logits)
+        self.reset_btn.pack(side="left")
+        self.gen_btn = customtkinter.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t3"))
+        self.gen_btn.pack(side="right")
+
+        # Save button
+        (customtkinter.CTkButton(tabview.tab(tab_names[2]), text="Save Sequence", command=self.save_sequence)
+         .grid(row=1, column=1, padx=(5, 5), pady=(5, 5)))
+
+        # initial summary
+        self._refresh_summary()
+
+    def set_kmers_event(self, *args):
+        try:
+            k = self.t1_k_var.get()
+        except ValueError:
+            messagebox.showerror("Invalid k", "k must be an integer.")
+            return
+        self.t3_kmers = generate_kmers(k)
+        self.kmer_to_idx = {kmer: i for i, kmer in enumerate(self.t3_kmers)}
+        self.logits = np.zeros(len(self.t3_kmers), dtype=float)
+        self.current_kmer = None
+        self.kmer_entry.delete(0, tkinter.END)
+        self.t3_slider_var.set(0.0)
+        self.t3_kmer_slider.configure(state="disabled", button_color="#888888")
+        self._refresh_summary()
+
+    def _load_kmer_into_slider(self, *args):
+        kmer = self.kmer_entry.get().strip().upper()
+        if len(kmer) != self.t1_k_var.get() or any(c not in 'ACGT' for c in kmer):
+            messagebox.showerror("Invalid k-mer",
+                                 f"Please enter a length-{self.t1_k_var.get()} k-mer using only A,C,G,T.")
+            self.t3_kmer_slider.configure(state="disabled", button_color="#888888")
+            self.current_kmer = None
+            self.t3_slider_var.set(0.0)
+            self.t3_kmer_label.configure(text="0.0000")
+            return
+        # if kmer not in self.kmer_to_idx:
+        #     messagebox.showerror("Unknown k-mer", "This k-mer is not in the generated list.")
+        #     self.t3_kmer_slider.configure(state="disabled", button_color="#888888")
+        #     self.current_kmer = None
+        #     self.t3_slider_var.set(0.0)
+        #     self.t3_kmer_label.configure(text="0.0000")
+        #     return
+        self.t3_kmer_slider.configure(state="normal", button_color=self.slider_normal_color)
+        self.current_kmer = kmer
+        idx = self.kmer_to_idx[kmer]
+        self.t3_slider_var.set(float(self.logits[idx]))
+
+    def _softmax(self):
+        x = self.logits - self.logits.max()
+        e = np.exp(x)
+        return e / e.sum()
+
+    def update_t3_kmer_label(self, *args):
+        if self.current_kmer is None:
+            self.t3_kmer_label.configure(text=f"{self.t3_slider_var.get():.4f}")
+            return
+        idx = self.kmer_to_idx[self.current_kmer]
+        self.logits[idx] = float(self.t3_slider_var.get())
+        self.t3_kmer_label.configure(text=f"{self._softmax()[idx]:.4f}")
+
+    def _reset_logits(self, *args):
+        self.logits[:] = 0.0
+        if self.current_kmer:
+            idx = self.kmer_to_idx[self.current_kmer]
+            self.t3_slider_var.set(float(self.logits[idx]))
+        self._refresh_summary()
+
+    def t3_generate_sequence(self, *args):
+        pass
+
+    def _refresh_summary(self):
+        if self.kmer_entry.get().strip().upper() == "":
+            self.t3_kmer_slider.configure(state="disabled", button_color="#888888")
+            self.current_kmer = None
+            self.t3_slider_var.set(0.0)
+            self.t3_kmer_label.configure(text="0.0000")
+        p = self._softmax()
+        # summarize: if all equal
+        if np.allclose(self.logits, self.logits[0]):
+            txt = (f"All {len(self.t3_kmers)} k-mers have equal weight.\n"
+                   f"Each probability = {1.0 / len(self.t3_kmers):.4f}\n")
+        else:
+            # list only k-mers whose logits differ from the median by > 1e-9 (assigned)
+            med = np.median(self.logits)
+            assigned = [(km, p[self.kmer_to_idx[km]]) for km in self.t3_kmers
+                        if abs(self.logits[self.kmer_to_idx[km]] - med) > 1e-9]
+            # keep the list short: show up to 20 explicitly
+            assigned_sorted = sorted(assigned, key=lambda x: -x[1])[:20]
+            others = 1.0 - sum(prob for _, prob in assigned_sorted)
+            n_others = len(self.t3_kmers) - len(assigned_sorted)
+            avg_other = (others / n_others) if n_others > 0 else 0.0
+
+            lines = [f"Assigned k-mers (top {len(assigned_sorted)} shown):"]
+            lines += [f"  {km}: {prob:.4f}" for km, prob in assigned_sorted]
+            if n_others > 0:
+                lines += [f"Others ({n_others}): avg ≈ {avg_other:.4f} (sum ≈ {others:.4f})"]
+            txt = "\n".join(lines)
+
+        self.summary_box.configure(state="normal")
+        self.summary_box.delete("1.0", tkinter.END)
+        self.summary_box.insert("1.0", txt)
+        self.summary_box.configure(state="disabled")
+
+    def update_r_label(self, *args):
+        self.t1_r_value_label.configure(text=f"{self.t1_r_var.get():.2f}")
+
+    def update_all_k_labels(self, *args):
+        # collect logits from all sliders
+        logits = np.array([self.k_var_dict[k].get() for k in self.t2_kmers], dtype=float)
+        # stable softmax
+        logits -= logits.max()
+        exp = np.exp(logits)
+        probs = exp / exp.sum()
+        # update every label
+        for k, p in zip(self.t2_kmers, probs):
+            self.k_value_label_dict[k].configure(text=f"{p:.4f}")
+
+    def generate_sequence(self, frame_num):
+        if frame_num == "t1":
+            plot_frame = self.t1_frame
+            k = self.t1_k_var.get()
+            seq_len = self.seq_len.get()
+            r = self.t1_r_var.get()
+            if k not in [2, 3, 4, 5, 6]:
+                messagebox.showerror("Input Error", "Please select a valid k-mer size (2-6).")
+                return
+            try:
+                seq_len = int(seq_len)
+                if seq_len <= 0:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror("Input Error", "Please enter a valid positive integer for sequence length.")
+                return
+            if not (0.25 <= r <= 1.0):
+                messagebox.showerror("Input Error", "Entropy scaling factor must be between 0.25 and 1.0.")
+                return
+            # # If all inputs are valid, proceed with sequence generation
+            # messagebox.showinfo("Success", f"Generating sequence with k={k}, length={window_size}, r={r:.2f}")
+            # Here you would call your sequence generation function
+            target_entropy = r * (2 * k)
+            sequence, _, p = generate_dna_sequence(k, seq_len, target_entropy=target_entropy)
+        elif frame_num == "t2":
+            plot_frame = self.t2_frame
+            k = 2
+            seq_len = int(self.seq_len.get())
+            # Collect the slider values
+            slider_values = [self.k_var_dict[kmer].get() for kmer in self.t2_kmers]
+            sequence, _, p = generate_dna_sequence(k, seq_len, p_input=slider_values)
+        elif frame_num == "t3":
+            plot_frame = self.t3_frame
+            k = self.t1_k_var.get()
+            seq_len = int(self.seq_len.get())
+            if np.allclose(self.logits, self.logits[0]):
+                p_input = None
+            else:
+                p_input = self._softmax()
+            sequence, _, p = generate_dna_sequence(k, seq_len, p_input=p_input)
+        else:
+            return
+        fcgr = CGR(sequence, k).get_fcgr()
+        # Generate the CGR image and display it
+        fig, (ax1) = plt.subplots(1, 1)
+        extent = 0, 1, 0, 1
+        # Assuming extent = [xmin, xmax, ymin, ymax]
+        xmin, xmax, ymin, ymax = extent
+        offset = 0.01 * (xmax - xmin)  # 1% of the width/height as padding
+
+        ax1.text(xmin - offset, ymax + offset, 'C', fontsize=12, fontweight='bold', ha='right', va='bottom')
+        ax1.text(xmax + offset, ymax + offset, 'G', fontsize=12, fontweight='bold', ha='left', va='bottom')
+        ax1.text(xmin - offset, ymin - offset, 'A', fontsize=12, fontweight='bold', ha='right', va='top')
+        ax1.text(xmax + offset, ymin - offset, 'T', fontsize=12, fontweight='bold', ha='left', va='top')
+
+        display_frame_color = plot_frame.cget("fg_color")
+        fig.patch.set_facecolor(display_frame_color)
+
+        fcgr_image = CGR.array2img(fcgr, bits=8, resolution=2)
+        fcgr_image = Image.fromarray(fcgr_image, 'L')
+        ax1.imshow(fcgr_image, cmap='gray', extent=extent)
+        ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+
+        # Clear the previous figure from the display frame if any
+        for widget in plot_frame.winfo_children():
+            widget.destroy()
+
+        # Create a canvas and add the figure to it
+        canvas = FigureCanvasTkAgg(fig, master=plot_frame)
+        canvas.draw()
+
+        # Set the canvas size explicitly
+        canvas_width = plot_frame.cget("width")
+        canvas_height = plot_frame.cget("height")
+        canvas.get_tk_widget().config(width=canvas_width, height=canvas_height)
+        # Use grid to place the canvas
+        canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
+        plt.close()
+
+    def save_sequence(self):
+        pass
+
+
 if __name__ == "__main__":
-    app = App()
+    app = GenerateSyntheticSequence()
     # # Fix focus issue
     # app.lift()
     # app.attributes('-topmost', True)

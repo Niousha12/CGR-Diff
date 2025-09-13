@@ -8,6 +8,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+Documents
 Data/
 temp*
 .gui_temp_outputs/
