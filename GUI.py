@@ -72,15 +72,6 @@ class App(customtkinter.CTk):
         # self.geometry(f"{2300}x{1500}")
         self.header_font = ('Cambria', 14, 'bold')
 
-        # self.status_label = customtkinter.CTkLabel(
-        #     self,
-        #     text="💡 If buttons are unresponsive, click on the title bar to activate the window, "
-        #          "or use a force click on the buttons (macOS focus issue).",
-        #     text_color="gray",
-        #     font=("Cambria", 12, "italic")
-        # )
-        # self.status_label.place(relx=0.5, rely=0.032, anchor="s")  # Bottom center
-
         # configure grid layout (4x4)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -832,8 +823,6 @@ class App(customtkinter.CTk):
         customtkinter.CTkButton(t4_changing_frame, image=next_im, text="", width=10,
                                 command=partial(self.move_next, "t4", None)).grid(row=0, column=2)
 
-        # Should be the last line of init
-        # self.bind_all("<Button-1>", self._refocus_window)
         self.after_idle(self.bring_to_front)
 
     def bring_to_front(self):
@@ -844,7 +833,23 @@ class App(customtkinter.CTk):
         self.focus_force()
 
     def t3_gen_synth_seq_event(self):
-        pass
+        def _accept_sequence(seq):
+            if len(seq) > 0:
+                self.t3_ds["1"].specie.set("Synthetic")
+                self.t3_ds["1"].invalidate_based_specie()
+                self.t3_ds["1"].seq = seq
+                self.t3_ds["1"].end_seq.set(len(self.t3_ds["1"].seq))
+                self.t3_species_combobox_1.set("Synthetic")
+                self.t3_chr_combobox_1.configure(values=[])
+                self.t3_parts_name_combobox.configure(values=[])
+                self.t3_start_seq_entry.configure(state="normal")
+                self.t3_end_seq_entry.configure(state="normal")
+                self.sync_text_vars(self.t3_ds, "1")
+            else:
+                messagebox.showerror("Error", "No sequence generated.")
+
+        dialog = GenerateSyntheticSequence(self, on_save=_accept_sequence)
+        self.wait_window(dialog)  # blocks until pop-up calls save_sequence() or is closed
 
     def open_popup(self):
         # Slightly larger than half size (e.g., 60%)
@@ -1342,8 +1347,8 @@ class App(customtkinter.CTk):
                 for key, value in self.t1_ds.items():
                     self.t1_ds[key].end_seq.set(self.t1_ds[key].start_seq.get() + int(self.window_s.get()))
 
-        # for key, value in self.t1_ds.items():
-        self.sync_text_vars(self.t1_ds, sender)
+        for key, value in self.t1_ds.items():
+            self.sync_text_vars(self.t1_ds, key)
 
     def t1_plot(self):
         if self.t1_ds["1"].seq == "" or self.t1_ds["2"].seq == "":
@@ -2241,20 +2246,29 @@ class App(customtkinter.CTk):
         self.execution_time = end_time - start_time
 
 
-class GenerateSyntheticSequence(customtkinter.CTk):
-    def __init__(self):
-        super().__init__()
+class GenerateSyntheticSequence(customtkinter.CTkToplevel):
+    def __init__(self, parent, on_save):
+        super().__init__(parent)  # <-- IMPORTANT: Toplevel (not CTk)
+        self.parent = parent
+        self.on_save = on_save  # callback to send sequence back
+        self.generated_sequence = ""
         self.title("Generate Synthetic Sequence")
 
-        screen_width = int(self.winfo_screenwidth() * 0.5)
-        screen_height = int(self.winfo_screenheight() * 0.5)
-        # Center position
-        x = self.winfo_x() + (self.winfo_screenwidth() - screen_width) // 2
-        y = self.winfo_y() + (self.winfo_screenheight() - screen_height) // 2
-        self.geometry(f"{screen_width}x{screen_height}+{x}+{y}")
+        # make it modal & on top of parent
+        self.transient(parent)
+        self.grab_set()
+        self.focus_set()
+
+        # size/center relative to parent (not the screen)
+        parent.update_idletasks()
+        w = int(parent.winfo_width() * 0.5)
+        h = int(parent.winfo_height() * 0.6)
+        x = parent.winfo_rootx() + (parent.winfo_width() - w) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - h) // 2
+        self.geometry(f"{w}x{h}+{x}+{y}")
 
         # We have different tabviews
-        tabview = customtkinter.CTkTabview(self, width=screen_width - 20, height=screen_height - 20)
+        tabview = customtkinter.CTkTabview(self, width=w - 20, height=h - 20)
         tabview.pack(padx=10, pady=10, fill="both", expand=True)
         tab_names = ["Entropy", "2-mers", "k-mers"]
         for name in tab_names:
@@ -2608,6 +2622,7 @@ class GenerateSyntheticSequence(customtkinter.CTk):
             sequence, _, p = generate_dna_sequence(k, seq_len, p_input=p_input)
         else:
             return
+        self.generated_sequence = sequence
         fcgr = CGR(sequence, k).get_fcgr()
         # Generate the CGR image and display it
         fig, (ax1) = plt.subplots(1, 1)
@@ -2646,16 +2661,13 @@ class GenerateSyntheticSequence(customtkinter.CTk):
         plt.close()
 
     def save_sequence(self):
-        pass
+        if hasattr(self, "generated_sequence") and self.on_save:
+            self.on_save(self.generated_sequence)
+        self.destroy()  # close the pop-up
 
 
 if __name__ == "__main__":
-    app = GenerateSyntheticSequence()
-    # # Fix focus issue
-    # app.lift()
-    # app.attributes('-topmost', True)
-    # app.after_idle(app.attributes, '-topmost', False)
-    # app.focus_force()
+    app = App()
     app.mainloop()
 
     # pyinstaller --onefile --windowed --name "MyApp" --add-data "assets:assets" GUI.py
