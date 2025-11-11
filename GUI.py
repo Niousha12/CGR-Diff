@@ -413,6 +413,9 @@ class App(customtkinter.CTk):
 
         # placing the progress bars
         self.cgr_distance_history = None
+        self._t2_progress = 0.0
+        self._t3_progress = 0.0
+        self._t4_progress = 0.0
         self.t2_progress_bar = customtkinter.CTkProgressBar(self.tabview.tab(tab_names[1]))
         self.t2_progress_bar.set(0)
         self.t2_progress_bar.grid(row=0, column=1, padx=(10, 10), pady=(10, 10), sticky="nsew")
@@ -1516,11 +1519,13 @@ class App(customtkinter.CTk):
     def t2_run(self):
         self.cgr_distance_history = []
         step_length = np.floor(len(self.t2_ds["1"].seq) / int(self.t2_window_s.get()))
-        self.t2_progress_bar.set(0)
-        self.t2_pic_num.set(0)
+        # self.t2_progress_bar.set(0)
+        # self.t2_pic_num.set(0)
+        self._t2_progress = 0.0
         for i in range(int(step_length) - 1):
             dictionary = {}
-            self.t2_progress_bar.set((i + 2) / int(step_length))
+            # self.t2_progress_bar.set((i + 2) / int(step_length))
+            self._t2_progress = (i + 2) / float(step_length)
             b1 = i * int(self.t2_window_s.get())
             e1 = (i + 1) * int(self.t2_window_s.get())
             b2 = (i + 1) * int(self.t2_window_s.get())
@@ -1556,9 +1561,13 @@ class App(customtkinter.CTk):
                 pickle.dump(dictionary, f)
 
     def t2_check_thread(self):
+        self.t2_progress_bar.set(self._t2_progress)
+
         if foo_thread.is_alive():
             self.after(20, self.t2_check_thread)
         else:
+            self.t2_progress_bar.set(1.0)
+            self.t2_pic_num.set(0)
             self.t2_scale.configure(to=int(len(self.cgr_distance_history) - 1))  # Update the scale range
             self._change_images(0, "t2", None)
 
@@ -1855,9 +1864,12 @@ class App(customtkinter.CTk):
         self.after(20, self.t3_check_thread)
 
     def t3_check_thread(self):
+        self.t3_progress_bar.set(self._t3_progress)
         if foo_thread_2.is_alive():
             self.after(20, self.t3_check_thread)
         else:
+            self.t3_progress_bar.set(1.0)
+            self.t3_pic_num.set(0)
             self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
 
             # Display the reference image
@@ -1911,21 +1923,24 @@ class App(customtkinter.CTk):
     def t3_run(self):
         self.t3_cgr_distance_history = []
         t3_step_length = np.floor(len(self.t3_ds["2"].seq) / int(self.t3_window_s.get()))
-        self.t3_progress_bar.set(0)
-        self.t3_pic_num.set(0)
+        # self.t3_progress_bar.set(0)
+        # self.t3_pic_num.set(0)
+        self._t3_progress = 0.0
 
         ref_b = int(self.t3_ds["1"].start_seq.get())
         ref_e = int(self.t3_ds["1"].end_seq.get())
         ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
 
-        self.t3_progress_bar.set(1 / (int(t3_step_length) + 2))  # start progress bar
+        # self.t3_progress_bar.set(1 / (int(t3_step_length) + 2))  # start progress bar
+        self._t3_progress = 1.0 / (int(t3_step_length) + 2)
 
         if self.fcgr.get() == 1:
             im1 = ref_cgr.get_fcgr()
         else:
             im1 = ref_cgr.get_cgr()
 
-        self.t3_progress_bar.set(2 / (int(t3_step_length) + 2))  # update progress bar
+        # self.t3_progress_bar.set(2 / (int(t3_step_length) + 2))  # update progress bar
+        self._t3_progress = 2.0 / (int(t3_step_length) + 2)
 
         ref_dict = {"(f)cgr": im1, "species": self.t3_ds["1"].specie.get(),
                     "chr_len": len(self.t3_ds["1"].seq)}
@@ -1938,7 +1953,8 @@ class App(customtkinter.CTk):
 
         # the sliding sequence
         for i in range(int(t3_step_length)):
-            self.t3_progress_bar.set((i + 3) / (int(t3_step_length) + 2))
+            # self.t3_progress_bar.set((i + 3) / (int(t3_step_length) + 2))
+            self._t3_progress = (i + 3) / (int(t3_step_length) + 2)
             b2 = i * int(self.t3_window_s.get())
             e2 = (i + 1) * int(self.t3_window_s.get())
 
@@ -2024,9 +2040,12 @@ class App(customtkinter.CTk):
         self.after(20, self.t4_check_thread)
 
     def t4_check_thread(self):
+        self.t4_progress_bar.set(self._t4_progress)
         if foo_thread_3.is_alive():
             self.after(20, self.t4_check_thread)
         else:
+            self.t4_progress_bar.set(1.0)
+            self.t4_pic_num.set(0)
             self.t4_scale.configure(to=int(len(self.t4_cgr_distance_history) - 1))  # Update the scale range
 
             # Display the reference image
@@ -2082,7 +2101,7 @@ class App(customtkinter.CTk):
 
     def t4_run(self):
         start_time = time.time()
-        self.t4_pic_num.set(0)
+        # self.t4_pic_num.set(0)
 
         t4_step_length = np.floor(len(self.t4_ds["1"].seq) / int(self.t4_window_s.get()))
         arssp_max_retry = 50
@@ -2092,7 +2111,7 @@ class App(customtkinter.CTk):
             t4_step_length_all = t4_step_length + int(t4_step_length * (t4_step_length + 1) / 2) + t4_step_length
         else:
             t4_step_length_all = t4_step_length + t4_step_length
-        self.t4_progress_bar.set(0)
+        # self.t4_progress_bar.set(0)
         progress = 0
 
         path = f"{self.temp_output_path}/representative/pickle"
@@ -2104,7 +2123,8 @@ class App(customtkinter.CTk):
         information_list = []
         for i in range(int(t4_step_length)):
             progress += 1
-            self.t4_progress_bar.set(progress / int(t4_step_length_all))
+            # self.t4_progress_bar.set(progress / int(t4_step_length_all))
+            self._t4_progress = progress / float(t4_step_length_all)
 
             b1 = i * int(self.t4_window_s.get())
             e1 = (i + 1) * int(self.t4_window_s.get())
@@ -2134,7 +2154,8 @@ class App(customtkinter.CTk):
             avgs = None
             while len(random_sequences_list) < random_sequences_number and retry_count < arssp_max_retry:
                 progress += 1
-                self.t4_progress_bar.set(progress / int(t4_step_length_all))
+                # self.t4_progress_bar.set(progress / int(t4_step_length_all))
+                self._t4_progress = progress / float(t4_step_length_all)
 
                 retry_count += 1
                 for _ in range(random_sequences_number - len(random_sequences_list)):
@@ -2205,7 +2226,8 @@ class App(customtkinter.CTk):
             for i in range(distance_matrix.shape[0]):
                 for j in range(i + 1):
                     progress += 1
-                    self.t4_progress_bar.set(progress / int(t4_step_length_all))
+                    # self.t4_progress_bar.set(progress / int(t4_step_length_all))
+                    self._t4_progress = progress / float(t4_step_length_all)
 
                     distance_matrix[i, j] = get_dist(fcgrs_list[i], fcgrs_list[j], dist_m=self.dist_metric.get())
                     distance_matrix[j, i] = distance_matrix[i, j]
@@ -2224,7 +2246,8 @@ class App(customtkinter.CTk):
         self.t4_cgr_distance_history = []
         for i in range(len(fcgrs_list)):
             progress += 1
-            self.t4_progress_bar.set(progress / int(t4_step_length_all))
+            # self.t4_progress_bar.set(progress / int(t4_step_length_all))
+            self._t4_progress = progress / float(t4_step_length_all)
 
             diff = fcgrs_list[i] - centroid_fcgr
             dist = get_dist(centroid_fcgr, fcgrs_list[i], dist_m=self.dist_metric.get())
@@ -2238,8 +2261,8 @@ class App(customtkinter.CTk):
             with open(f"{path}/{i}.pkl", 'wb') as f:
                 pickle.dump(dictionary, f)
 
-        # complete progress bar
-        self.t4_progress_bar.set(1.0)
+        # # complete progress bar
+        # self.t4_progress_bar.set(1.0)
 
         # get the execution time
         end_time = time.time()
