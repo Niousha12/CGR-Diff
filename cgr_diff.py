@@ -5,6 +5,10 @@ matplotlib.use("TkAgg")
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
+import tkinter as tk
+from tkinter import filedialog
+import os
+
 # -------------------- FONTS --------------------
 # FONT_LG = ("Cambria", 16, "bold")
 # FONT_MD = ("Cambria", 13, "bold")
@@ -54,7 +58,6 @@ class CGRApp(ctk.CTk):
         self.colors = ThemeManager.get_colors()
 
         self.tab_names = ["CGR Analysis", "CGR Comparator", "Common Reference", "Multispecies Comparator"]
-        # active tab
         self.active_tab = self.tab_names[0]
 
         self.title("CGR Diff")
@@ -66,7 +69,31 @@ class CGRApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
+        # ----------------------- placeholder for dynamic content -----------------------
+
+        self.uploaded_files = []  # list of uploaded fasta files (full paths)
+        self.file_cards = []  # list of card widgets corresponding to uploaded files
+
+        self.uploaded_seq_lists_frame = None  # frame that holds the uploaded file entries
+        self.selected_file_index = None  # index of currently selected file in self.uploaded_files (or None)
+
+        # ----------------------- Build UI -----------------------
         self._build_top_nav()
+        self._build_main_content()
+
+    # --------------------------------------------------
+    # UI REFRESH (used by theme toggle, tab switch, upload)
+    # --------------------------------------------------
+    def _refresh_ui(self, full_rebuild: bool = False):
+        self.colors = ThemeManager.get_colors()
+        self.configure(fg_color=self.colors["BG_MAIN"])
+
+        if full_rebuild:
+            for widget in self.winfo_children():
+                widget.destroy()
+            self._build_top_nav()
+        else:
+            self.winfo_children()[1].destroy()
         self._build_main_content()
 
     # --------------------------------------------------
@@ -107,19 +134,9 @@ class CGRApp(ctk.CTk):
     # THEME TOGGLE
     # --------------------------------------------------
     def _toggle_theme(self):
-        # flip mode
         ThemeManager.mode = "light" if ThemeManager.mode == "dark" else "dark"
-
-        # apply to CTk & colors
         ctk.set_appearance_mode(ThemeManager.mode)
-        self.colors = ThemeManager.get_colors()
-        self.configure(fg_color=self.colors["BG_MAIN"])
-
-        # rebuild UI
-        for widget in self.winfo_children():
-            widget.destroy()
-        self._build_top_nav()
-        self._build_main_content()
+        self._refresh_ui()
 
     # --------------------------------------------------
     # TAB SWITCH
@@ -128,11 +145,7 @@ class CGRApp(ctk.CTk):
         if tab_key == self.active_tab:
             return
         self.active_tab = tab_key
-
-        for widget in self.winfo_children():
-            widget.destroy()
-        self._build_top_nav()
-        self._build_main_content()
+        self._refresh_ui()
 
     # --------------------------------------------------
     # MAIN CONTENT
@@ -141,16 +154,12 @@ class CGRApp(ctk.CTk):
         main = ctk.CTkFrame(self, fg_color=self.colors["BG_MAIN"], corner_radius=0)
         main.grid(row=1, column=0, sticky="nsew")
 
-        # CGR Analysis has the full layout; other tabs are empty
         if self.active_tab == "CGR Analysis":
             main.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
             main.grid_columnconfigure(1, weight=1)  # right panel
             main.grid_rowconfigure(0, weight=1)
 
             self._build_cgr_analysis(main)
-
-            # self._build_cgr_analysis_left_panel(main)
-            # self._build_cgr_analysis_right_panel(main)
         else:
             main.grid_columnconfigure(0, weight=1)
             main.grid_rowconfigure(0, weight=1)
@@ -172,7 +181,8 @@ class CGRApp(ctk.CTk):
                             border_color=self.colors["BORDER"], corner_radius=10, )
         left.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
         left.grid_columnconfigure(0, weight=1)
-        left.grid_rowconfigure(1, weight=1)
+        left.grid_rowconfigure(1, weight=1)  # row 1 is list_frame
+        left.grid_propagate(False)
 
         # top buttons
         top_btn_frame = ctk.CTkFrame(left, fg_color="transparent")
@@ -184,7 +194,8 @@ class CGRApp(ctk.CTk):
         search_btn.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
 
         upload_btn = ctk.CTkButton(top_btn_frame, text="Upload", fg_color=self.colors["BUTTON_HL"],
-                                   corner_radius=8, height=35, font=FONT_SM, text_color="white", )
+                                   corner_radius=8, height=35, font=FONT_SM, text_color="white",
+                                   command=self._upload_files)
         upload_btn.grid(row=1, column=0, sticky="ew")
 
         generate_btn = ctk.CTkButton(top_btn_frame, text="Generate", fg_color=self.colors["BUTTON_HL"],
@@ -196,36 +207,41 @@ class CGRApp(ctk.CTk):
                                   border_color=self.colors["BORDER"], )
         list_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
         list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(1, weight=1)
 
-        label = ctk.CTkLabel(list_frame, text="List of available Sequences:", font=FONT_SM,
+        label = ctk.CTkLabel(list_frame, text="List of available sequences:", font=FONT_SM,
                              text_color=self.colors["TEXT_MAIN"], anchor="w", )
         label.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 5))
 
-        # genome_card = ctk.CTkFrame(
-        #     list_frame,
-        #     fg_color=self.colors["BG_MAIN"],
-        #     corner_radius=6,
-        # )
-        # genome_card.grid(row=1, column=0, padx=10, pady=(4, 10), sticky="ew")
-        # genome_card.grid_columnconfigure(0, weight=1)
-        #
-        # genome_name = ctk.CTkLabel(
-        #     genome_card,
-        #     text="CP068277.2",
-        #     font=FONT_SM,
-        #     text_color=self.colors["TEXT_MAIN"],
-        #     anchor="w",
-        # )
-        # genome_name.grid(row=0, column=0, padx=10, pady=(6, 0), sticky="ew")
-        #
-        # genome_len = ctk.CTkLabel(
-        #     genome_card,
-        #     text="248,387,328 bp",
-        #     font=("Helvetica", 10),
-        #     text_color=self.colors["TEXT_MUTED"],
-        #     anchor="w",
-        # )
-        # genome_len.grid(row=1, column=0, padx=10, pady=(0, 6), sticky="ew")
+        # ---------- SCROLLABLE REGION (both directions) ----------
+        scroll_container = ctk.CTkFrame(list_frame, fg_color=self.colors["CARD"])
+        scroll_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=(0, 5))
+        scroll_container.grid_columnconfigure(0, weight=1)
+        scroll_container.grid_rowconfigure(0, weight=1)
+
+        # plain Tk Canvas for scrolling
+        canvas = tk.Canvas(scroll_container, background=self.colors["BG_MAIN"], highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky="nsew")
+
+        # vertical scrollbar
+        v_scroll = ctk.CTkScrollbar(scroll_container, orientation="vertical", command=canvas.yview, )
+        v_scroll.grid(row=0, column=1, sticky="ns", padx=(4, 0))
+        # horizontal scrollbar
+        h_scroll = ctk.CTkScrollbar(scroll_container, orientation="horizontal", command=canvas.xview, )
+        h_scroll.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
+
+        # inner frame that actually holds the file entries
+        self.uploaded_seq_lists_frame = ctk.CTkFrame(canvas, fg_color=self.colors["BG_MAIN"])
+        canvas.create_window((0, 0), window=self.uploaded_seq_lists_frame, anchor="nw")
+
+        def _on_inner_configure(event):
+            # update scroll region to fit inner frame (both width and height)
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        self.uploaded_seq_lists_frame.bind("<Configure>", _on_inner_configure)
+
+        self._refresh_uploaded_file_list()
 
         # bottom buttons
         bottom_btn_frame = ctk.CTkFrame(left, fg_color="transparent")
@@ -233,25 +249,55 @@ class CGRApp(ctk.CTk):
         bottom_btn_frame.grid_columnconfigure((0, 1), weight=1)
 
         remove_btn = ctk.CTkButton(bottom_btn_frame, text="Remove", fg_color=self.colors["BUTTON_HL"],
-                                   corner_radius=8, height=35, font=FONT_SM, text_color="white", )
+                                   corner_radius=8, height=35, font=FONT_SM, text_color="white",
+                                   command=self._remove_selected_file, )
         remove_btn.grid(row=1, column=0, sticky="ew")
 
         run_btn = ctk.CTkButton(bottom_btn_frame, text="Run Analysis", fg_color=self.colors["BUTTON_HL"],
-                                corner_radius=8, height=35, font=FONT_SM, text_color="white", )
+                                corner_radius=8, height=35, font=FONT_SM, text_color="white",
+                                command=self._run_analysis_selected_file, )
         run_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
 
-    # # --------------------------------------------------
-    # # RIGHT PANEL (only for CGR Analysis)
-    # # --------------------------------------------------
-    # def _build_right_panel(self, parent):
-    #     right = ctk.CTkFrame(
-    #         parent,
-    #         fg_color="transparent",
-    #     )
-    #     right.grid(row=0, column=1, padx=(0, 10), pady=10, sticky="nsew")
-    #     right.grid_rowconfigure(0, weight=3)
-    #     right.grid_rowconfigure(1, weight=1)
-    #     right.grid_columnconfigure(0, weight=1)
+    # --------------------------------------------------
+    # UPLOAD HANDLER
+    # --------------------------------------------------
+    def _upload_files(self):
+        file_paths = filedialog.askopenfilenames(
+            title="Select FASTA files",
+            filetypes=[("FASTA files", "*.fa *.fasta *.fna *.ffn *.faa *.frn"), ("All files", "*.*"), ], )
+        if not file_paths:
+            return  # user cancelled
+
+        # You can avoid duplicates
+        for p in file_paths:
+            if p not in self.uploaded_files:
+                self.uploaded_files.append(p)
+
+        self._refresh_uploaded_file_list()
+
+    def _refresh_uploaded_file_list(self):
+        for widget in self.uploaded_seq_lists_frame.winfo_children():
+            widget.destroy()
+
+        if not self.uploaded_files:
+            no_file_label = tk.Label(self.uploaded_seq_lists_frame, text="No files uploaded yet.",
+                                     bg=self.colors["BG_MAIN"], fg=self.colors["TEXT_MUTED"])
+            no_file_label.grid(row=0, column=0, padx=5, pady=5)
+            return
+
+        for i, path in enumerate(self.uploaded_files):
+            fname = os.path.basename(path)
+
+            # card for each file (plain tk.Frame to keep geometry simple)
+            card = ctk.CTkFrame(self.uploaded_seq_lists_frame, fg_color=self.colors["BG_MAIN"], )
+            # note: sticky="w" so width is natural; long text extends horizontally
+            card.grid(row=i, column=0, padx=5, pady=5, sticky="w")
+
+            name_label = tk.Label(card, text=fname, bg=self.colors["BG_MAIN"], fg=self.colors["TEXT_MAIN"], anchor="w")
+            name_label.grid(row=0, column=0, padx=0, pady=(2, 0), sticky="w")
+
+            path_label = tk.Label(card, text=path, bg=self.colors["BG_MAIN"], fg=self.colors["TEXT_MUTED"], anchor="w")
+            path_label.grid(row=1, column=0, padx=0, pady=(0, 2), sticky="w")
 
 
 # -------------------- RUN APP --------------------
