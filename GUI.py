@@ -79,330 +79,165 @@ class App(customtkinter.CTk):
         # create tabview
         self.tabview = customtkinter.CTkTabview(self)
         self.tabview.grid(padx=(20, 20), pady=(20, 20), sticky="nsew")
-        tab_names = ["CGR Comparator", "Consecutive Segments", "Common Reference", "Representative"]
+        tab_names = ["CGR Analysis", "CGR Comparator", "Common Reference", "Multispecies Comparator"]
         for tab_name in tab_names:
             self.tabview.add(tab_name)
+        # start from tab 1
+        self.tabview.set(tab_names[1])
 
-        '''
-            First Page (CGR Comparator tab)
-            Configuring 
-        '''
-        self.tabview.tab(tab_names[0]).grid_columnconfigure(0, weight=1)
-        self.tabview.tab(tab_names[0]).grid_columnconfigure(1, weight=10)
-        self.tabview.tab(tab_names[0]).grid_rowconfigure(0, weight=1)
-        self.tabview.tab(tab_names[0]).grid_rowconfigure(1, weight=4)
+        # ------- images --------
+        prev_im = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/back_arrow.png"), size=(20, 20))
+        next_im = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/next_arrow.png"), size=(20, 20))
+        search_im = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/search.png"), size=(12, 12))
+        upload_im = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/upload-sign.png"), size=(12, 12))
 
-        # Frames
-        t1_config_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[0]), corner_radius=20,
-                                                 border_color="#333333", border_width=2)
-        t1_config_frame.grid(row=0, column=0, rowspan=2, sticky="ns")
-        t1_slider_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[0]), corner_radius=20,
-                                                 border_color="#333333", border_width=2)
-        t1_slider_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        self.t1_display_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[0]), corner_radius=20,
-                                                       fg_color="#707370")  # , width=600, height=200)
-        self.t1_display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        # ------- variables --------
+        values_list = ["2", "3", "4", "5", "6", "7", "8", "9"]
+        PLOT_TYPE_LIST = ["Bar plot", "Histogram plot"]
+        species_list = [str(f) for f in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, f))]
 
-        # Designing the config frame (F1)
-        for row in range(10):  # Increased row count to account for empty rows
-            t1_config_frame.grid_rowconfigure(row, weight=1)
+        # common variables
+        self.k_var = customtkinter.IntVar()
+        self.dist_metric = customtkinter.StringVar()
+        appearance = customtkinter.StringVar(value="Dark")
+        self.plot_type_var = customtkinter.StringVar()
 
-        # Search button some variables
+        # NCBI variables
         self.download_path = customtkinter.StringVar(value=str(self.resource_path("Data")))
         self.email_var = customtkinter.StringVar(value="")
         self.checkbox_frame = None
         self.id_map = {}
         self.checkbox_vars = {}  # dict to store which boxes are selected
+
+        '''
+            Second Page (CGR Comparator tab)
+            Configuring 
+        '''
+        self.tabview.tab(tab_names[1]).grid_columnconfigure(0, weight=1)
+        self.tabview.tab(tab_names[1]).grid_columnconfigure(1, weight=10)
+        self.tabview.tab(tab_names[1]).grid_rowconfigure(0, weight=1)
+        self.tabview.tab(tab_names[1]).grid_rowconfigure(1, weight=4)
+
+        # Frames
+        t2_config_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20,
+                                                 border_color="#333333", border_width=2)
+        t2_config_frame.grid(row=0, column=0, rowspan=2, sticky="ns")
+        t2_slider_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20,
+                                                 border_color="#333333", border_width=2)
+        t2_slider_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        self.t2_display_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20,
+                                                       fg_color="#707370")  # , width=600, height=200)
+        self.t2_display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+
+        # Designing the config frame (F1)
+        for row in range(10):  # Increased row count to account for empty rows
+            t2_config_frame.grid_rowconfigure(row, weight=1)
+
         # Search button
-        search_image = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/search.png"), size=(12, 12))
-        search_button = customtkinter.CTkButton(t1_config_frame, image=search_image, width=180, height=25,
-                                                text="Search and Download Genomes", command=self.open_popup)
-        search_button.grid(row=0, columnspan=2, pady=(5, 0))
+        customtkinter.CTkButton(t2_config_frame, image=search_im, width=180, height=25, command=self.open_popup,
+                                text="Search and Download Genomes").grid(row=0, columnspan=2, pady=(5, 0))
         # Creating frames for chromosome 1 and chromosome 2
-        t1_chr_frame = customtkinter.CTkFrame(t1_config_frame, corner_radius=20)
-        t1_chr_frame.grid(row=1, columnspan=2, padx=5, pady=(5, 5), sticky="ew")
+        t2_chr_frame = customtkinter.CTkFrame(t2_config_frame, corner_radius=20)
+        t2_chr_frame.grid(row=1, columnspan=2, padx=5, pady=(5, 5), sticky="ew")
 
         # Chromosomes Widget
         # get all the folders name in DATA path
-        species_list = [str(f) for f in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, f))]
-        # species_list = list(SCIENTIFIC_NAME.values())
-        self.t1_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        self.t1_species_combobox = {}
-        self.t1_chr_combobox = {}
-        upload_image = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/upload-sign.png"),
-                                              size=(12, 12))
+        self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
+        self.t2_species_combobox = {}
+        self.t2_chr_combobox = {}
         for i in range(2):
-            customtkinter.CTkLabel(t1_chr_frame, text=f"Genome {i + 1}: ", font=self.header_font) \
+            customtkinter.CTkLabel(t2_chr_frame, text=f"Genome {i + 1}: ", font=self.header_font) \
                 .grid(row=i * 3, column=0, sticky="w", padx=10, pady=(5, 0))
 
             # upload button
-            customtkinter.CTkButton(t1_chr_frame, image=upload_image, text="", width=15, height=10,
+            customtkinter.CTkButton(t2_chr_frame, image=upload_im, text="", width=15, height=10,
                                     command=partial(self.t1_upload_event, f"{str(i + 1)}", None)) \
                 .grid(row=i * 3, column=1, sticky="w", padx=10, pady=(5, 0))
 
-            customtkinter.CTkLabel(t1_chr_frame, text="Species: ", font=self.header_font) \
+            customtkinter.CTkLabel(t2_chr_frame, text="Species: ", font=self.header_font) \
                 .grid(row=(i * 3) + 1, column=0, sticky="w", padx=10)
-            customtkinter.CTkLabel(t1_chr_frame, text="Chromosome name: ", font=self.header_font) \
+            customtkinter.CTkLabel(t2_chr_frame, text="Chromosome name: ", font=self.header_font) \
                 .grid(row=(i * 3) + 1, column=1, sticky="w", padx=10)
-            self.t1_species_combobox[f"{i + 1}"] = customtkinter.CTkComboBox(t1_chr_frame, values=species_list,
+            self.t2_species_combobox[f"{i + 1}"] = customtkinter.CTkComboBox(t2_chr_frame, values=species_list,
                                                                              width=100,
                                                                              command=partial(self.specie_change_event,
                                                                                              f"{i + 1}"))
 
-            self.t1_species_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=0, sticky="w", padx=10, pady=(0, 12))
-            self.t1_species_combobox[f"{i + 1}"].set("")
+            self.t2_species_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=0, sticky="w", padx=10, pady=(0, 12))
+            self.t2_species_combobox[f"{i + 1}"].set("")
 
-            self.t1_chr_combobox[f"{i + 1}"] = customtkinter.CTkComboBox(t1_chr_frame, values=[],
-                                                                         variable=self.t1_ds[str(i + 1)].chromosome,
+            self.t2_chr_combobox[f"{i + 1}"] = customtkinter.CTkComboBox(t2_chr_frame, values=[],
+                                                                         variable=self.t2_ds[str(i + 1)].chromosome,
                                                                          width=100,
                                                                          command=partial(self.chromosome_change_event,
                                                                                          f"{i + 1}"))
-            self.t1_chr_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=1, sticky="w", padx=10, pady=(0, 12))
-            self.t1_chr_combobox[f"{i + 1}"].set("")
+            self.t2_chr_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=1, sticky="w", padx=10, pady=(0, 12))
+            self.t2_chr_combobox[f"{i + 1}"].set("")
 
         # Radio Button (Window size)
         # Frame for window size settings
-        config_frame_color = t1_config_frame.cget("fg_color")
-        t1_window_size_frame = customtkinter.CTkFrame(t1_config_frame, fg_color=config_frame_color)
-        t1_window_size_frame.grid(row=2, columnspan=2, padx=10, pady=5, sticky="w")
+        t2_config_frame_color = t2_config_frame.cget("fg_color")
+        t2_window_size_frame = customtkinter.CTkFrame(t2_config_frame, fg_color=t2_config_frame_color)
+        t2_window_size_frame.grid(row=2, columnspan=2, padx=10, pady=5, sticky="w")
 
-        customtkinter.CTkLabel(t1_window_size_frame, text="Segment Size:", font=self.header_font) \
+        customtkinter.CTkLabel(t2_window_size_frame, text="Segment Size:", font=self.header_font) \
             .grid(row=0, column=0, padx=10)
         self.window_s_toggle = tkinter.IntVar(value=0)
-        t1_window_s_1 = customtkinter.CTkRadioButton(t1_window_size_frame, text="Variable",
+        t2_window_s_1 = customtkinter.CTkRadioButton(t2_window_size_frame, text="Variable",
                                                      variable=self.window_s_toggle,
                                                      value=0, command=self.window_size_toggle_event)
-        t1_window_s_1.grid(row=1, column=0, padx=10, pady=5)
-        t1_window_s_2 = customtkinter.CTkRadioButton(t1_window_size_frame, text="Fix",
+        t2_window_s_1.grid(row=1, column=0, padx=10, pady=5)
+        t2_window_s_2 = customtkinter.CTkRadioButton(t2_window_size_frame, text="Fix",
                                                      variable=self.window_s_toggle,
                                                      value=1, command=self.window_size_toggle_event)
-        t1_window_s_2.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+        t2_window_s_2.grid(row=1, column=1, padx=10, pady=5, sticky="w")
         self.window_s = tkinter.StringVar(value="")
-        self.window_entry = customtkinter.CTkEntry(t1_window_size_frame, textvariable=self.window_s)
+        self.window_entry = customtkinter.CTkEntry(t2_window_size_frame, textvariable=self.window_s)
         self.window_entry.bind('<FocusOut>', partial(self.sequence_value_change, "0"))
         self.window_entry.bind('<Key-Return>', partial(self.sequence_value_change, "0"))
         self.window_entry.configure(state="disable")
         self.window_entry.grid(row=2, columnspan=2, padx=(10, 10), pady=(10, 10), sticky="ew")
 
         # k_mer combo box
-        self.k_var = customtkinter.IntVar()
-        customtkinter.CTkLabel(t1_config_frame, text="k-mer: ", font=self.header_font) \
-            .grid(row=3, column=0, padx=10, pady=(10, 10))
-        values_list = ["2", "3", "4", "5", "6", "7", "8", "9"]
-        k_mer_combobox = customtkinter.CTkComboBox(t1_config_frame, values=values_list, width=100,
-                                                   state="normal", variable=self.k_var)
-        k_mer_combobox.grid(row=3, column=1, sticky="w", pady=(10, 10))
-
-        # reverse complement and random
-        t1_seq_rv = customtkinter.CTkFrame(t1_config_frame, fg_color=config_frame_color)
-        t1_seq_rv.grid(row=4, columnspan=2, padx=10, pady=5, sticky="ew")
-
-        self.checkbox_RC = {}
-        self.checkbox_Random = {}
-        for i in range(2):
-            seq_label = customtkinter.CTkLabel(t1_seq_rv, text=f'Sequence {i + 1} :', font=self.header_font)
-            seq_label.grid(row=(i * 2), column=0, padx=10, pady=(5, 0), sticky="w")
-
-            self.checkbox_RC[str(i + 1)] = customtkinter.CTkCheckBox(master=t1_seq_rv, text="Reverse Complement")
-            self.checkbox_RC[str(i + 1)].grid(row=(i * 2), column=1, padx=10, pady=5, sticky="w")
-            self.checkbox_Random[str(i + 1)] = customtkinter.CTkCheckBox(master=t1_seq_rv, text="Shuffle")
-            self.checkbox_Random[str(i + 1)].grid(row=(i * 2) + 1, column=1, padx=10, pady=5, sticky="w")
-
-        # Distance metrics
-        self.dist_metric = customtkinter.StringVar()
-        customtkinter.CTkLabel(t1_config_frame, text="Distance Measure: ", font=self.header_font) \
-            .grid(row=6, column=0, padx=10, pady=(10, 10))
-        dist_metric_combobox = customtkinter.CTkComboBox(t1_config_frame, values=DISTANCE_METRICS_LIST,
-                                                         width=120, variable=self.dist_metric)
-        dist_metric_combobox.grid(row=6, column=1, sticky="w", padx=10, pady=(10, 10))
-        dist_metric_combobox.set("")
-
-        # cgr/fcgr option
-        self.fcgr = customtkinter.IntVar(value=1)
-        switch = customtkinter.CTkSwitch(t1_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        switch.grid(row=7, columnspan=2, pady=(10, 10))
-
-        # plot button
-        self.t1_display_frame.grid_rowconfigure(0, weight=1)
-        self.t1_display_frame.grid_columnconfigure(0, weight=1)
-        t1_plot_button = customtkinter.CTkButton(t1_config_frame, text="Plot", width=120, command=self.t1_plot)
-        t1_plot_button.grid(row=8, columnspan=2, pady=(10, 5))
-
-        # Appearance mode
-        appearance = customtkinter.StringVar(value="Dark")
-        customtkinter.CTkLabel(t1_config_frame, text="Theme: ", font=self.header_font) \
-            .grid(row=9, column=0, padx=10, pady=(20, 10))
-        appearance_mode = customtkinter.CTkOptionMenu(t1_config_frame, values=["Dark", "Light"], width=100,
-                                                      variable=appearance, command=self.change_appearance_mode_event)
-        appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
-
-        # First Sequence scale
-        _pad_size = (20, 0)
-        self.t1_parts_name_combobox = {}
-        self.start_seq_scale = {}
-        self.end_seq_scale = {}
-        self.t1_start_seq_entry = {}
-        self.t1_end_seq_entry = {}
-        for i in range(2):
-            customtkinter.CTkLabel(t1_slider_frame, text=f'Sequence {i + 1} :', font=self.header_font) \
-                .grid(row=(i * 2), column=0, padx=10, pady=_pad_size)
-
-            # Sequence part names combo box
-            self.t1_parts_name_combobox[str(i + 1)] = \
-                customtkinter.CTkComboBox(t1_slider_frame, width=100, values=[],
-                                          command=partial(self.annotation_change_event, str(i + 1)),
-                                          variable=self.t1_ds[str(i + 1)].annotation, state="disable")
-            self.t1_parts_name_combobox[str(i + 1)].grid(row=(i * 2) + 1, column=0, padx=10, pady=_pad_size)
-
-            customtkinter.CTkLabel(t1_slider_frame, text='Start').grid(row=(i * 2), column=1, padx=5, pady=_pad_size)
-            customtkinter.CTkLabel(t1_slider_frame, text='End').grid(row=(i * 2) + 1, column=1, padx=5, pady=_pad_size)
-
-            seq_length = len(self.t1_ds[str(i + 1)].seq)
-            to_value = seq_length if seq_length > 0 else 1
-
-            self.start_seq_scale[str(i + 1)] = customtkinter.CTkSlider(t1_slider_frame, from_=0, to=to_value,
-                                                                       orientation="horizontal", width=700,
-                                                                       variable=self.t1_ds[str(i + 1)].start_seq,
-                                                                       command=partial(self.sequence_value_change,
-                                                                                       str(i + 1)))
-            self.start_seq_scale[str(i + 1)].set(0)
-            self.scale_normal_color = self.start_seq_scale[str(i + 1)].cget("button_color")
-            self.start_seq_scale[str(i + 1)].configure(state="disabled", button_color="#888888")
-            self.start_seq_scale[str(i + 1)].grid(row=(i * 2), column=2, pady=_pad_size)
-
-            self.t1_start_seq_entry[str(i + 1)] = customtkinter.CTkEntry(t1_slider_frame,
-                                                                         textvariable=self.t1_ds[str(i + 1)].start_txt)
-            self.t1_start_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.sequence_value_change, "3"))
-            self.t1_start_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.sequence_value_change, "3"))
-            self.t1_start_seq_entry[str(i + 1)].grid(row=(i * 2), column=3, padx=5, pady=_pad_size)
-            seq_s_e_label = customtkinter.CTkLabel(t1_slider_frame, text='bp')
-            seq_s_e_label.grid(row=(i * 2), column=4, pady=_pad_size)
-
-            end_seq_length = self.t1_ds[str(i + 1)].end_seq.get()
-            to_value = end_seq_length if end_seq_length > 0 else 1
-
-            self.end_seq_scale[str(i + 1)] = customtkinter.CTkSlider(t1_slider_frame, from_=0, to=to_value,
-                                                                     orientation="horizontal", width=700,
-                                                                     variable=self.t1_ds[str(i + 1)].end_seq,
-                                                                     command=partial(self.sequence_value_change,
-                                                                                     str(i + 1)))
-            self.end_seq_scale[str(i + 1)].set(0)
-            self.end_seq_scale[str(i + 1)].configure(state="disabled", button_color="#888888")
-            self.end_seq_scale[str(i + 1)].grid(row=(i * 2) + 1, column=2, pady=_pad_size)
-
-            self.t1_end_seq_entry[str(i + 1)] = customtkinter.CTkEntry(t1_slider_frame,
-                                                                       textvariable=self.t1_ds[str(i + 1)].end_txt)
-            self.t1_end_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.sequence_value_change, "3"))
-            self.t1_end_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.sequence_value_change, "3"))
-            self.t1_end_seq_entry[str(i + 1)].grid(row=(i * 2) + 1, column=3, padx=5, pady=_pad_size)
-            seq_s_e_label_d = customtkinter.CTkLabel(t1_slider_frame, text='bp')
-            seq_s_e_label_d.grid(row=(i * 2) + 1, column=4, pady=_pad_size)
-
-        '''
-            Second Page (Consecutive Window Analyzer)
-            Configuring 
-        '''
-        self.tabview.tab(tab_names[1]).grid_columnconfigure(0, weight=1)
-        self.tabview.tab(tab_names[1]).grid_columnconfigure(1, weight=10)
-
-        self.tabview.tab(tab_names[1]).grid_rowconfigure(0, weight=1)
-        self.tabview.tab(tab_names[1]).grid_rowconfigure(1, weight=20)
-        self.tabview.tab(tab_names[1]).grid_rowconfigure(2, weight=50)
-        self.tabview.tab(tab_names[1]).grid_rowconfigure(3, weight=1)
-
-        # Frames
-        t2_config_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20,
-                                                 border_color="#333333", border_width=2)
-        t2_config_frame.grid(row=0, column=0, rowspan=4, sticky="ns")
-        self.t2_plot_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20, fg_color="white")
-        self.t2_plot_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        self.t2_display_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20,
-                                                       fg_color="#707370")  # , width=1050, height=200)
-        self.t2_display_frame.grid(row=2, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-
-        self.t2_display_frame.grid_rowconfigure(0, weight=1)
-        self.t2_display_frame.grid_columnconfigure(0, weight=1)
-
-        self.t2_plot_frame.grid_rowconfigure(0, weight=1)
-        self.t2_plot_frame.grid_columnconfigure(0, weight=1)
-
-        # Designing the config frame (F2)
-        for row in range(10):
-            t2_config_frame.grid_rowconfigure(row, weight=1)
-
-        # Search button
-        search_button = customtkinter.CTkButton(t2_config_frame, image=search_image, width=180, height=25,
-                                                text="Search and Download Genomes", command=self.open_popup)
-        search_button.grid(row=0, columnspan=2, pady=(5, 0))
-        # Creating frames for chromosome
-        t2_chr_frame = customtkinter.CTkFrame(t2_config_frame, corner_radius=20)
-        t2_chr_frame.grid(row=1, columnspan=2, padx=5, pady=5, sticky="ew")
-
-        self.t2_ds = {'1': GUIDataStructure()}
-
-        customtkinter.CTkLabel(t2_chr_frame, text=f"Genome: ", font=self.header_font) \
-            .grid(row=0, column=0, sticky="w", padx=10, pady=(5, 0))
-        # upload button
-        upload_button = customtkinter.CTkButton(t2_chr_frame, image=upload_image, text="",
-                                                command=partial(self.t2_upload_event, "1", None),
-                                                width=15, height=10)
-        upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
-
-        customtkinter.CTkLabel(t2_chr_frame, text="Species: ", font=self.header_font) \
-            .grid(row=1, column=0, sticky="w", padx=10)
-        customtkinter.CTkLabel(t2_chr_frame, text="Chromosome name: ", font=self.header_font) \
-            .grid(row=1, column=1, sticky="w", padx=10)
-        self.t2_species_combobox = customtkinter.CTkComboBox(t2_chr_frame, values=species_list, width=100,
-                                                             command=partial(self.t2_specie_change_event))
-
-        self.t2_species_combobox.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
-        self.t2_species_combobox.set("")
-
-        self.t2_chr_combobox = customtkinter.CTkComboBox(t2_chr_frame, values=[],
-                                                         variable=self.t2_ds["1"].chromosome, width=100,
-                                                         command=partial(self.t2_chromosome_change_event))
-        self.t2_chr_combobox.grid(row=2, column=1, sticky="w", padx=10, pady=(0, 10))
-        self.t2_chr_combobox.set("")
-
-        # Window size
-        customtkinter.CTkLabel(t2_config_frame, text="Segment Size:", font=self.header_font) \
-            .grid(row=2, column=0, padx=10, pady=(20, 5))
-        self.t2_window_s = tkinter.StringVar(value="")
-        self.t2_window_entry = customtkinter.CTkEntry(t2_config_frame, textvariable=self.t2_window_s)
-        self.t2_window_entry.configure(state="disable")
-        self.t2_window_entry.grid(row=2, column=1, pady=(20, 5), padx=(0, 20), sticky="w")
-
-        # k_mer combo box
         customtkinter.CTkLabel(t2_config_frame, text="k-mer: ", font=self.header_font) \
             .grid(row=3, column=0, padx=10, pady=(10, 10))
         k_mer_combobox = customtkinter.CTkComboBox(t2_config_frame, values=values_list, width=100,
                                                    state="normal", variable=self.k_var)
-        k_mer_combobox.grid(row=3, column=1, sticky="w", pady=(10, 10))
+        k_mer_combobox.grid(row=3, column=1, sticky="w", pady=(10, 10), padx=10)
+
+        # reverse complement and random
+        t2_seq_rv = customtkinter.CTkFrame(t2_config_frame, fg_color=t2_config_frame_color)
+        t2_seq_rv.grid(row=4, columnspan=2, padx=10, pady=5, sticky="ew")
+
+        self.checkbox_RC = {}
+        self.checkbox_Random = {}
+        for i in range(2):
+            seq_label = customtkinter.CTkLabel(t2_seq_rv, text=f'Sequence {i + 1} :', font=self.header_font)
+            seq_label.grid(row=(i * 2), column=0, padx=10, pady=(5, 0), sticky="w")
+
+            self.checkbox_RC[str(i + 1)] = customtkinter.CTkCheckBox(master=t2_seq_rv, text="Reverse Complement")
+            self.checkbox_RC[str(i + 1)].grid(row=(i * 2), column=1, padx=10, pady=5, sticky="w")
+            self.checkbox_Random[str(i + 1)] = customtkinter.CTkCheckBox(master=t2_seq_rv, text="Shuffle")
+            self.checkbox_Random[str(i + 1)].grid(row=(i * 2) + 1, column=1, padx=10, pady=5, sticky="w")
 
         # Distance metrics
-        customtkinter.CTkLabel(t2_config_frame, text="Distance Measure: ", font=self.header_font) \
-            .grid(row=4, column=0, pady=(20, 5), padx=(5, 0))
+        customtkinter.CTkLabel(t2_config_frame, text="Distance\n Measure: ", font=self.header_font) \
+            .grid(row=6, column=0, padx=10, pady=(10, 10))
         dist_metric_combobox = customtkinter.CTkComboBox(t2_config_frame, values=DISTANCE_METRICS_LIST,
                                                          width=120, variable=self.dist_metric)
-        dist_metric_combobox.grid(row=4, column=1, pady=(20, 5), sticky="w")
-        dist_metric_combobox.set("")
+        dist_metric_combobox.grid(row=6, column=1, sticky="w", padx=10, pady=(10, 10))
+        dist_metric_combobox.set("DSSIM")
 
-        # plot type
-        customtkinter.CTkLabel(t2_config_frame, text="Plot Type: ", font=self.header_font) \
-            .grid(row=5, column=0, pady=(20, 5), padx=(5, 0))
-        self.plot_type_var = customtkinter.StringVar(value="")
-        PLOT_TYPE_LIST = ["Bar plot", "Histogram plot"]
-        plot_type_combobox = customtkinter.CTkComboBox(t2_config_frame, values=PLOT_TYPE_LIST,
-                                                       width=120, variable=self.plot_type_var)
-        plot_type_combobox.grid(row=5, column=1, pady=(20, 5), sticky="w")
-        plot_type_combobox.set("")
+        # cgr/fcgr option
+        # self.fcgr = customtkinter.IntVar(value=1)
+        # switch = customtkinter.CTkSwitch(t2_config_frame, text=f"Frequency CGR", variable=self.fcgr)
+        # switch.grid(row=7, columnspan=2, pady=(10, 10))
 
-        switch = customtkinter.CTkSwitch(t2_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        switch.grid(row=6, columnspan=2, pady=(20, 5))
-
-        # run button
-        run_button = customtkinter.CTkButton(t2_config_frame, text="Run", command=partial(self.run_consecutive, None))
-        run_button.grid(row=8, columnspan=2)
+        # plot button
+        self.t2_display_frame.grid_rowconfigure(0, weight=1)
+        self.t2_display_frame.grid_columnconfigure(0, weight=1)
+        t2_plot_button = customtkinter.CTkButton(t2_config_frame, text="Plot", width=120, command=self.t1_plot)
+        t2_plot_button.grid(row=8, columnspan=2, pady=(10, 5))
 
         # Appearance mode
         customtkinter.CTkLabel(t2_config_frame, text="Theme: ", font=self.header_font) \
@@ -411,38 +246,67 @@ class App(customtkinter.CTk):
                                                       variable=appearance, command=self.change_appearance_mode_event)
         appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
 
-        # placing the progress bars
-        self.cgr_distance_history = None
-        self._t2_progress = 0.0
-        self._t3_progress = 0.0
-        self._t4_progress = 0.0
-        self.t2_progress_bar = customtkinter.CTkProgressBar(self.tabview.tab(tab_names[1]))
-        self.t2_progress_bar.set(0)
-        self.t2_progress_bar.grid(row=0, column=1, padx=(10, 10), pady=(10, 10), sticky="nsew")
+        # First Sequence scale
+        _pad_size = (20, 0)
+        self.t2_parts_name_combobox = {}
+        self.start_seq_scale = {}
+        self.end_seq_scale = {}
+        self.t2_start_seq_entry = {}
+        self.t2_end_seq_entry = {}
+        for i in range(2):
+            customtkinter.CTkLabel(t2_slider_frame, text=f'Sequence {i + 1} :', font=self.header_font) \
+                .grid(row=(i * 2), column=0, padx=10, pady=_pad_size)
 
-        # placing the slider bar
-        t2_changing_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20)
-        t2_changing_frame.grid(row=3, column=1, sticky="nsew")
+            # Sequence part names combo box
+            self.t2_parts_name_combobox[str(i + 1)] = \
+                customtkinter.CTkComboBox(t2_slider_frame, width=100, values=[],
+                                          command=partial(self.annotation_change_event, str(i + 1)),
+                                          variable=self.t2_ds[str(i + 1)].annotation, state="disable")
+            self.t2_parts_name_combobox[str(i + 1)].grid(row=(i * 2) + 1, column=0, padx=10, pady=_pad_size)
 
-        # Designing the changing frame
-        t2_changing_frame.grid_columnconfigure(0, weight=1)
-        t2_changing_frame.grid_columnconfigure(1, weight=10)
-        t2_changing_frame.grid_columnconfigure(2, weight=1)
+            customtkinter.CTkLabel(t2_slider_frame, text='Start').grid(row=(i * 2), column=1, padx=5, pady=_pad_size)
+            customtkinter.CTkLabel(t2_slider_frame, text='End').grid(row=(i * 2) + 1, column=1, padx=5, pady=_pad_size)
 
-        self.t2_pic_num = customtkinter.IntVar(value=0)
-        self.t2_scale = customtkinter.CTkSlider(t2_changing_frame, from_=0,
-                                                orientation=customtkinter.HORIZONTAL, variable=self.t2_pic_num,
-                                                command=partial(self._change_images, self.t2_pic_num.get(), "t2"))
-        self.t2_scale.grid(row=0, column=1, pady=(10, 10), sticky="nsew")
+            seq_length = len(self.t2_ds[str(i + 1)].seq)
+            to_value = seq_length if seq_length > 0 else 1
 
-        # previous-next button
-        prev_im = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/back_arrow.png"), size=(20, 20))
-        next_im = customtkinter.CTkImage(light_image=Image.open(f"{self.assets_path}/next_arrow.png"), size=(20, 20))
-        customtkinter.CTkButton(t2_changing_frame, image=prev_im, text="", width=10,
-                                command=partial(self.move_previous, "t2", None)).grid(row=0, column=0)
+            self.start_seq_scale[str(i + 1)] = customtkinter.CTkSlider(t2_slider_frame, from_=0, to=to_value,
+                                                                       orientation="horizontal", width=700,
+                                                                       variable=self.t2_ds[str(i + 1)].start_seq,
+                                                                       command=partial(self.sequence_value_change,
+                                                                                       str(i + 1)))
+            self.start_seq_scale[str(i + 1)].set(0)
+            self.scale_normal_color = self.start_seq_scale[str(i + 1)].cget("button_color")
+            self.start_seq_scale[str(i + 1)].configure(state="disabled", button_color="#888888")
+            self.start_seq_scale[str(i + 1)].grid(row=(i * 2), column=2, pady=_pad_size)
 
-        customtkinter.CTkButton(t2_changing_frame, image=next_im, text="", width=10,
-                                command=partial(self.move_next, "t2", None)).grid(row=0, column=2)
+            self.t2_start_seq_entry[str(i + 1)] = customtkinter.CTkEntry(t2_slider_frame,
+                                                                         textvariable=self.t2_ds[str(i + 1)].start_txt)
+            self.t2_start_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.sequence_value_change, "3"))
+            self.t2_start_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.sequence_value_change, "3"))
+            self.t2_start_seq_entry[str(i + 1)].grid(row=(i * 2), column=3, padx=5, pady=_pad_size)
+            seq_s_e_label = customtkinter.CTkLabel(t2_slider_frame, text='bp')
+            seq_s_e_label.grid(row=(i * 2), column=4, pady=_pad_size)
+
+            end_seq_length = self.t2_ds[str(i + 1)].end_seq.get()
+            to_value = end_seq_length if end_seq_length > 0 else 1
+
+            self.end_seq_scale[str(i + 1)] = customtkinter.CTkSlider(t2_slider_frame, from_=0, to=to_value,
+                                                                     orientation="horizontal", width=700,
+                                                                     variable=self.t2_ds[str(i + 1)].end_seq,
+                                                                     command=partial(self.sequence_value_change,
+                                                                                     str(i + 1)))
+            self.end_seq_scale[str(i + 1)].set(0)
+            self.end_seq_scale[str(i + 1)].configure(state="disabled", button_color="#888888")
+            self.end_seq_scale[str(i + 1)].grid(row=(i * 2) + 1, column=2, pady=_pad_size)
+
+            self.t2_end_seq_entry[str(i + 1)] = customtkinter.CTkEntry(t2_slider_frame,
+                                                                       textvariable=self.t2_ds[str(i + 1)].end_txt)
+            self.t2_end_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.sequence_value_change, "3"))
+            self.t2_end_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.sequence_value_change, "3"))
+            self.t2_end_seq_entry[str(i + 1)].grid(row=(i * 2) + 1, column=3, padx=5, pady=_pad_size)
+            seq_s_e_label_d = customtkinter.CTkLabel(t2_slider_frame, text='bp')
+            seq_s_e_label_d.grid(row=(i * 2) + 1, column=4, pady=_pad_size)
 
         '''
             Third Page (Common Reference)
@@ -486,7 +350,7 @@ class App(customtkinter.CTk):
             t3_config_frame.grid_rowconfigure(row, weight=1)
 
         # Search button
-        search_button = customtkinter.CTkButton(t3_config_frame, image=search_image, width=180, height=25,
+        search_button = customtkinter.CTkButton(t3_config_frame, image=search_im, width=180, height=25,
                                                 text="Search and Download Genomes", command=self.open_popup)
         search_button.grid(row=0, columnspan=2, pady=(5, 0))
 
@@ -498,7 +362,7 @@ class App(customtkinter.CTk):
         customtkinter.CTkLabel(t3_chr_frame, text=f"Reference: ", font=self.header_font) \
             .grid(row=0, column=0, sticky="w", padx=10, pady=(5, 0))
         # upload button
-        upload_button = customtkinter.CTkButton(t3_chr_frame, image=upload_image, text="",
+        upload_button = customtkinter.CTkButton(t3_chr_frame, image=upload_im, text="",
                                                 command=partial(self.t3_upload_event, "1", None),
                                                 width=15, height=10)
         upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
@@ -552,7 +416,7 @@ class App(customtkinter.CTk):
 
         customtkinter.CTkLabel(t3_chr_frame_2, text=f"Genome: ", font=self.header_font) \
             .grid(row=0, columnspan=2, sticky="w", padx=10, pady=(5, 0))
-        upload_button = customtkinter.CTkButton(t3_chr_frame_2, image=upload_image, text="",
+        upload_button = customtkinter.CTkButton(t3_chr_frame_2, image=upload_im, text="",
                                                 command=partial(self.t3_upload_event, "2", None),
                                                 width=15, height=10)
         upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
@@ -588,12 +452,12 @@ class App(customtkinter.CTk):
         k_mer_combobox.grid(row=3, column=1, sticky="w", padx=10, pady=(10, 10))
 
         # Distance metrics
-        customtkinter.CTkLabel(t3_config_frame, text="Distance Measure: ", font=self.header_font) \
+        customtkinter.CTkLabel(t3_config_frame, text="Distance\n Measure: ", font=self.header_font) \
             .grid(row=4, column=0, pady=(20, 5), padx=(5, 0))
         dist_metric_combobox = customtkinter.CTkComboBox(t3_config_frame, values=DISTANCE_METRICS_LIST,
                                                          width=120, variable=self.dist_metric)
         dist_metric_combobox.grid(row=4, column=1, pady=(20, 5), sticky="w")
-        dist_metric_combobox.set("")
+        dist_metric_combobox.set("DSSIM")
 
         # plot type
         customtkinter.CTkLabel(t3_config_frame, text="Plot Type: ", font=self.header_font) \
@@ -601,10 +465,10 @@ class App(customtkinter.CTk):
         plot_type_combobox = customtkinter.CTkComboBox(t3_config_frame, values=PLOT_TYPE_LIST,
                                                        width=120, variable=self.plot_type_var)
         plot_type_combobox.grid(row=5, column=1, pady=(20, 5), sticky="w")
-        plot_type_combobox.set("")
+        plot_type_combobox.set("Bar plot")
 
-        switch = customtkinter.CTkSwitch(t3_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        switch.grid(row=6, columnspan=2, pady=(20, 5))
+        # switch = customtkinter.CTkSwitch(t3_config_frame, text=f"Frequency CGR", variable=self.fcgr)
+        # switch.grid(row=6, columnspan=2, pady=(20, 5))
 
         # run button
         run_button = customtkinter.CTkButton(t3_config_frame, text="Run", command=partial(self.run_common_ref, None))
@@ -645,186 +509,6 @@ class App(customtkinter.CTk):
 
         customtkinter.CTkButton(t3_changing_frame, image=next_im, text="", width=10,
                                 command=partial(self.move_next, "t3", None)).grid(row=0, column=2)
-
-        '''
-            Fourth Page (Representative)
-            Configuring 
-        '''
-        self.tabview.tab(tab_names[3]).grid_columnconfigure(0, weight=1)
-        self.tabview.tab(tab_names[3]).grid_columnconfigure(1, weight=10)
-
-        self.tabview.tab(tab_names[3]).grid_rowconfigure(0, weight=1)
-        self.tabview.tab(tab_names[3]).grid_rowconfigure(1, weight=50)
-        self.tabview.tab(tab_names[3]).grid_rowconfigure(2, weight=1)
-        self.tabview.tab(tab_names[3]).grid_rowconfigure(3, weight=100)
-        self.tabview.tab(tab_names[3]).grid_rowconfigure(4, weight=1)
-
-        # Frames
-        t4_config_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20,
-                                                 border_color="#333333", border_width=2)
-        t4_config_frame.grid(row=0, column=0, rowspan=5, sticky="ns")
-        self.t4_plot_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20, fg_color="white")
-        self.t4_plot_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-
-        t4_output_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20,
-                                                 border_color="#333333", border_width=2)
-        t4_output_frame.grid(row=2, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-
-        self.output_message = customtkinter.CTkLabel(t4_output_frame, text=f"Description: ", font=self.header_font)
-        self.output_message.grid(row=0, column=0, sticky="w", padx=(10, 10), pady=(5, 5))
-
-        t4_display_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20)
-        t4_display_frame.grid(row=3, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        # frames in the display frame
-        t4_display_frame.grid_rowconfigure(0, weight=1)
-        t4_display_frame.grid_columnconfigure(0, weight=2)
-        t4_display_frame.grid_columnconfigure(1, weight=10)
-        self.t4_display_frame_1 = customtkinter.CTkFrame(t4_display_frame, corner_radius=20, fg_color="#707370")
-        self.t4_display_frame_1.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        self.t4_display_frame_2 = customtkinter.CTkFrame(t4_display_frame, corner_radius=20, fg_color="#707370")
-        self.t4_display_frame_2.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-
-        self.t4_plot_frame.grid_rowconfigure(0, weight=1)
-        self.t4_plot_frame.grid_columnconfigure(0, weight=1)
-
-        self.t4_display_frame_1.grid_rowconfigure(0, weight=1)
-        self.t4_display_frame_1.grid_columnconfigure(0, weight=1)
-        self.t4_display_frame_2.grid_rowconfigure(0, weight=1)
-        self.t4_display_frame_2.grid_columnconfigure(0, weight=1)
-
-        # Designing the config frame (F4)
-        for row in range(10):
-            t4_config_frame.grid_rowconfigure(row, weight=1)
-
-        # Search button
-        search_button = customtkinter.CTkButton(t4_config_frame, image=search_image, width=180, height=25,
-                                                text="Search and Download Genomes", command=self.open_popup)
-        search_button.grid(row=0, columnspan=2, pady=(5, 0))
-
-        # Creating frames for chromosome
-        t4_chr_frame = customtkinter.CTkFrame(t4_config_frame, corner_radius=20)
-        t4_chr_frame.grid(row=1, columnspan=2, padx=5, pady=5, sticky="ew")
-
-        self.t4_ds = {'1': GUIDataStructure()}
-
-        customtkinter.CTkLabel(t4_chr_frame, text=f"Genome: ", font=self.header_font) \
-            .grid(row=0, column=0, sticky="w", padx=10, pady=(5, 0))
-        # upload button
-        upload_button = customtkinter.CTkButton(t4_chr_frame, image=upload_image, text="",
-                                                command=partial(self.t4_upload_event, "1", None),
-                                                width=15, height=10)
-        upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
-
-        customtkinter.CTkLabel(t4_chr_frame, text="Species: ", font=self.header_font) \
-            .grid(row=1, column=0, sticky="w", padx=10)
-        customtkinter.CTkLabel(t4_chr_frame, text="Chromosome name: ", font=self.header_font) \
-            .grid(row=1, column=1, sticky="w", padx=10)
-        self.t4_species_combobox = customtkinter.CTkComboBox(t4_chr_frame, values=species_list, width=100,
-                                                             command=partial(self.t4_specie_change_event))
-
-        self.t4_species_combobox.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
-        self.t4_species_combobox.set("")
-
-        self.t4_chr_combobox = customtkinter.CTkComboBox(t4_chr_frame, values=[],
-                                                         variable=self.t4_ds["1"].chromosome, width=100,
-                                                         command=partial(self.t4_chromosome_change_event))
-        self.t4_chr_combobox.grid(row=2, column=1, sticky="w", padx=10, pady=(0, 10))
-        self.t4_chr_combobox.set("")
-
-        # Representative Algorithm
-        customtkinter.CTkLabel(t4_chr_frame, text="Representative Algorithm:", font=self.header_font) \
-            .grid(row=3, columnspan=2, padx=10, sticky="w")
-        self.representative_algo = customtkinter.StringVar(value="")
-        self.t4_algo_combobox = customtkinter.CTkComboBox(t4_chr_frame, width=200, state="normal",
-                                                          values=["RepSeg", "aRepSeg"],
-                                                          variable=self.representative_algo,
-                                                          command=partial(self.t4_algo_change_event))
-        self.t4_algo_combobox.grid(row=4, columnspan=2, sticky="w", padx=10, pady=(0, 10))
-        self.t4_algo_combobox.set("")
-
-        # Number of Segments
-        customtkinter.CTkLabel(t4_chr_frame, text="# Segments:", font=self.header_font) \
-            .grid(row=5, column=0, padx=10, pady=(0, 10))
-        self.t4_num_seg = tkinter.StringVar(value="")
-        self.t4_num_seg_entry = customtkinter.CTkEntry(t4_chr_frame, textvariable=self.t4_num_seg)
-        self.t4_num_seg_entry.configure(state="disable")
-        self.t4_num_seg_entry.grid(row=5, column=1, padx=10, pady=(0, 10), sticky="w")
-
-        # Window size
-        customtkinter.CTkLabel(t4_config_frame, text="Segment Size:", font=self.header_font) \
-            .grid(row=2, column=0, padx=10, pady=(20, 5))
-        self.t4_window_s = tkinter.StringVar(value="")
-        self.t4_window_entry = customtkinter.CTkEntry(t4_config_frame, textvariable=self.t4_window_s)
-        self.t4_window_entry.configure(state="disable")
-        self.t4_window_entry.grid(row=2, column=1, pady=(20, 5), padx=(0, 20), sticky="w")
-
-        # k_mer combo box
-        customtkinter.CTkLabel(t4_config_frame, text="k-mer: ", font=self.header_font) \
-            .grid(row=3, column=0, padx=10, pady=(10, 10))
-        k_mer_combobox = customtkinter.CTkComboBox(t4_config_frame, values=values_list, width=100,
-                                                   state="normal", variable=self.k_var)
-        k_mer_combobox.grid(row=3, column=1, sticky="w", pady=(10, 10))
-
-        # Distance metrics
-        customtkinter.CTkLabel(t4_config_frame, text="Distance Measure: ", font=self.header_font) \
-            .grid(row=4, column=0, pady=(20, 5), padx=(5, 0))
-        dist_metric_combobox = customtkinter.CTkComboBox(t4_config_frame, values=DISTANCE_METRICS_LIST,
-                                                         width=120, variable=self.dist_metric)
-        dist_metric_combobox.grid(row=4, column=1, pady=(20, 5), sticky="w")
-        dist_metric_combobox.set("")
-
-        # plot type
-        customtkinter.CTkLabel(t4_config_frame, text="Plot Type: ", font=self.header_font) \
-            .grid(row=5, column=0, pady=(20, 5), padx=(5, 0))
-        plot_type_combobox = customtkinter.CTkComboBox(t4_config_frame, values=PLOT_TYPE_LIST,
-                                                       width=120, variable=self.plot_type_var)
-        plot_type_combobox.grid(row=5, column=1, pady=(20, 5), sticky="w")
-        plot_type_combobox.set("")
-
-        switch = customtkinter.CTkSwitch(t4_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        switch.grid(row=6, columnspan=2, pady=(20, 5))
-
-        # run button
-        run_button = customtkinter.CTkButton(t4_config_frame, text="Run",
-                                             command=partial(self.run_representative, None))
-        run_button.grid(row=8, columnspan=2)  # , sticky="ns")
-
-        # Appearance mode
-        customtkinter.CTkLabel(t4_config_frame, text="Theme: ", font=self.header_font) \
-            .grid(row=9, column=0, padx=10, pady=(20, 10))
-        appearance_mode = customtkinter.CTkOptionMenu(t4_config_frame, values=["Dark", "Light"], width=100,
-                                                      variable=appearance, command=self.change_appearance_mode_event)
-        appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
-
-        # placing the progress bars
-        self.execution_time = None
-        self.t4_cgr_distance_history = None
-        self.t4_representative_index = None
-
-        self.t4_progress_bar = customtkinter.CTkProgressBar(self.tabview.tab(tab_names[3]))
-        self.t4_progress_bar.set(0)
-        self.t4_progress_bar.grid(row=0, column=1, padx=(10, 10), pady=(10, 10), sticky="nsew")
-
-        t4_changing_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[3]), corner_radius=20)
-        t4_changing_frame.grid(row=4, column=1, sticky="nsew")
-
-        # Designing the changing frame
-        t4_changing_frame.grid_columnconfigure(0, weight=1)
-        t4_changing_frame.grid_columnconfigure(1, weight=10)
-        t4_changing_frame.grid_columnconfigure(2, weight=1)
-
-        self.t4_pic_num = customtkinter.IntVar(value=0)
-        self.t4_scale = customtkinter.CTkSlider(t4_changing_frame, from_=0, orientation=customtkinter.HORIZONTAL,
-                                                variable=self.t4_pic_num,
-                                                command=partial(self._change_images, self.t4_pic_num.get(), "t4"))
-        self.t4_scale.grid(row=0, column=1, pady=(10, 10), sticky="nsew")
-
-        # previous-next button
-        customtkinter.CTkButton(t4_changing_frame, image=prev_im, text="", width=10,
-                                command=partial(self.move_previous, "t4", None)).grid(row=0, column=0)
-
-        customtkinter.CTkButton(t4_changing_frame, image=next_im, text="", width=10,
-                                command=partial(self.move_next, "t4", None)).grid(row=0, column=2)
 
         self.after_idle(self.bring_to_front)
 
@@ -1142,8 +826,8 @@ class App(customtkinter.CTk):
         # get all the folders name in DATA path
         folders = [str(f) for f in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, f))]
         # update the combobox values
-        self.t1_species_combobox["1"].configure(values=folders)
-        self.t1_species_combobox["2"].configure(values=folders)
+        self.t2_species_combobox["1"].configure(values=folders)
+        self.t2_species_combobox["2"].configure(values=folders)
         self.t2_species_combobox.configure(values=folders)
         self.t3_species_combobox_1.configure(values=folders)
         self.t3_species_combobox_2.configure(values=folders)
@@ -1183,57 +867,57 @@ class App(customtkinter.CTk):
         file_path = filedialog.askopenfilename()
         _, sequence = ChromosomesHolder.read_fasta(file_path)
         if len(sequence) > 0:
-            self.t1_ds[sender].specie.set("Custom")
-            self.t1_species_combobox[sender].set("Custom")
-            self.t1_ds[sender].invalidate_based_specie()
-            self.t1_chr_combobox[sender].configure(values=[])
-            self.t1_parts_name_combobox[sender].configure(values=[])
+            self.t2_ds[sender].specie.set("Custom")
+            self.t2_species_combobox[sender].set("Custom")
+            self.t2_ds[sender].invalidate_based_specie()
+            self.t2_chr_combobox[sender].configure(values=[])
+            self.t2_parts_name_combobox[sender].configure(values=[])
             # clear window_s
             self.window_s_toggle.set(0)
             self.window_s.set("")
             self.window_entry.configure(state="disable")
             # end scales
             for key, value in self.end_seq_scale.items():
-                if len(self.t1_ds[key].seq) > 0:
+                if len(self.t2_ds[key].seq) > 0:
                     value.configure(state="normal", button_color=self.scale_normal_color)
-            for key, value in self.t1_end_seq_entry.items():
-                if len(self.t1_ds[key].seq) > 0:
+            for key, value in self.t2_end_seq_entry.items():
+                if len(self.t2_ds[key].seq) > 0:
                     value.configure(state="normal")
             # for key, value in self.t1_ds.items():
-            self.sync_text_vars(self.t1_ds, sender, keep_annotation=False)
+            self.sync_text_vars(self.t2_ds, sender, keep_annotation=False)
 
-            self.t1_ds[sender].seq = sequence
-            self.t1_ds[sender].end_seq.set(len(self.t1_ds[sender].seq))
+            self.t2_ds[sender].seq = sequence
+            self.t2_ds[sender].end_seq.set(len(self.t2_ds[sender].seq))
             self.start_seq_scale[sender].configure(state="normal", button_color=self.scale_normal_color)
-            self.start_seq_scale[sender].configure(to=len(self.t1_ds[sender].seq))
+            self.start_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
             self.end_seq_scale[sender].configure(state="normal", button_color=self.scale_normal_color)
             self.end_seq_scale[sender].set(0)
-            self.end_seq_scale[sender].configure(to=len(self.t1_ds[sender].seq))
-            self.end_seq_scale[sender].set(len(self.t1_ds[sender].seq))
-            self.sync_text_vars(self.t1_ds, sender)
+            self.end_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
+            self.end_seq_scale[sender].set(len(self.t2_ds[sender].seq))
+            self.sync_text_vars(self.t2_ds, sender)
 
     def specie_change_event(self, sender, value):
         try:
-            self.t1_species_combobox[sender].set(value)
-            self.t1_ds[sender].specie.set(value)
+            self.t2_species_combobox[sender].set(value)
+            self.t2_ds[sender].specie.set(value)
 
-            specie = self.t1_ds[sender].specie.get()
-            self.t1_chr_combobox[sender].configure(
+            specie = self.t2_ds[sender].specie.get()
+            self.t2_chr_combobox[sender].configure(
                 values=ChromosomesHolder(specie, self.data_path).get_all_chromosomes_name(include_whole_genome=True))
-            self.t1_ds[sender].invalidate_based_specie()
+            self.t2_ds[sender].invalidate_based_specie()
 
             # clear window_s
             self.window_s_toggle.set(0)
             # end scales
             for key, value in self.end_seq_scale.items():
-                if len(self.t1_ds[key].seq) > 0:
+                if len(self.t2_ds[key].seq) > 0:
                     value.configure(state="normal", button_color=self.scale_normal_color)
-            for key, value in self.t1_end_seq_entry.items():
-                if len(self.t1_ds[key].seq) > 0:
+            for key, value in self.t2_end_seq_entry.items():
+                if len(self.t2_ds[key].seq) > 0:
                     value.configure(state="normal")
             self.window_s.set("")
             self.window_entry.configure(state="disable")
-            self.sync_text_vars(self.t1_ds, sender, keep_annotation=False)
+            self.sync_text_vars(self.t2_ds, sender, keep_annotation=False)
             # for key, value in self.t1_ds.items():
             #     self.sync_text_vars(self.t1_ds, key, keep_annotation=False)
 
@@ -1241,59 +925,59 @@ class App(customtkinter.CTk):
             self.end_seq_scale[sender].configure(state="disabled", button_color="#888888")
 
             # Empty the list of annotations
-            self.t1_parts_name_combobox[sender].configure(values=[])
+            self.t2_parts_name_combobox[sender].configure(values=[])
         except Exception as e:
             messagebox.showerror("Error", f"Error: {e}")
 
     def chromosome_change_event(self, sender, value):
-        specie = self.t1_ds[sender].specie.get()
-        chromosome = self.t1_ds[sender].chromosome.get()
+        specie = self.t2_ds[sender].specie.get()
+        chromosome = self.t2_ds[sender].chromosome.get()
         # set its sequence
-        self.t1_ds[sender].seq = ChromosomesHolder(specie, self.data_path).get_chromosome_sequence(chromosome)
+        self.t2_ds[sender].seq = ChromosomesHolder(specie, self.data_path).get_chromosome_sequence(chromosome)
         # set the annotation combobox
-        self.t1_parts_name_combobox[sender].configure(state="normal")
-        self.t1_parts_name_combobox[sender].configure(
+        self.t2_parts_name_combobox[sender].configure(state="normal")
+        self.t2_parts_name_combobox[sender].configure(
             values=ChromosomesHolder(specie, self.data_path).cytobands[chromosome])
-        self.t1_ds[sender].invalidate_based_chromosome()
+        self.t2_ds[sender].invalidate_based_chromosome()
         # set start and end
         try:
-            self.t1_ds[sender].end_seq.set(len(self.t1_ds[sender].seq))
-            if len(self.t1_ds[sender].seq) > 0:
+            self.t2_ds[sender].end_seq.set(len(self.t2_ds[sender].seq))
+            if len(self.t2_ds[sender].seq) > 0:
                 self.start_seq_scale[sender].configure(state="normal", button_color=self.scale_normal_color)
                 self.end_seq_scale[sender].configure(state="normal", button_color=self.scale_normal_color)
             else:
                 self.start_seq_scale[sender].configure(state="disable", button_color="#888888")
                 self.end_seq_scale[sender].configure(state="disable", button_color="#888888")
-            self.start_seq_scale[sender].configure(to=len(self.t1_ds[sender].seq))
+            self.start_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
             self.end_seq_scale[sender].set(0)
-            self.end_seq_scale[sender].configure(to=len(self.t1_ds[sender].seq))
-            self.end_seq_scale[sender].set(len(self.t1_ds[sender].seq))
+            self.end_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
+            self.end_seq_scale[sender].set(len(self.t2_ds[sender].seq))
         except Exception as e:
             messagebox.showerror("Sequence is Empty!")
 
-        self.sync_text_vars(self.t1_ds, sender, keep_annotation=False)
+        self.sync_text_vars(self.t2_ds, sender, keep_annotation=False)
         # clear window_s
         self.window_s_toggle.set(0)
         self.window_s.set("")
         self.window_entry.configure(state="disable")
         # end scales
         for key, value in self.end_seq_scale.items():
-            if len(self.t1_ds[key].seq) > 0:
+            if len(self.t2_ds[key].seq) > 0:
                 value.configure(state="normal", button_color=self.scale_normal_color)
-        for key, value in self.t1_end_seq_entry.items():
-            if len(self.t1_ds[key].seq) > 0:
+        for key, value in self.t2_end_seq_entry.items():
+            if len(self.t2_ds[key].seq) > 0:
                 value.configure(state="normal")
         # for key, value in self.t1_ds.items():
         #     self.sync_text_vars(self.t1_ds, key, keep_annotation=False)
 
     def annotation_change_event(self, sender, value):
-        annotation = self.t1_ds[sender].annotation.get()
-        chromosome_name = self.t1_ds[sender].chromosome.get()
-        annotation_info = ChromosomesHolder(self.t1_ds[sender].specie.get(), self.data_path).cytobands[chromosome_name][
+        annotation = self.t2_ds[sender].annotation.get()
+        chromosome_name = self.t2_ds[sender].chromosome.get()
+        annotation_info = ChromosomesHolder(self.t2_ds[sender].specie.get(), self.data_path).cytobands[chromosome_name][
             annotation]
-        self.t1_ds[sender].start_seq.set(annotation_info.start)
-        self.t1_ds[sender].end_seq.set(annotation_info.end)
-        self.sync_text_vars(self.t1_ds, sender, keep_annotation=True)
+        self.t2_ds[sender].start_seq.set(annotation_info.start)
+        self.t2_ds[sender].end_seq.set(annotation_info.end)
+        self.sync_text_vars(self.t2_ds, sender, keep_annotation=True)
         self.end_seq_scale[sender].configure(state="normal", button_color=self.scale_normal_color)
 
         # clear window_s
@@ -1302,10 +986,10 @@ class App(customtkinter.CTk):
         self.window_entry.configure(state="disable")
         # end scales
         for key, value in self.end_seq_scale.items():
-            if len(self.t1_ds[key].seq) > 0:
+            if len(self.t2_ds[key].seq) > 0:
                 value.configure(state="normal", button_color=self.scale_normal_color)
-        for key, value in self.t1_end_seq_entry.items():
-            if len(self.t1_ds[key].seq) > 0:
+        for key, value in self.t2_end_seq_entry.items():
+            if len(self.t2_ds[key].seq) > 0:
                 value.configure(state="normal")
 
     def window_size_toggle_event(self, keep_annotation=False):
@@ -1315,10 +999,10 @@ class App(customtkinter.CTk):
 
             # end scales
             for key, value in self.end_seq_scale.items():
-                if len(self.t1_ds[key].seq) > 0:
+                if len(self.t2_ds[key].seq) > 0:
                     value.configure(state="normal", button_color=self.scale_normal_color)
-            for key, value in self.t1_end_seq_entry.items():
-                if len(self.t1_ds[key].seq) > 0:
+            for key, value in self.t2_end_seq_entry.items():
+                if len(self.t2_ds[key].seq) > 0:
                     value.configure(state="normal")
         else:
             self.window_entry.configure(state="normal")
@@ -1327,34 +1011,34 @@ class App(customtkinter.CTk):
             # end scales
             for key, value in self.end_seq_scale.items():
                 value.configure(state="disable", button_color="#888888")
-            for key, value in self.t1_end_seq_entry.items():
+            for key, value in self.t2_end_seq_entry.items():
                 value.configure(state="disable")
-            for key, value in self.t1_ds.items():
-                if len(self.t1_ds[key].seq) > 0:
-                    self.t1_ds[key].end_seq.set(self.t1_ds[key].start_seq.get() + int(self.window_s.get()))
+            for key, value in self.t2_ds.items():
+                if len(self.t2_ds[key].seq) > 0:
+                    self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.window_s.get()))
 
-        for key, value in self.t1_ds.items():
-            self.sync_text_vars(self.t1_ds, key, keep_annotation)
+        for key, value in self.t2_ds.items():
+            self.sync_text_vars(self.t2_ds, key, keep_annotation)
 
     def sequence_value_change(self, sender, value):
         if sender == "0":  # Window size changed
-            for key, value in self.t1_ds.items():
-                self.t1_ds[key].end_seq.set(self.t1_ds[key].start_seq.get() + int(self.window_s.get()))
+            for key, value in self.t2_ds.items():
+                self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.window_s.get()))
         elif sender in ["1", "2"]:  # Scale changed
             if self.window_s_toggle.get() == 1:
-                self.t1_ds[sender].end_seq.set(self.t1_ds[sender].start_seq.get() + int(self.window_s.get()))
+                self.t2_ds[sender].end_seq.set(self.t2_ds[sender].start_seq.get() + int(self.window_s.get()))
         elif sender in ["3"]:
-            for key, value in self.t1_ds.items():
-                self.reverse_sync_text_vars(self.t1_ds, key)
+            for key, value in self.t2_ds.items():
+                self.reverse_sync_text_vars(self.t2_ds, key)
             if self.window_s_toggle.get() == 1:
-                for key, value in self.t1_ds.items():
-                    self.t1_ds[key].end_seq.set(self.t1_ds[key].start_seq.get() + int(self.window_s.get()))
+                for key, value in self.t2_ds.items():
+                    self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.window_s.get()))
 
-        for key, value in self.t1_ds.items():
-            self.sync_text_vars(self.t1_ds, key)
+        for key, value in self.t2_ds.items():
+            self.sync_text_vars(self.t2_ds, key)
 
     def t1_plot(self):
-        if self.t1_ds["1"].seq == "" or self.t1_ds["2"].seq == "":
+        if self.t2_ds["1"].seq == "" or self.t2_ds["2"].seq == "":
             messagebox.showerror("Error", "Please upload or choose the sequences first")
             return
         if self.k_var.get() == 0:
@@ -1364,9 +1048,9 @@ class App(customtkinter.CTk):
             messagebox.showerror("Error", "Please choose the distance measure")
             return
         fcgrs_dict = {}
-        for key in self.t1_ds.keys():
+        for key in self.t2_ds.keys():
             fcgrs_dict[key] = {}
-            seq = self.t1_ds[key].seq[self.t1_ds[key].start_seq.get():self.t1_ds[key].end_seq.get()]
+            seq = self.t2_ds[key].seq[self.t2_ds[key].start_seq.get():self.t2_ds[key].end_seq.get()]
             if self.checkbox_RC[key].get():
                 seq = ChromosomesHolder.get_reverse_complement(seq)
             if self.checkbox_Random[key].get():
@@ -1374,15 +1058,15 @@ class App(customtkinter.CTk):
                 random.shuffle(seq)
                 seq = ''.join(seq)
             cgr = CGR(seq, self.k_var.get())
-            if self.fcgr.get() == 1:
-                fcgrs_dict[key]["(f)cgr"] = cgr.get_fcgr()
-            else:
-                fcgrs_dict[key]["(f)cgr"] = cgr.get_cgr()
+            # if self.fcgr.get() == 1:
+            fcgrs_dict[key]["(f)cgr"] = cgr.get_fcgr()
+            # else:
+            #     fcgrs_dict[key]["(f)cgr"] = cgr.get_cgr()
 
-            fcgrs_dict[key]["chr_len"] = len(self.t1_ds[key].seq)
-            fcgrs_dict[key]["b"] = self.t1_ds[key].start_seq.get()
-            fcgrs_dict[key]["e"] = self.t1_ds[key].end_seq.get()
-            fcgrs_dict[key]["species"] = self.t1_ds[key].specie.get()
+            fcgrs_dict[key]["chr_len"] = len(self.t2_ds[key].seq)
+            fcgrs_dict[key]["b"] = self.t2_ds[key].start_seq.get()
+            fcgrs_dict[key]["e"] = self.t2_ds[key].end_seq.get()
+            fcgrs_dict[key]["species"] = self.t2_ds[key].specie.get()
 
         diff = fcgrs_dict["2"]["(f)cgr"] - fcgrs_dict["1"]["(f)cgr"]
         fcgrs_dict["diff"] = diff
@@ -1390,20 +1074,20 @@ class App(customtkinter.CTk):
         fcgrs_dict["distance"] = distance_value
 
         # Visualize the FCGRs
-        display_frame_color = self.t1_display_frame.cget("fg_color")
+        display_frame_color = self.t2_display_frame.cget("fg_color")
         fig = self.plot_fcgrs(fcgrs_dict, colormap=True, background_color=display_frame_color)
 
         # Clear the previous figure from the display frame if any
-        for widget in self.t1_display_frame.winfo_children():
+        for widget in self.t2_display_frame.winfo_children():
             widget.destroy()
 
         # Create a canvas and add the figure to it
-        canvas = FigureCanvasTkAgg(fig, master=self.t1_display_frame)
+        canvas = FigureCanvasTkAgg(fig, master=self.t2_display_frame)
         canvas.draw()
 
         # Set the canvas size explicitly
-        canvas_width = self.t1_display_frame.cget("width")
-        canvas_height = self.t1_display_frame.cget("height")
+        canvas_width = self.t2_display_frame.cget("width")
+        canvas_height = self.t2_display_frame.cget("height")
         canvas.get_tk_widget().config(width=canvas_width, height=canvas_height)
 
         # Use grid to place the canvas
@@ -1468,108 +1152,6 @@ class App(customtkinter.CTk):
         else:
             scaling = "bp"
         return scale, scaling
-
-    def t2_upload_event(self, sender, value):
-        file_path = filedialog.askopenfilename()
-        _, sequence = ChromosomesHolder.read_fasta(file_path)
-        if len(sequence) > 0:
-            self.t2_ds[sender].specie.set("Custom")
-            self.t2_species_combobox.set("Custom")
-            self.t2_ds[sender].invalidate_based_specie()
-            self.t2_chr_combobox.configure(values=[])
-            self.t2_window_entry.configure(state="normal")
-
-            self.t2_ds[sender].seq = sequence
-            self.t2_ds[sender].end_seq.set(len(self.t2_ds[sender].seq))
-
-    def t2_specie_change_event(self, value):
-        self.t2_species_combobox.set(value)
-        self.t2_ds["1"].specie.set(value)
-
-        specie = self.t2_ds["1"].specie.get()
-        self.t2_chr_combobox.configure(
-            values=ChromosomesHolder(specie, self.data_path).get_all_chromosomes_name(include_whole_genome=True))
-        self.t2_ds["1"].invalidate_based_specie()
-
-    def t2_chromosome_change_event(self, value):
-        specie = self.t2_ds["1"].specie.get()
-        chromosome = self.t2_ds["1"].chromosome.get()
-        # set its sequence
-        self.t2_ds["1"].seq = ChromosomesHolder(specie, self.data_path).get_chromosome_sequence(chromosome)
-        self.t2_ds["1"].end_seq.set(len(self.t2_ds["1"].seq))
-        # enable window size
-        self.t2_window_entry.configure(state="normal")
-
-    def run_consecutive(self, event):
-        if self.t2_ds["1"].seq == "":
-            messagebox.showerror("Error", "Please upload or choose the sequence first")
-            return
-        if self.k_var.get() == 0:
-            messagebox.showerror("Error", "Please choose the k-mer value")
-            return
-        if self.dist_metric.get() == "":
-            messagebox.showerror("Error", "Please choose the distance measure")
-            return
-        global foo_thread
-        foo_thread = threading.Thread(target=self.t2_run)
-        foo_thread.daemon = True
-        foo_thread.start()
-        self.after(20, self.t2_check_thread)
-
-    def t2_run(self):
-        self.cgr_distance_history = []
-        step_length = np.floor(len(self.t2_ds["1"].seq) / int(self.t2_window_s.get()))
-        # self.t2_progress_bar.set(0)
-        # self.t2_pic_num.set(0)
-        self._t2_progress = 0.0
-        for i in range(int(step_length) - 1):
-            dictionary = {}
-            # self.t2_progress_bar.set((i + 2) / int(step_length))
-            self._t2_progress = (i + 2) / float(step_length)
-            b1 = i * int(self.t2_window_s.get())
-            e1 = (i + 1) * int(self.t2_window_s.get())
-            b2 = (i + 1) * int(self.t2_window_s.get())
-            e2 = (i + 2) * int(self.t2_window_s.get())
-
-            cgr1 = CGR(self.t2_ds["1"].seq[b1:e1], self.k_var.get())
-            cgr2 = CGR(self.t2_ds["1"].seq[b2:e2], self.k_var.get())
-
-            if self.fcgr.get() == 1:
-                im1 = cgr1.get_fcgr()
-                im2 = cgr2.get_fcgr()
-            else:
-                im1 = cgr1.get_cgr()
-                im2 = cgr2.get_cgr()
-
-            diff = im2 - im1
-
-            dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
-
-            self.cgr_distance_history.append(dist)
-
-            dictionary["1"] = {"(f)cgr": im1, "b": b1, "e": e1, "chr_len": len(self.t2_ds["1"].seq),
-                               "species": self.t2_ds["1"].specie.get()}
-            dictionary["2"] = {"(f)cgr": im2, "b": b2, "e": e2, "chr_len": len(self.t2_ds["1"].seq),
-                               "species": self.t2_ds["1"].specie.get()}
-            dictionary["diff"] = diff
-            dictionary["distance"] = dist
-
-            path = f"{self.temp_output_path}/consecutive/pickle"
-            if not os.path.exists(path):
-                os.makedirs(path)
-            with open(f"{path}/{i}.pkl", 'wb') as f:
-                pickle.dump(dictionary, f)
-
-    def t2_check_thread(self):
-        self.t2_progress_bar.set(self._t2_progress)
-
-        if foo_thread.is_alive():
-            self.after(20, self.t2_check_thread)
-        else:
-            self.t2_progress_bar.set(1.0)
-            self.t2_pic_num.set(0)
-            self.t2_scale.configure(to=int(len(self.cgr_distance_history) - 1))  # Update the scale range
-            self._change_images(0, "t2", None)
 
     def _change_images(self, index, tab_name, value):
         # plot distance results bar and first index is red
@@ -1934,10 +1516,10 @@ class App(customtkinter.CTk):
         # self.t3_progress_bar.set(1 / (int(t3_step_length) + 2))  # start progress bar
         self._t3_progress = 1.0 / (int(t3_step_length) + 2)
 
-        if self.fcgr.get() == 1:
-            im1 = ref_cgr.get_fcgr()
-        else:
-            im1 = ref_cgr.get_cgr()
+        # if self.fcgr.get() == 1:
+        im1 = ref_cgr.get_fcgr()
+        # else:
+        #     im1 = ref_cgr.get_cgr()
 
         # self.t3_progress_bar.set(2 / (int(t3_step_length) + 2))  # update progress bar
         self._t3_progress = 2.0 / (int(t3_step_length) + 2)
@@ -1959,10 +1541,10 @@ class App(customtkinter.CTk):
             e2 = (i + 1) * int(self.t3_window_s.get())
 
             cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
-            if self.fcgr.get() == 1:
-                im2 = cgr2.get_fcgr()
-            else:
-                im2 = cgr2.get_cgr()
+            # if self.fcgr.get() == 1:
+            im2 = cgr2.get_fcgr()
+            # else:
+            #     im2 = cgr2.get_cgr()
 
             diff = im2 - im1
 
@@ -1975,298 +1557,6 @@ class App(customtkinter.CTk):
 
             with open(f"{path}/{i}.pkl", 'wb') as f:
                 pickle.dump(dictionary, f)
-
-    def t4_specie_change_event(self, value):
-        self.t4_species_combobox.set(value)
-        self.t4_ds["1"].specie.set(value)
-
-        specie = self.t4_ds["1"].specie.get()
-        self.t4_chr_combobox.configure(
-            values=ChromosomesHolder(specie, self.data_path).get_all_chromosomes_name(include_whole_genome=True))
-        self.t4_ds["1"].invalidate_based_specie()
-
-        if specie == "Human":
-            self.t4_algo_combobox.configure(values=["RepSeg", "aRepSeg", "Random from Outliers"])
-        else:
-            self.t4_algo_combobox.configure(values=["RepSeg", "aRepSeg"])
-
-    def t4_chromosome_change_event(self, value):
-        specie = self.t4_ds["1"].specie.get()
-        chromosome = self.t4_ds["1"].chromosome.get()
-        # set its sequence
-        self.t4_ds["1"].seq = ChromosomesHolder(specie, self.data_path).get_chromosome_sequence(chromosome)
-        self.t4_ds["1"].end_seq.set(len(self.t4_ds["1"].seq))
-        # enable window size
-        self.t4_window_entry.configure(state="normal")
-
-    def t4_upload_event(self, sender, value):
-        file_path = filedialog.askopenfilename()
-        _, sequence = ChromosomesHolder.read_fasta(file_path)
-        if len(sequence) > 0:
-            self.t4_ds[sender].specie.set("Custom")
-            self.t4_species_combobox.set("Custom")
-            self.t4_algo_combobox.configure(values=["RepSeg", "aRepSeg"])
-            self.t4_ds[sender].invalidate_based_specie()
-            self.t4_ds[sender].seq = sequence
-            self.t4_ds[sender].end_seq.set(len(self.t4_ds[sender].seq))
-            self.sync_text_vars(self.t4_ds, sender)
-            self.t4_window_entry.configure(state="normal")
-
-    def t4_algo_change_event(self, value):
-        if value == "aRepSeg":
-            self.t4_num_seg.set("")
-            self.t4_num_seg_entry.configure(state="normal")
-        else:
-            self.t4_num_seg.set("1")
-            self.t4_num_seg_entry.configure(state="disable")
-
-    def run_representative(self, value):
-        if self.t4_ds["1"].seq == "":
-            messagebox.showerror("Error", "Please upload or choose the sequence first")
-            return
-        if self.k_var.get() == 0:
-            messagebox.showerror("Error", "Please choose the k-mer value")
-            return
-        if self.dist_metric.get() == "":
-            messagebox.showerror("Error", "Please choose the distance measure")
-            return
-        if self.t4_algo_combobox.get() == "aRepSeg" and self.t4_num_seg.get() == "":
-            messagebox.showerror("Error", "Please enter the number of segments")
-            return
-        global foo_thread_3
-        foo_thread_3 = threading.Thread(target=self.t4_run)
-        foo_thread_3.daemon = True
-        foo_thread_3.start()
-        self.after(20, self.t4_check_thread)
-
-    def t4_check_thread(self):
-        self.t4_progress_bar.set(self._t4_progress)
-        if foo_thread_3.is_alive():
-            self.after(20, self.t4_check_thread)
-        else:
-            self.t4_progress_bar.set(1.0)
-            self.t4_pic_num.set(0)
-            self.t4_scale.configure(to=int(len(self.t4_cgr_distance_history) - 1))  # Update the scale range
-
-            # Display the reference image
-            if self.representative_algo.get() == "aRepSeg":
-                with open(f"{self.temp_output_path}/representative/pickle/ref.pkl", 'rb') as handle:
-                    dictionary = pickle.load(handle)
-            else:
-                with open(f"{self.temp_output_path}/representative/pickle/{self.t4_representative_index}.pkl",
-                          'rb') as handle:
-                    dictionary = pickle.load(handle)
-
-            message = f"Description: Total time of execution was {round(self.execution_time)}s"
-            if dictionary["information"] is not None:
-                message += f". Representative is from cytoband {dictionary['information'].name}."
-            self.output_message.configure(text=message)
-
-            fig, (ax1) = plt.subplots(1, 1)
-            fig.subplots_adjust(top=0.85)
-            extent = 0, 1, 0, 1
-
-            scale, scaling = self.get_scaling(dictionary["chr_len"])
-            b = dictionary["b"]
-            e = dictionary["e"]
-
-            display_frame_color = self.t4_display_frame_1.cget("fg_color")
-            fig.patch.set_facecolor(display_frame_color)
-
-            img1 = CGR.array2img(dictionary["(f)cgr"], bits=8,  # BITS_DICT[dictionary["species"]]
-                                 resolution=RESOLUTION_DICT[self.k_var.get()])
-            img1 = Image.fromarray(img1, 'L')
-            ax1.imshow(img1, cmap='gray', extent=extent)
-            ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax1.set_title(f'Representative\n{round(b / scale, 2)} - {round(e / scale, 2)} {scaling}')
-
-            # Clear the previous figure from the display frame if any
-            for widget in self.t4_display_frame_1.winfo_children():
-                widget.destroy()
-
-            # Create a canvas and add the figure to it
-            canvas = FigureCanvasTkAgg(fig, master=self.t4_display_frame_1)
-            canvas.draw()
-
-            # Set the canvas size explicitly
-            canvas_width = self.t4_display_frame_1.cget("width")
-            canvas_height = self.t4_display_frame_1.cget("height")
-            canvas.get_tk_widget().config(width=canvas_width, height=canvas_height)
-            # Use grid to place the canvas
-            canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
-            plt.close()
-
-            # Display the plot and the first set
-            self._change_images(0, "t4", None)
-
-    def t4_run(self):
-        start_time = time.time()
-        # self.t4_pic_num.set(0)
-
-        t4_step_length = np.floor(len(self.t4_ds["1"].seq) / int(self.t4_window_s.get()))
-        arssp_max_retry = 50
-        if self.representative_algo.get() == "aRepSeg":
-            t4_step_length_all = t4_step_length + t4_step_length + arssp_max_retry
-        elif self.representative_algo.get() == "RepSeg":
-            t4_step_length_all = t4_step_length + int(t4_step_length * (t4_step_length + 1) / 2) + t4_step_length
-        else:
-            t4_step_length_all = t4_step_length + t4_step_length
-        # self.t4_progress_bar.set(0)
-        progress = 0
-
-        path = f"{self.temp_output_path}/representative/pickle"
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-        # Split the chromosome based on the segment size
-        fcgrs_list = []
-        information_list = []
-        for i in range(int(t4_step_length)):
-            progress += 1
-            # self.t4_progress_bar.set(progress / int(t4_step_length_all))
-            self._t4_progress = progress / float(t4_step_length_all)
-
-            b1 = i * int(self.t4_window_s.get())
-            e1 = (i + 1) * int(self.t4_window_s.get())
-
-            # get fcgr
-            cgr = CGR(self.t4_ds["1"].seq[b1:e1], self.k_var.get())
-            if self.fcgr.get() == 1:
-                im = cgr.get_fcgr()
-            else:
-                im = cgr.get_cgr()
-
-            fcgrs_list.append(im)
-            # get segment information
-            if self.t4_ds["1"].specie.get() == "Custom":
-                segment_information = None
-            else:
-                segment_information = ChromosomesHolder(self.t4_ds["1"].specie.get(),
-                                                        self.data_path).get_annotation_of_segment(
-                    self.t4_ds["1"].chromosome.get(), b1, int(self.t4_window_s.get()), group="cytoband")
-            information_list.append(segment_information)
-
-        # Find the representative
-        if self.representative_algo.get() == "aRepSeg":
-            random_sequences_number = int(self.t4_num_seg.get())
-            random_sequences_list = []
-            retry_count, outlier_indices_number_total = 0, 0
-            avgs = None
-            while len(random_sequences_list) < random_sequences_number and retry_count < arssp_max_retry:
-                progress += 1
-                # self.t4_progress_bar.set(progress / int(t4_step_length_all))
-                self._t4_progress = progress / float(t4_step_length_all)
-
-                retry_count += 1
-                for _ in range(random_sequences_number - len(random_sequences_list)):
-                    # if its custom
-                    if self.t4_ds["1"].specie.get() == "Custom":
-                        random_sequence_dict = ChromosomesHolder.get_random_segment_from_any(
-                            int(self.t4_window_s.get()), self.t4_ds["1"].seq, return_dict=True)
-                    else:
-                        random_sequence_dict = ChromosomesHolder(self.t4_ds["1"].specie.get(),
-                                                                 self.data_path).get_random_segment(
-                            int(self.t4_window_s.get()), self.t4_ds["1"].chromosome.get(), return_dict=True)
-
-                    cgr = CGR(random_sequence_dict['sequence'], self.k_var.get())
-                    if self.fcgr.get() == 1:
-                        fcgr = cgr.get_fcgr()
-                    else:
-                        fcgr = cgr.get_cgr()
-                    random_sequence_dict['(f)cgr'] = fcgr
-
-                    random_sequences_list.append(random_sequence_dict)
-
-                # Get the distance matrix between these choices, then get the average distance for each choice
-                distance_matrix = np.zeros((len(random_sequences_list), len(random_sequences_list)))
-                for i in range(distance_matrix.shape[0]):
-                    for j in range(i + 1):
-                        distance_matrix[i, j] = get_dist(random_sequences_list[i]['(f)cgr'],
-                                                         random_sequences_list[j]['(f)cgr'],
-                                                         dist_m=self.dist_metric.get())
-                        distance_matrix[j, i] = distance_matrix[i, j]
-                avgs = np.mean(distance_matrix, axis=1)
-
-                # Find the outlier indices
-                outlier_indices = ChromosomeRepresentativeSelection.get_outliers_index_iqr(avgs)
-                outlier_indices_number_total += len(outlier_indices)
-
-                # Remove the outliers from the list of dictionaries
-                random_sequences_list = [item for idx, item in enumerate(random_sequences_list) if
-                                         idx not in outlier_indices]
-
-            # If we could not find enough non-outlier sequences, show an error message and return
-            if len(random_sequences_list) < random_sequences_number:
-                messagebox.showerror("Error", "Could not find enough non-outlier sequences.")
-                return
-
-            # Choose the minimum average distance from the remaining as the representative
-            representative_dict = random_sequences_list[np.argmin(avgs)]
-
-            centroid_fcgr = representative_dict['(f)cgr']
-            if self.t4_ds["1"].specie.get() != "Custom":
-                representative_information = ChromosomesHolder(self.t4_ds["1"].specie.get(),
-                                                               self.data_path).get_annotation_of_segment(
-                    self.t4_ds["1"].chromosome.get(), representative_dict['start'], int(self.t4_window_s.get()),
-                    group="cytoband")
-            else:
-                representative_information = None
-            dictionary = {"(f)cgr": representative_dict['(f)cgr'],
-                          "b": representative_dict['start'],
-                          "e": representative_dict['start'] + int(self.t4_window_s.get()),
-                          "chr_len": len(self.t4_ds["1"].seq),
-                          "information": representative_information,
-                          "species": self.t4_ds["1"].specie.get()}
-            with open(f"{path}/ref.pkl", 'wb') as f:
-                pickle.dump(dictionary, f)
-
-        elif self.representative_algo.get() == "RepSeg":
-            # get distance matrix
-            distance_matrix = np.zeros((len(fcgrs_list), len(fcgrs_list)))
-            for i in range(distance_matrix.shape[0]):
-                for j in range(i + 1):
-                    progress += 1
-                    # self.t4_progress_bar.set(progress / int(t4_step_length_all))
-                    self._t4_progress = progress / float(t4_step_length_all)
-
-                    distance_matrix[i, j] = get_dist(fcgrs_list[i], fcgrs_list[j], dist_m=self.dist_metric.get())
-                    distance_matrix[j, i] = distance_matrix[i, j]
-
-            # get representative
-            self.t4_representative_index = ChromosomeRepresentativeSelection.find_centroid(distance_matrix)
-            centroid_fcgr = fcgrs_list[self.t4_representative_index]
-
-        else:  # random
-            self.t4_representative_index = ChromosomesHolder(
-                self.t4_ds["1"].specie.get(), self.data_path).choose_random_fragment_index(
-                self.t4_ds["1"].chromosome.get(), int(self.t4_window_s.get()), outlier=True)
-            centroid_fcgr = fcgrs_list[self.t4_representative_index]
-
-        # get the difference from the centroid
-        self.t4_cgr_distance_history = []
-        for i in range(len(fcgrs_list)):
-            progress += 1
-            # self.t4_progress_bar.set(progress / int(t4_step_length_all))
-            self._t4_progress = progress / float(t4_step_length_all)
-
-            diff = fcgrs_list[i] - centroid_fcgr
-            dist = get_dist(centroid_fcgr, fcgrs_list[i], dist_m=self.dist_metric.get())
-            self.t4_cgr_distance_history.append(dist)
-
-            dictionary = {"(f)cgr": fcgrs_list[i], "b": i * int(self.t4_window_s.get()),
-                          "e": (i + 1) * int(self.t4_window_s.get()), "chr_len": len(self.t4_ds["1"].seq),
-                          "diff": diff, "distance": dist, "information": information_list[i],
-                          "species": self.t4_ds["1"].specie.get()}
-
-            with open(f"{path}/{i}.pkl", 'wb') as f:
-                pickle.dump(dictionary, f)
-
-        # # complete progress bar
-        # self.t4_progress_bar.set(1.0)
-
-        # get the execution time
-        end_time = time.time()
-        self.execution_time = end_time - start_time
 
 
 class GenerateSyntheticSequence(customtkinter.CTkToplevel):
