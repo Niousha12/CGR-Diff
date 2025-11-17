@@ -173,7 +173,7 @@ class CGRApp(ctk.CTk):
             label.grid(row=0, column=0)
 
     # --------------------------------------------------
-    # LEFT PANEL of CGR Analysis
+    # CGR Analysis page
     # --------------------------------------------------
     def _build_cgr_analysis(self, parent):
         # ---------- Design left panel ----------
@@ -259,7 +259,7 @@ class CGRApp(ctk.CTk):
         run_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
 
     # --------------------------------------------------
-    # UPLOAD HANDLER
+    # Helper functions for CGR analysis tab
     # --------------------------------------------------
     def _upload_files(self):
         file_paths = filedialog.askopenfilenames(
@@ -352,7 +352,39 @@ class CGRApp(ctk.CTk):
         self._refresh_uploaded_file_list()  # refresh GUI
 
     def _run_analysis_selected_file(self):
-        pass
+        if self.selected_file_index is None:
+            messagebox.showinfo("No selection", "Please select a file to analyze.")
+            return
+
+        path = self.uploaded_files[self.selected_file_index]
+
+        name, seq = self._read_fasta(path)
+        if not seq:
+            messagebox.showinfo("Error", "The selected FASTA file contains no sequence data.")
+            return
+
+        # ---- the analysis goes here ----
+        length = len(seq)
+        messagebox.showinfo("Analysis result", f"File: {os.path.basename(path)}\n\nSequence length: {length} bases")
+
+    # --------------------------------------------------
+    # Static methods
+    # --------------------------------------------------
+    @staticmethod
+    def _read_fasta(file_path):
+        sequence = ""
+        record_count = 0
+        with open(file_path) as file:
+            for line in file:
+                line = line.strip()
+                if line.startswith(">"):
+                    record_count += 1
+                    if record_count > 1:
+                        raise ValueError("FASTA contains multiple records; expected exactly one.")
+                    file_name = (line[1:].split()[0] or "unknown")
+                else:
+                    sequence += line
+        return file_name, sequence
 
 
 # -------------------- RUN APP --------------------
