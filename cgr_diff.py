@@ -6,7 +6,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import os
 
 # -------------------- FONTS --------------------
@@ -279,25 +279,80 @@ class CGRApp(ctk.CTk):
         for widget in self.uploaded_seq_lists_frame.winfo_children():
             widget.destroy()
 
+        self.file_cards = []  # reset cards list
+
         if not self.uploaded_files:
             no_file_label = tk.Label(self.uploaded_seq_lists_frame, text="No files uploaded yet.",
                                      bg=self.colors["BG_MAIN"], fg=self.colors["TEXT_MUTED"])
             no_file_label.grid(row=0, column=0, padx=5, pady=5)
+            self.selected_file_index = None
             return
 
         for i, path in enumerate(self.uploaded_files):
             fname = os.path.basename(path)
 
-            # card for each file (plain tk.Frame to keep geometry simple)
-            card = ctk.CTkFrame(self.uploaded_seq_lists_frame, fg_color=self.colors["BG_MAIN"], )
-            # note: sticky="w" so width is natural; long text extends horizontally
+            # card for each file
+            card = ctk.CTkFrame(self.uploaded_seq_lists_frame, fg_color=self.colors["BG_MAIN"])
             card.grid(row=i, column=0, padx=5, pady=5, sticky="w")
 
+            # make everything inside the card clickable
+            def _make_on_click(index):
+                def _on_click(event=None):
+                    return self._set_selected_uploaded(index)
+
+                return _on_click
+
+            on_click = _make_on_click(i)
+            card.bind("<Button-1>", on_click)
+
             name_label = tk.Label(card, text=fname, bg=self.colors["BG_MAIN"], fg=self.colors["TEXT_MAIN"], anchor="w")
-            name_label.grid(row=0, column=0, padx=0, pady=(2, 0), sticky="w")
+            name_label.grid(row=0, column=0, padx=(1, 1), pady=(2, 0), sticky="w")
+            name_label.bind("<Button-1>", on_click)
 
             path_label = tk.Label(card, text=path, bg=self.colors["BG_MAIN"], fg=self.colors["TEXT_MUTED"], anchor="w")
-            path_label.grid(row=1, column=0, padx=0, pady=(0, 2), sticky="w")
+            path_label.grid(row=1, column=0, padx=(1, 1), pady=(0, 2), sticky="w")
+            path_label.bind("<Button-1>", on_click)
+
+            self.file_cards.append(card)
+
+        # if we had a selection, re-apply highlight (in case the list was redrawn)
+        if self.selected_file_index is not None:
+            if 0 <= self.selected_file_index < len(self.file_cards):
+                self._set_selected_uploaded(self.selected_file_index)
+            else:
+                self.selected_file_index = None
+
+    def _set_selected_uploaded(self, index: int):
+        self.selected_file_index = index
+
+        for i, card in enumerate(self.file_cards):
+            if i == index:
+                # SELECTED STYLE
+                card.configure(fg_color=self.colors["BUTTON_HL"], corner_radius=0)
+                for child in card.winfo_children():
+                    if child.grid_info().get("row") == 0:
+                        child.configure(bg=self.colors["BUTTON_HL"], fg="white")
+                    else:
+                        child.configure(bg=self.colors["BUTTON_HL"], fg=self.colors["TEXT_MUTED"])
+            else:
+                card.configure(fg_color=self.colors["BG_MAIN"])
+                for child in card.winfo_children():
+                    if child.grid_info().get("row") == 0:
+                        child.configure(bg=self.colors["BG_MAIN"], fg=self.colors["TEXT_MAIN"])
+                    else:
+                        child.configure(bg=self.colors["BG_MAIN"], fg=self.colors["TEXT_MUTED"])
+
+    def _remove_selected_file(self):
+        if self.selected_file_index is None:
+            messagebox.showinfo("No selection", "Please select a file to remove.")
+            return
+
+        removed_path = self.uploaded_files.pop(self.selected_file_index)  # remove from list
+        self.selected_file_index = None  # reset selection
+        self._refresh_uploaded_file_list()  # refresh GUI
+
+    def _run_analysis_selected_file(self):
+        pass
 
 
 # -------------------- RUN APP --------------------
