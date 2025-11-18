@@ -4,7 +4,6 @@ import sys
 import threading
 import tkinter
 import tkinter.messagebox
-import time
 from functools import partial
 import random
 
