@@ -26,7 +26,16 @@ from sequence_generation.sequence_generation import generate_dna_sequence
 
 ctk.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
-HEADER_FONT = ('Cambria', 14, 'bold')
+HEADER_FONT = ('Cambria', 16)
+
+# main colors in the theme
+COLORS = dict(
+    BTN_COLOR=ctk.ThemeManager.theme["CTkButton"]["fg_color"],
+    TEXT_NORMAL_COLOR=ctk.ThemeManager.theme["CTkButton"]["text_color"],
+    TEXT_DISABLE_COLOR="#707370",  # BTN_THEME.get("text_color_disabled", TEXT_NORMAL_COLOR)
+    FRAME_COLOR="#707370",
+    FRAME_HOVER_COLOR="#444444",
+    BORDER_COLOR="#333333", )
 
 
 class GUIDataStructure:
@@ -56,11 +65,6 @@ class GUIDataStructure:
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.temp_output_path = self.resource_path(".gui_temp_outputs")
-        if not os.path.exists(self.temp_output_path):
-            os.makedirs(self.temp_output_path)
-        self.assets_path = self.resource_path("assets")
-        self.data_path = self.resource_path("Data")
 
         self.title("CGR-Diff.py")
         screen_width = self.winfo_screenwidth()
@@ -69,451 +73,580 @@ class App(ctk.CTk):
 
         # configure grid layout (4x4)
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        # create tabview
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.grid(padx=(20, 20), pady=(20, 20), sticky="nsew")
-        tab_names = ["CGR Analysis", "CGR Comparator", "Common Reference", "Multispecies Comparator"]
-        for tab_name in tab_names:
-            self.tabview.add(tab_name)
-        # start from tab 1
-        self.tabview.set(tab_names[1])
-
-        # ------- images --------
-        prev_im = ctk.CTkImage(light_image=Image.open(f"{self.assets_path}/back_arrow.png"), size=(20, 20))
-        next_im = ctk.CTkImage(light_image=Image.open(f"{self.assets_path}/next_arrow.png"), size=(20, 20))
-        search_im = ctk.CTkImage(light_image=Image.open(f"{self.assets_path}/search.png"), size=(12, 12))
-        upload_im = ctk.CTkImage(light_image=Image.open(f"{self.assets_path}/upload-sign.png"), size=(12, 12))
-
-        # ------- variables --------
-        values_list = ["2", "3", "4", "5", "6", "7", "8", "9"]
-        PLOT_TYPE_LIST = ["Bar plot", "Histogram plot"]
-        species_list = [str(f) for f in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, f))]
-
-        # common variables
-        self.k_var = ctk.IntVar()
-        self.dist_metric = ctk.StringVar()
-        appearance = ctk.StringVar(value="Dark")
-        self.plot_type_var = ctk.StringVar()
-
-        # NCBI variables
-        self.download_path = ctk.StringVar(value=str(self.resource_path("Data")))
-        self.email_var = ctk.StringVar(value="")
-        self.checkbox_frame = None
-        self.id_map = {}
-        self.checkbox_vars = {}  # dict to store which boxes are selected
-
-        '''
-            Second Page (CGR Comparator tab)
-            Configuring 
-        '''
-        self.tabview.tab(tab_names[1]).grid_columnconfigure(0, weight=1)
-        self.tabview.tab(tab_names[1]).grid_columnconfigure(1, weight=10)
-        self.tabview.tab(tab_names[1]).grid_rowconfigure(0, weight=1)
-        self.tabview.tab(tab_names[1]).grid_rowconfigure(1, weight=4)
-
-        # Frames
-        t2_config_frame = ctk.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20,
-                                                 border_color="#333333", border_width=2)
-        t2_config_frame.grid(row=0, column=0, rowspan=2, sticky="ns")
-        t2_slider_frame = ctk.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20,
-                                                 border_color="#333333", border_width=2)
-        t2_slider_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        self.t2_display_frame = ctk.CTkFrame(self.tabview.tab(tab_names[1]), corner_radius=20,
-                                                       fg_color="#707370")  # , width=600, height=200)
-        self.t2_display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-
-        # Designing the config frame (F1)
-        for row in range(10):  # Increased row count to account for empty rows
-            t2_config_frame.grid_rowconfigure(row, weight=1)
-
-        # Search button
-        ctk.CTkButton(t2_config_frame, image=search_im, width=180, height=25, command=self.open_popup,
-                                text="Search and Download Genomes").grid(row=0, columnspan=2, pady=(5, 0))
-        # Creating frames for chromosome 1 and chromosome 2
-        t2_chr_frame = ctk.CTkFrame(t2_config_frame, corner_radius=20)
-        t2_chr_frame.grid(row=1, columnspan=2, padx=5, pady=(5, 5), sticky="ew")
-
-        # Chromosomes Widget
-        # get all the folders name in DATA path
-        self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        self.t2_species_combobox = {}
-        self.t2_chr_combobox = {}
-        for i in range(2):
-            ctk.CTkLabel(t2_chr_frame, text=f"Genome {i + 1}: ", font=HEADER_FONT) \
-                .grid(row=i * 3, column=0, sticky="w", padx=10, pady=(5, 0))
-
-            # upload button
-            ctk.CTkButton(t2_chr_frame, image=upload_im, text="", width=15, height=10,
-                                    command=partial(self.t1_upload_event, f"{str(i + 1)}", None)) \
-                .grid(row=i * 3, column=1, sticky="w", padx=10, pady=(5, 0))
-
-            ctk.CTkLabel(t2_chr_frame, text="Species: ", font=HEADER_FONT) \
-                .grid(row=(i * 3) + 1, column=0, sticky="w", padx=10)
-            ctk.CTkLabel(t2_chr_frame, text="Chromosome name: ", font=HEADER_FONT) \
-                .grid(row=(i * 3) + 1, column=1, sticky="w", padx=10)
-            self.t2_species_combobox[f"{i + 1}"] = ctk.CTkComboBox(t2_chr_frame, values=species_list,
-                                                                             width=100,
-                                                                             command=partial(self.specie_change_event,
-                                                                                             f"{i + 1}"))
-
-            self.t2_species_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=0, sticky="w", padx=10, pady=(0, 12))
-            self.t2_species_combobox[f"{i + 1}"].set("")
-
-            self.t2_chr_combobox[f"{i + 1}"] = ctk.CTkComboBox(t2_chr_frame, values=[],
-                                                                         variable=self.t2_ds[str(i + 1)].chromosome,
-                                                                         width=100,
-                                                                         command=partial(self.chromosome_change_event,
-                                                                                         f"{i + 1}"))
-            self.t2_chr_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=1, sticky="w", padx=10, pady=(0, 12))
-            self.t2_chr_combobox[f"{i + 1}"].set("")
-
-        # Radio Button (Window size)
-        # Frame for window size settings
-        t2_config_frame_color = t2_config_frame.cget("fg_color")
-        t2_window_size_frame = ctk.CTkFrame(t2_config_frame, fg_color=t2_config_frame_color)
-        t2_window_size_frame.grid(row=2, columnspan=2, padx=10, pady=5, sticky="w")
-
-        ctk.CTkLabel(t2_window_size_frame, text="Segment Size:", font=HEADER_FONT) \
-            .grid(row=0, column=0, padx=10)
-        self.window_s_toggle = tkinter.IntVar(value=0)
-        t2_window_s_1 = ctk.CTkRadioButton(t2_window_size_frame, text="Variable",
-                                                     variable=self.window_s_toggle,
-                                                     value=0, command=self.window_size_toggle_event)
-        t2_window_s_1.grid(row=1, column=0, padx=10, pady=5)
-        t2_window_s_2 = ctk.CTkRadioButton(t2_window_size_frame, text="Fix",
-                                                     variable=self.window_s_toggle,
-                                                     value=1, command=self.window_size_toggle_event)
-        t2_window_s_2.grid(row=1, column=1, padx=10, pady=5, sticky="w")
-        self.window_s = tkinter.StringVar(value="")
-        self.window_entry = ctk.CTkEntry(t2_window_size_frame, textvariable=self.window_s)
-        self.window_entry.bind('<FocusOut>', partial(self.sequence_value_change, "0"))
-        self.window_entry.bind('<Key-Return>', partial(self.sequence_value_change, "0"))
-        self.window_entry.configure(state="disable")
-        self.window_entry.grid(row=2, columnspan=2, padx=(10, 10), pady=(10, 10), sticky="ew")
-
-        # k_mer combo box
-        ctk.CTkLabel(t2_config_frame, text="k-mer: ", font=HEADER_FONT) \
-            .grid(row=3, column=0, padx=10, pady=(10, 10))
-        k_mer_combobox = ctk.CTkComboBox(t2_config_frame, values=values_list, width=100,
-                                                   state="normal", variable=self.k_var)
-        k_mer_combobox.grid(row=3, column=1, sticky="w", pady=(10, 10), padx=10)
-
-        # reverse complement and random
-        t2_seq_rv = ctk.CTkFrame(t2_config_frame, fg_color=t2_config_frame_color)
-        t2_seq_rv.grid(row=4, columnspan=2, padx=10, pady=5, sticky="ew")
-
-        self.checkbox_RC = {}
-        self.checkbox_Random = {}
-        for i in range(2):
-            seq_label = ctk.CTkLabel(t2_seq_rv, text=f'Sequence {i + 1} :', font=HEADER_FONT)
-            seq_label.grid(row=(i * 2), column=0, padx=10, pady=(5, 0), sticky="w")
-
-            self.checkbox_RC[str(i + 1)] = ctk.CTkCheckBox(master=t2_seq_rv, text="Reverse Complement")
-            self.checkbox_RC[str(i + 1)].grid(row=(i * 2), column=1, padx=10, pady=5, sticky="w")
-            self.checkbox_Random[str(i + 1)] = ctk.CTkCheckBox(master=t2_seq_rv, text="Shuffle")
-            self.checkbox_Random[str(i + 1)].grid(row=(i * 2) + 1, column=1, padx=10, pady=5, sticky="w")
-
-        # Distance metrics
-        ctk.CTkLabel(t2_config_frame, text="Distance\n Measure: ", font=HEADER_FONT) \
-            .grid(row=6, column=0, padx=10, pady=(10, 10))
-        dist_metric_combobox = ctk.CTkComboBox(t2_config_frame, values=DISTANCE_METRICS_LIST,
-                                                         width=120, variable=self.dist_metric)
-        dist_metric_combobox.grid(row=6, column=1, sticky="w", padx=10, pady=(10, 10))
-        dist_metric_combobox.set("DSSIM")
-
-        # cgr/fcgr option
-        # self.fcgr = ctk.IntVar(value=1)
-        # switch = ctk.CTkSwitch(t2_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        # switch.grid(row=7, columnspan=2, pady=(10, 10))
-
-        # plot button
-        self.t2_display_frame.grid_rowconfigure(0, weight=1)
-        self.t2_display_frame.grid_columnconfigure(0, weight=1)
-        t2_plot_button = ctk.CTkButton(t2_config_frame, text="Plot", width=120, command=self.t1_plot)
-        t2_plot_button.grid(row=8, columnspan=2, pady=(10, 5))
-
-        # Appearance mode
-        ctk.CTkLabel(t2_config_frame, text="Theme: ", font=HEADER_FONT) \
-            .grid(row=9, column=0, padx=10, pady=(20, 10))
-        appearance_mode = ctk.CTkOptionMenu(t2_config_frame, values=["Dark", "Light"], width=100,
-                                                      variable=appearance, command=self.change_appearance_mode_event)
-        appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
-
-        # First Sequence scale
-        _pad_size = (20, 0)
-        self.t2_parts_name_combobox = {}
-        self.start_seq_scale = {}
-        self.end_seq_scale = {}
-        self.t2_start_seq_entry = {}
-        self.t2_end_seq_entry = {}
-        for i in range(2):
-            ctk.CTkLabel(t2_slider_frame, text=f'Sequence {i + 1} :', font=HEADER_FONT) \
-                .grid(row=(i * 2), column=0, padx=10, pady=_pad_size)
-
-            # Sequence part names combo box
-            self.t2_parts_name_combobox[str(i + 1)] = \
-                ctk.CTkComboBox(t2_slider_frame, width=100, values=[],
-                                          command=partial(self.annotation_change_event, str(i + 1)),
-                                          variable=self.t2_ds[str(i + 1)].annotation, state="disable")
-            self.t2_parts_name_combobox[str(i + 1)].grid(row=(i * 2) + 1, column=0, padx=10, pady=_pad_size)
-
-            ctk.CTkLabel(t2_slider_frame, text='Start').grid(row=(i * 2), column=1, padx=5, pady=_pad_size)
-            ctk.CTkLabel(t2_slider_frame, text='End').grid(row=(i * 2) + 1, column=1, padx=5, pady=_pad_size)
-
-            seq_length = len(self.t2_ds[str(i + 1)].seq)
-            to_value = seq_length if seq_length > 0 else 1
-
-            self.start_seq_scale[str(i + 1)] = ctk.CTkSlider(t2_slider_frame, from_=0, to=to_value,
-                                                                       orientation="horizontal", width=700,
-                                                                       variable=self.t2_ds[str(i + 1)].start_seq,
-                                                                       command=partial(self.sequence_value_change,
-                                                                                       str(i + 1)))
-            self.start_seq_scale[str(i + 1)].set(0)
-            self.scale_normal_color = self.start_seq_scale[str(i + 1)].cget("button_color")
-            self.start_seq_scale[str(i + 1)].configure(state="disabled", button_color="#888888")
-            self.start_seq_scale[str(i + 1)].grid(row=(i * 2), column=2, pady=_pad_size)
-
-            self.t2_start_seq_entry[str(i + 1)] = ctk.CTkEntry(t2_slider_frame,
-                                                                         textvariable=self.t2_ds[str(i + 1)].start_txt)
-            self.t2_start_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.sequence_value_change, "3"))
-            self.t2_start_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.sequence_value_change, "3"))
-            self.t2_start_seq_entry[str(i + 1)].grid(row=(i * 2), column=3, padx=5, pady=_pad_size)
-            seq_s_e_label = ctk.CTkLabel(t2_slider_frame, text='bp')
-            seq_s_e_label.grid(row=(i * 2), column=4, pady=_pad_size)
-
-            end_seq_length = self.t2_ds[str(i + 1)].end_seq.get()
-            to_value = end_seq_length if end_seq_length > 0 else 1
-
-            self.end_seq_scale[str(i + 1)] = ctk.CTkSlider(t2_slider_frame, from_=0, to=to_value,
-                                                                     orientation="horizontal", width=700,
-                                                                     variable=self.t2_ds[str(i + 1)].end_seq,
-                                                                     command=partial(self.sequence_value_change,
-                                                                                     str(i + 1)))
-            self.end_seq_scale[str(i + 1)].set(0)
-            self.end_seq_scale[str(i + 1)].configure(state="disabled", button_color="#888888")
-            self.end_seq_scale[str(i + 1)].grid(row=(i * 2) + 1, column=2, pady=_pad_size)
-
-            self.t2_end_seq_entry[str(i + 1)] = ctk.CTkEntry(t2_slider_frame,
-                                                                       textvariable=self.t2_ds[str(i + 1)].end_txt)
-            self.t2_end_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.sequence_value_change, "3"))
-            self.t2_end_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.sequence_value_change, "3"))
-            self.t2_end_seq_entry[str(i + 1)].grid(row=(i * 2) + 1, column=3, padx=5, pady=_pad_size)
-            seq_s_e_label_d = ctk.CTkLabel(t2_slider_frame, text='bp')
-            seq_s_e_label_d.grid(row=(i * 2) + 1, column=4, pady=_pad_size)
-
-        '''
-            Third Page (Common Reference)
-            Configuring 
-        '''
-        self.tabview.tab(tab_names[2]).grid_columnconfigure(0, weight=1)
-        self.tabview.tab(tab_names[2]).grid_columnconfigure(1, weight=10)
-
-        self.tabview.tab(tab_names[2]).grid_rowconfigure(0, weight=1)
-        self.tabview.tab(tab_names[2]).grid_rowconfigure(1, weight=20)
-        self.tabview.tab(tab_names[2]).grid_rowconfigure(2, weight=50)
-        self.tabview.tab(tab_names[2]).grid_rowconfigure(3, weight=1)
-
-        # Frames
-        t3_config_frame = ctk.CTkFrame(self.tabview.tab(tab_names[2]), corner_radius=20,
-                                                 border_color="#333333", border_width=2)
-        t3_config_frame.grid(row=0, column=0, rowspan=4, sticky="ns")
-        self.t3_plot_frame = ctk.CTkFrame(self.tabview.tab(tab_names[2]), corner_radius=20, fg_color="white")
-        self.t3_plot_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        t3_display_frame = ctk.CTkFrame(self.tabview.tab(tab_names[2]), corner_radius=20)
-        t3_display_frame.grid(row=2, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        # frames in the display frame
-        t3_display_frame.grid_rowconfigure(0, weight=1)
-        t3_display_frame.grid_columnconfigure(0, weight=2)
-        t3_display_frame.grid_columnconfigure(1, weight=8)
-        self.t3_display_frame_1 = ctk.CTkFrame(t3_display_frame, corner_radius=20, fg_color="#707370")
-        self.t3_display_frame_1.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        self.t3_display_frame_2 = ctk.CTkFrame(t3_display_frame, corner_radius=20, fg_color="#707370")
-        self.t3_display_frame_2.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-
-        self.t3_plot_frame.grid_rowconfigure(0, weight=1)
-        self.t3_plot_frame.grid_columnconfigure(0, weight=1)
-
-        self.t3_display_frame_1.grid_rowconfigure(0, weight=1)
-        self.t3_display_frame_1.grid_columnconfigure(0, weight=1)
-        self.t3_display_frame_2.grid_rowconfigure(0, weight=1)
-        self.t3_display_frame_2.grid_columnconfigure(0, weight=1)
-
-        # Designing the config frame (F3)
-        for row in range(10):
-            t3_config_frame.grid_rowconfigure(row, weight=1)
-
-        # Search button
-        search_button = ctk.CTkButton(t3_config_frame, image=search_im, width=180, height=25,
-                                                text="Search and Download Genomes", command=self.open_popup)
-        search_button.grid(row=0, columnspan=2, pady=(5, 0))
-
-        self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        # Creating frame for reference sequence
-        t3_chr_frame = ctk.CTkFrame(t3_config_frame, corner_radius=20)
-        t3_chr_frame.grid(row=1, columnspan=2, padx=5, pady=5, sticky="ew")
-
-        ctk.CTkLabel(t3_chr_frame, text=f"Reference: ", font=HEADER_FONT) \
-            .grid(row=0, column=0, sticky="w", padx=10, pady=(5, 0))
-        # upload button
-        upload_button = ctk.CTkButton(t3_chr_frame, image=upload_im, text="",
-                                                command=partial(self.t3_upload_event, "1", None),
-                                                width=15, height=10)
-        upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
-        # Button for synthetic sequence
-        ctk.CTkButton(t3_chr_frame, text="Generate", command=self.t3_gen_synth_seq_event,
-                                width=15, height=10).grid(row=0, column=1, sticky="w", padx=(50, 10), pady=(5, 0))
-        ctk.CTkLabel(t3_chr_frame, text="Species: ", font=HEADER_FONT) \
-            .grid(row=1, column=0, sticky="w", padx=10)
-        ctk.CTkLabel(t3_chr_frame, text="Chromosome name: ", font=HEADER_FONT) \
-            .grid(row=1, column=1, sticky="w", padx=10)
-        self.t3_species_combobox_1 = ctk.CTkComboBox(t3_chr_frame, values=species_list, width=100,
-                                                               command=partial(self.t3_specie_change_event, "1"))
-
-        self.t3_species_combobox_1.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
-        self.t3_species_combobox_1.set("")
-
-        self.t3_chr_combobox_1 = ctk.CTkComboBox(t3_chr_frame, values=[],
-                                                           variable=self.t3_ds["1"].chromosome, width=100,
-                                                           command=partial(self.t3_chromosome_change_event, "1"))
-        self.t3_chr_combobox_1.grid(row=2, column=1, sticky="w", padx=10, pady=(0, 10))
-        self.t3_chr_combobox_1.set("")
-
-        # start and end
-        ctk.CTkLabel(t3_chr_frame, text="Start: ", font=HEADER_FONT).grid(row=3, column=0, sticky="w",
-                                                                                         padx=10)
-        ctk.CTkLabel(t3_chr_frame, text="End: ", font=HEADER_FONT) \
-            .grid(row=3, column=1, sticky="w", padx=10)
-
-        self.t3_start_seq_entry = ctk.CTkEntry(t3_chr_frame, textvariable=self.t3_ds["1"].start_txt)
-        self.t3_start_seq_entry.bind('<FocusOut>', partial(self.t3_entry_change))
-        self.t3_start_seq_entry.bind('<Key-Return>', partial(self.t3_entry_change))
-        self.t3_start_seq_entry.configure(state="disable")
-        self.t3_start_seq_entry.grid(row=4, column=0, padx=10, pady=(0, 10))
-
-        self.t3_end_seq_entry = ctk.CTkEntry(t3_chr_frame, textvariable=self.t3_ds["1"].end_txt)
-        self.t3_end_seq_entry.bind('<FocusOut>', partial(self.t3_entry_change))
-        self.t3_end_seq_entry.bind('<Key-Return>', partial(self.t3_entry_change))
-        self.t3_end_seq_entry.configure(state="disable")
-        self.t3_end_seq_entry.grid(row=4, column=1, padx=10, pady=(0, 10))
-
-        ctk.CTkLabel(t3_chr_frame, text="Annotations: ", font=HEADER_FONT) \
-            .grid(row=5, column=0, sticky="w", padx=10, pady=(0, 10))
-        self.t3_parts_name_combobox = ctk.CTkComboBox(t3_chr_frame, values=[], state="disable",
-                                                                variable=self.t3_ds["1"].annotation, width=120,
-                                                                command=partial(self.t3_annotation_change_event, "1"))
-        self.t3_parts_name_combobox.grid(row=5, column=1, sticky="w", padx=10, pady=(0, 10))
-
-        # Creating frame for the other sequence
-        t3_chr_frame_2 = ctk.CTkFrame(t3_config_frame, corner_radius=20)
-        t3_chr_frame_2.grid(row=2, columnspan=2, padx=5, pady=5, sticky="ew")
-
-        ctk.CTkLabel(t3_chr_frame_2, text=f"Genome: ", font=HEADER_FONT) \
-            .grid(row=0, columnspan=2, sticky="w", padx=10, pady=(5, 0))
-        upload_button = ctk.CTkButton(t3_chr_frame_2, image=upload_im, text="",
-                                                command=partial(self.t3_upload_event, "2", None),
-                                                width=15, height=10)
-        upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
-        ctk.CTkLabel(t3_chr_frame_2, text="Species: ", font=HEADER_FONT) \
-            .grid(row=1, column=0, sticky="w", padx=10)
-        ctk.CTkLabel(t3_chr_frame_2, text="Chromosome name: ", font=HEADER_FONT) \
-            .grid(row=1, column=1, sticky="w", padx=10)
-        self.t3_species_combobox_2 = ctk.CTkComboBox(t3_chr_frame_2, values=species_list, width=100,
-                                                               command=partial(self.t3_specie_change_event, "2"))
-
-        self.t3_species_combobox_2.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
-        self.t3_species_combobox_2.set("")
-
-        self.t3_chr_combobox_2 = ctk.CTkComboBox(t3_chr_frame_2, values=[],
-                                                           variable=self.t3_ds["2"].chromosome, width=100,
-                                                           command=partial(self.t3_chromosome_change_event, "2"))
-        self.t3_chr_combobox_2.grid(row=2, column=1, sticky="w", padx=10, pady=(0, 10))
-        self.t3_chr_combobox_2.set("")
-
-        # Window size
-        ctk.CTkLabel(t3_chr_frame_2, text="Segment Size:", font=HEADER_FONT) \
-            .grid(row=3, column=0, padx=10, pady=(0, 10))
-        self.t3_window_s = tkinter.StringVar(value="")
-        self.t3_window_entry = ctk.CTkEntry(t3_chr_frame_2, textvariable=self.t3_window_s)
-        self.t3_window_entry.configure(state="disable")
-        self.t3_window_entry.grid(row=3, column=1, pady=(0, 10), padx=10, sticky="w")
-
-        # k_mer combo box
-        ctk.CTkLabel(t3_config_frame, text="k-mer: ", font=HEADER_FONT) \
-            .grid(row=3, column=0, padx=10, pady=(10, 10))
-        k_mer_combobox = ctk.CTkComboBox(t3_config_frame, values=values_list, width=100,
-                                                   state="normal", variable=self.k_var)
-        k_mer_combobox.grid(row=3, column=1, sticky="w", padx=10, pady=(10, 10))
-
-        # Distance metrics
-        ctk.CTkLabel(t3_config_frame, text="Distance\n Measure: ", font=HEADER_FONT) \
-            .grid(row=4, column=0, pady=(20, 5), padx=(5, 0))
-        dist_metric_combobox = ctk.CTkComboBox(t3_config_frame, values=DISTANCE_METRICS_LIST,
-                                                         width=120, variable=self.dist_metric)
-        dist_metric_combobox.grid(row=4, column=1, pady=(20, 5), sticky="w")
-        dist_metric_combobox.set("DSSIM")
-
-        # plot type
-        ctk.CTkLabel(t3_config_frame, text="Plot Type: ", font=HEADER_FONT) \
-            .grid(row=5, column=0, pady=(20, 5), padx=(5, 0))
-        plot_type_combobox = ctk.CTkComboBox(t3_config_frame, values=PLOT_TYPE_LIST,
-                                                       width=120, variable=self.plot_type_var)
-        plot_type_combobox.grid(row=5, column=1, pady=(20, 5), sticky="w")
-        plot_type_combobox.set("Bar plot")
-
-        # switch = ctk.CTkSwitch(t3_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        # switch.grid(row=6, columnspan=2, pady=(20, 5))
-
-        # run button
-        run_button = ctk.CTkButton(t3_config_frame, text="Run", command=partial(self.run_common_ref, None))
-        run_button.grid(row=8, columnspan=2)  # , sticky="ns")
-
-        # Appearance mode
-        ctk.CTkLabel(t3_config_frame, text="Theme: ", font=HEADER_FONT) \
-            .grid(row=9, column=0, padx=10, pady=(20, 10))
-        appearance_mode = ctk.CTkOptionMenu(t3_config_frame, values=["Dark", "Light"], width=100,
-                                                      variable=appearance, command=self.change_appearance_mode_event)
-        appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
-
-        # placing the progress bars
-        self.t3_cgr_distance_history = None
-
-        self.t3_progress_bar = ctk.CTkProgressBar(self.tabview.tab(tab_names[2]))
-        self.t3_progress_bar.set(0)
-        self.t3_progress_bar.grid(row=0, column=1, padx=(10, 10), pady=(10, 10), sticky="nsew")
-
-        # placing the slider bar
-        t3_changing_frame = ctk.CTkFrame(self.tabview.tab(tab_names[2]), corner_radius=20)
-        t3_changing_frame.grid(row=3, column=1, sticky="nsew")
-
-        # Designing the changing frame
-        t3_changing_frame.grid_columnconfigure(0, weight=1)
-        t3_changing_frame.grid_columnconfigure(1, weight=10)
-        t3_changing_frame.grid_columnconfigure(2, weight=1)
-
-        self.t3_pic_num = ctk.IntVar(value=0)
-        self.t3_scale = ctk.CTkSlider(t3_changing_frame, from_=0, orientation=ctk.HORIZONTAL,
-                                                variable=self.t3_pic_num,
-                                                command=partial(self._change_images, self.t3_pic_num.get(), "t3"))
-        self.t3_scale.grid(row=0, column=1, pady=(10, 10), sticky="nsew")
-
-        # previous-next button
-        ctk.CTkButton(t3_changing_frame, image=prev_im, text="", width=10,
-                                command=partial(self.move_previous, "t3", None)).grid(row=0, column=0)
-
-        ctk.CTkButton(t3_changing_frame, image=next_im, text="", width=10,
-                                command=partial(self.move_next, "t3", None)).grid(row=0, column=2)
-
-        self.after_idle(self.bring_to_front)
-
-    def bring_to_front(self):
-        """Ensure window gets focus and is brought to front on macOS."""
-        self.lift()
-        self.attributes('-topmost', True)
-        self.after_idle(self.attributes, '-topmost', False)
-        self.focus_force()
-
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+
+        self.appearance = ctk.StringVar(value="Dark")
+        # tab names (used both by navbar and tabview)
+        self.tab_names = ["CGR Analysis", "CGR Comparator", "Common Reference", "Multispecies Comparator"]
+        self.active_tab = self.tab_names[0]
+
+        # ------------------------- Application state variables -------------------------
+        self.uploaded_files = []  # list of uploaded fasta files (full paths)
+        self.file_cards = []  # list of card widgets corresponding to uploaded files
+        self.selected_file_index = None  # index of currently selected file in self.uploaded_files (or None)
+        self.display_content_frame = None  # frame in the right panel to hold analysis sub-frames
+
+        # ------------------------- Build UI -------------------------
+        self._create_top_navbar()
+        self._build_main_content()
+
+    # def _enable_display_scroll_wheel(self):
+    #     """Force-enable mouse/trackpad scrolling on the display scrollable frame."""
+    #     # CTkScrollableFrame internally uses a Tk Canvas:
+    #     canvas = self.display_frame._parent_canvas
+    #
+    #     def _on_mousewheel(event):
+    #         # macOS / Windows: event.delta is non-zero
+    #         if hasattr(event, "delta") and event.delta != 0:
+    #             # Use only the sign of delta so it works on macOS too
+    #             step = -1 if event.delta > 0 else 1
+    #             canvas.yview_scroll(step, "units")
+    #
+    #         # Linux: <Button-4>/<Button-5>
+    #         elif hasattr(event, "num"):
+    #             if event.num == 4:
+    #                 canvas.yview_scroll(-1, "units")
+    #             elif event.num == 5:
+    #                 canvas.yview_scroll(1, "units")
+    #
+    #     # Bind when mouse is **over** the scrollable area
+    #     canvas.bind_all("<MouseWheel>", _on_mousewheel)
+    #     canvas.bind_all("<Button-4>", _on_mousewheel)
+    #     canvas.bind_all("<Button-5>", _on_mousewheel)
+
+    def _create_top_navbar(self):
+        nav = ctk.CTkFrame(self, corner_radius=100)
+        nav.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        nav.grid_columnconfigure(0, weight=1)
+        nav.grid_columnconfigure(1, weight=0)
+
+        # ---- left side: tab buttons ----
+        self.nav_buttons = {}
+        tabs_frame = ctk.CTkFrame(nav, fg_color="transparent")
+        tabs_frame.grid(row=0, column=0, sticky="w", padx=(20, 0), pady=(5, 5))
+
+        for i, name in enumerate(self.tab_names):
+            btn = ctk.CTkButton(tabs_frame, text=name, command=lambda n=name: self._switch_tab(n), corner_radius=100,
+                                height=32, fg_color=COLORS["BTN_COLOR"] if i == 0 else "transparent", font=HEADER_FONT,
+                                text_color=COLORS["TEXT_NORMAL_COLOR"] if i == 0 else COLORS["TEXT_DISABLE_COLOR"],
+                                border_width=0, )
+            btn.grid(row=0, column=i, padx=(0, 4))
+            self.nav_buttons[name] = btn
+
+        # ---- right side: theme toggle button ----
+        self.theme_button = ctk.CTkButton(nav, width=32, height=32, text="☀️", corner_radius=100,
+                                          fg_color=COLORS["FRAME_COLOR"],
+                                          hover_color=COLORS["FRAME_HOVER_COLOR"], command=self._toggle_theme)
+        self.theme_button.grid(row=0, column=1, padx=(0, 20), pady=10, sticky="e")
+
+    def _switch_tab(self, name: str):
+        if name == self.active_tab:
+            return
+        self.active_tab = name
+        # Update button styles
+        for tab_name, btn in getattr(self, "nav_buttons", {}).items():
+            if tab_name == name:
+                btn.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
+            else:
+                btn.configure(fg_color="transparent", text_color=COLORS["TEXT_DISABLE_COLOR"])
+        # rebuild main content
+        self._build_main_content()
+
+    def _build_main_content(self):
+        main = ctk.CTkFrame(self, fg_color="transparent")
+        main.grid(row=1, column=0, sticky="nsew")
+
+        if self.active_tab == "CGR Analysis":
+            self._build_cgr_analysis(main)
+        # elif self.active_tab == "CGR Comparator":
+        #     pass
+        # elif self.active_tab == "Common Reference":
+        #     pass
+        # elif self.active_tab == "Multispecies Comparator":
+        #     pass
+        else:
+            main.grid_columnconfigure(0, weight=1)
+            main.grid_rowconfigure(0, weight=1)
+
+            placeholder = ctk.CTkFrame(main)
+            placeholder.grid(row=0, column=0, sticky="nsew")
+            placeholder.grid_columnconfigure(0, weight=1)
+            placeholder.grid_rowconfigure(0, weight=1)
+
+            label = ctk.CTkLabel(placeholder, text=f"{self.active_tab} (empty)")
+            label.grid(row=0, column=0)
+
+    def _toggle_theme(self):
+        new_mode = "Light" if self.appearance.get() == "Dark" else "Dark"
+        self.appearance.set(new_mode)
+        ctk.set_appearance_mode(new_mode)
+        # update icon
+        if new_mode == "Dark":
+            self.theme_button.configure(text="☀️")
+        else:
+            self.theme_button.configure(text="🌙")
+
+    def _build_cgr_analysis(self, parent):
+        parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
+        parent.grid_columnconfigure(1, weight=1)  # right panel
+        parent.grid_rowconfigure(0, weight=1)
+
+        # ---------- Design config panel on the left side ----------
+        config_frame = ctk.CTkFrame(parent, corner_radius=8, border_color=COLORS["BORDER_COLOR"], border_width=1)
+        config_frame.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        config_frame.grid_columnconfigure(0, weight=1)
+        config_frame.grid_rowconfigure(1, weight=1)  # row 1 is list_frame
+        config_frame.grid_propagate(False)
+
+        # top buttons
+        top_btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        top_btn_frame.grid(row=0, column=0, padx=10, pady=(10, 0), sticky="ew")
+        top_btn_frame.grid_columnconfigure((0, 1), weight=1)
+
+        search_btn = ctk.CTkButton(top_btn_frame, text="Search and Download", corner_radius=8, height=35,
+                                   font=HEADER_FONT, text_color="white", )
+        search_btn.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        upload_btn = ctk.CTkButton(top_btn_frame, text="Upload", corner_radius=8, height=35, font=HEADER_FONT,
+                                   text_color="white", command=self._upload_files)
+        upload_btn.grid(row=1, column=0, sticky="ew")
+
+        generate_btn = ctk.CTkButton(top_btn_frame, text="Generate", corner_radius=8, height=35, font=HEADER_FONT,
+                                     text_color="white", )
+        generate_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
+
+        # list of genomes
+        list_frame = ctk.CTkFrame(config_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        list_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(1, weight=1)
+
+        label = ctk.CTkLabel(list_frame, text="List of available sequences:", font=HEADER_FONT, anchor="w", )
+        label.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 5))
+
+        # ---------- SCROLLABLE REGION (both directions) ----------
+        scroll_container = ctk.CTkFrame(list_frame, corner_radius=0, fg_color="transparent", border_width=0, )
+        scroll_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=(1, 5))
+        scroll_container.grid_columnconfigure(0, weight=1)
+        scroll_container.grid_rowconfigure(0, weight=1)
+
+        # plain Tk Canvas for scrolling
+        # TODO: not scrollable with mouse wheel
+        # TODO: change the color background of the canvas when toggle theme
+        canvas = tkinter.Canvas(scroll_container, highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky="nsew")
+
+        # vertical scrollbar
+        v_scroll = ctk.CTkScrollbar(scroll_container, orientation="vertical", command=canvas.yview, )
+        v_scroll.grid(row=0, column=1, sticky="ns", padx=(4, 0))
+        # horizontal scrollbar
+        h_scroll = ctk.CTkScrollbar(scroll_container, orientation="horizontal", command=canvas.xview, )
+        h_scroll.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
+
+        # inner frame that actually holds the file entries
+        self.uploaded_seq_lists_frame = ctk.CTkFrame(canvas, fg_color="transparent", )
+        canvas.create_window((0, 0), window=self.uploaded_seq_lists_frame, anchor="nw")
+
+        def _on_inner_configure(event):
+            # update scroll region to fit inner frame (both width and height)
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        self.uploaded_seq_lists_frame.bind("<Configure>", _on_inner_configure)
+        self._refresh_uploaded_file_list()
+
+        # bottom buttons
+        bottom_btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        bottom_btn_frame.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
+        bottom_btn_frame.grid_columnconfigure((0, 1), weight=1)
+
+        remove_btn = ctk.CTkButton(bottom_btn_frame, text="Remove", corner_radius=8, height=35, font=HEADER_FONT,
+                                   command=self._remove_selected_file, )
+        remove_btn.grid(row=1, column=0, sticky="ew")
+
+        run_btn = ctk.CTkButton(bottom_btn_frame, text="Run Analysis", corner_radius=8, height=35, font=HEADER_FONT,
+                                command=self._run_analysis_selected_file, )
+        run_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
+
+        # ---------- Design right panel (scrollable, only vertical) ----------
+        # TODO: not scrollable with mouse wheel
+        display_frame = ctk.CTkScrollableFrame(parent, border_width=1, corner_radius=8,
+                                               border_color=COLORS["BORDER_COLOR"], label_text=" Display Area ")
+        display_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        display_frame.grid_columnconfigure(0, weight=1)
+
+        self.display_content_frame = display_frame
+        # self._enable_display_scroll_wheel()
+
+    # def _build_cgr_comparator(self, parent):
+    #     parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
+    #     parent.grid_columnconfigure(1, weight=1)  # right panel
+    #     parent.grid_rowconfigure(0, weight=1)
+    #     parent.grid_rowconfigure(1, weight=4)
+    #
+    #     # Frames
+    #     config_frame = ctk.CTkFrame(parent, corner_radius=20, border_color=BORDER_COLOR, border_width=2)
+    #     config_frame.grid(row=0, column=0, rowspan=2, sticky="ns")
+    #     slider_frame = ctk.CTkFrame(parent, corner_radius=20, border_color=BORDER_COLOR, border_width=2)
+    #     slider_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+    #     self.display_frame = ctk.CTkFrame(BORDER_COLOR, corner_radius=20, fg_color=FRAME_COLOR)
+    #     self.display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+    #
+    #     # Designing the config frame (F1)
+    #     for row in range(10):  # Increased row count to account for empty rows
+    #         t2_config_frame.grid_rowconfigure(row, weight=1)
+    #
+    #     # Search button
+    #     customtkinter.CTkButton(t2_config_frame, image=search_im, width=180, height=25, command=self.open_popup,
+    #                             text="Search and Download Genomes").grid(row=0, columnspan=2, pady=(5, 0))
+    #     # Creating frames for chromosome 1 and chromosome 2
+    #     t2_chr_frame = customtkinter.CTkFrame(t2_config_frame, corner_radius=20)
+    #     t2_chr_frame.grid(row=1, columnspan=2, padx=5, pady=(5, 5), sticky="ew")
+    #
+    #     # Chromosomes Widget
+    #     # get all the folders name in DATA path
+    #     self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
+    #     self.t2_species_combobox = {}
+    #     self.t2_chr_combobox = {}
+    #     for i in range(2):
+    #         customtkinter.CTkLabel(t2_chr_frame, text=f"Genome {i + 1}: ", font=self.header_font) \
+    #             .grid(row=i * 3, column=0, sticky="w", padx=10, pady=(5, 0))
+    #
+    #         # upload button
+    #         customtkinter.CTkButton(t2_chr_frame, image=upload_im, text="", width=15, height=10,
+    #                                 command=partial(self.t1_upload_event, f"{str(i + 1)}", None)) \
+    #             .grid(row=i * 3, column=1, sticky="w", padx=10, pady=(5, 0))
+    #
+    #         customtkinter.CTkLabel(t2_chr_frame, text="Species: ", font=self.header_font) \
+    #             .grid(row=(i * 3) + 1, column=0, sticky="w", padx=10)
+    #         customtkinter.CTkLabel(t2_chr_frame, text="Chromosome name: ", font=self.header_font) \
+    #             .grid(row=(i * 3) + 1, column=1, sticky="w", padx=10)
+    #         self.t2_species_combobox[f"{i + 1}"] = customtkinter.CTkComboBox(t2_chr_frame, values=species_list,
+    #                                                                          width=100,
+    #                                                                          command=partial(self.specie_change_event,
+    #                                                                                          f"{i + 1}"))
+    #
+    #         self.t2_species_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=0, sticky="w", padx=10, pady=(0, 12))
+    #         self.t2_species_combobox[f"{i + 1}"].set("")
+    #
+    #         self.t2_chr_combobox[f"{i + 1}"] = customtkinter.CTkComboBox(t2_chr_frame, values=[],
+    #                                                                      variable=self.t2_ds[str(i + 1)].chromosome,
+    #                                                                      width=100,
+    #                                                                      command=partial(self.chromosome_change_event,
+    #                                                                                      f"{i + 1}"))
+    #         self.t2_chr_combobox[f"{i + 1}"].grid(row=(i * 3) + 2, column=1, sticky="w", padx=10, pady=(0, 12))
+    #         self.t2_chr_combobox[f"{i + 1}"].set("")
+    #
+    #     # Radio Button (Window size)
+    #     # Frame for window size settings
+    #     t2_config_frame_color = t2_config_frame.cget("fg_color")
+    #     t2_window_size_frame = customtkinter.CTkFrame(t2_config_frame, fg_color=t2_config_frame_color)
+    #     t2_window_size_frame.grid(row=2, columnspan=2, padx=10, pady=5, sticky="w")
+    #
+    #     customtkinter.CTkLabel(t2_window_size_frame, text="Segment Size:", font=self.header_font) \
+    #         .grid(row=0, column=0, padx=10)
+    #     self.window_s_toggle = tkinter.IntVar(value=0)
+    #     t2_window_s_1 = customtkinter.CTkRadioButton(t2_window_size_frame, text="Variable",
+    #                                                  variable=self.window_s_toggle,
+    #                                                  value=0, command=self.window_size_toggle_event)
+    #     t2_window_s_1.grid(row=1, column=0, padx=10, pady=5)
+    #     t2_window_s_2 = customtkinter.CTkRadioButton(t2_window_size_frame, text="Fix",
+    #                                                  variable=self.window_s_toggle,
+    #                                                  value=1, command=self.window_size_toggle_event)
+    #     t2_window_s_2.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+    #     self.window_s = tkinter.StringVar(value="")
+    #     self.window_entry = customtkinter.CTkEntry(t2_window_size_frame, textvariable=self.window_s)
+    #     self.window_entry.bind('<FocusOut>', partial(self.sequence_value_change, "0"))
+    #     self.window_entry.bind('<Key-Return>', partial(self.sequence_value_change, "0"))
+    #     self.window_entry.configure(state="disable")
+    #     self.window_entry.grid(row=2, columnspan=2, padx=(10, 10), pady=(10, 10), sticky="ew")
+    #
+    #     # k_mer combo box
+    #     customtkinter.CTkLabel(t2_config_frame, text="k-mer: ", font=self.header_font) \
+    #         .grid(row=3, column=0, padx=10, pady=(10, 10))
+    #     k_mer_combobox = customtkinter.CTkComboBox(t2_config_frame, values=values_list, width=100,
+    #                                                state="normal", variable=self.k_var)
+    #     k_mer_combobox.grid(row=3, column=1, sticky="w", pady=(10, 10), padx=10)
+    #
+    #     # reverse complement and random
+    #     t2_seq_rv = customtkinter.CTkFrame(t2_config_frame, fg_color=t2_config_frame_color)
+    #     t2_seq_rv.grid(row=4, columnspan=2, padx=10, pady=5, sticky="ew")
+    #
+    #     self.checkbox_RC = {}
+    #     self.checkbox_Random = {}
+    #     for i in range(2):
+    #         seq_label = customtkinter.CTkLabel(t2_seq_rv, text=f'Sequence {i + 1} :', font=self.header_font)
+    #         seq_label.grid(row=(i * 2), column=0, padx=10, pady=(5, 0), sticky="w")
+    #
+    #         self.checkbox_RC[str(i + 1)] = customtkinter.CTkCheckBox(master=t2_seq_rv, text="Reverse Complement")
+    #         self.checkbox_RC[str(i + 1)].grid(row=(i * 2), column=1, padx=10, pady=5, sticky="w")
+    #         self.checkbox_Random[str(i + 1)] = customtkinter.CTkCheckBox(master=t2_seq_rv, text="Shuffle")
+    #         self.checkbox_Random[str(i + 1)].grid(row=(i * 2) + 1, column=1, padx=10, pady=5, sticky="w")
+    #
+    #     # Distance metrics
+    #     customtkinter.CTkLabel(t2_config_frame, text="Distance\n Measure: ", font=self.header_font) \
+    #         .grid(row=6, column=0, padx=10, pady=(10, 10))
+    #     dist_metric_combobox = customtkinter.CTkComboBox(t2_config_frame, values=DISTANCE_METRICS_LIST,
+    #                                                      width=120, variable=self.dist_metric)
+    #     dist_metric_combobox.grid(row=6, column=1, sticky="w", padx=10, pady=(10, 10))
+    #     dist_metric_combobox.set("DSSIM")
+    #
+    #     # cgr/fcgr option
+    #     # self.fcgr = customtkinter.IntVar(value=1)
+    #     # switch = customtkinter.CTkSwitch(t2_config_frame, text=f"Frequency CGR", variable=self.fcgr)
+    #     # switch.grid(row=7, columnspan=2, pady=(10, 10))
+    #
+    #     # plot button
+    #     self.t2_display_frame.grid_rowconfigure(0, weight=1)
+    #     self.t2_display_frame.grid_columnconfigure(0, weight=1)
+    #     t2_plot_button = customtkinter.CTkButton(t2_config_frame, text="Plot", width=120, command=self.t1_plot)
+    #     t2_plot_button.grid(row=8, columnspan=2, pady=(10, 5))
+    #
+    #     # Appearance mode
+    #     customtkinter.CTkLabel(t2_config_frame, text="Theme: ", font=self.header_font) \
+    #         .grid(row=9, column=0, padx=10, pady=(20, 10))
+    #     appearance_mode = customtkinter.CTkOptionMenu(t2_config_frame, values=["Dark", "Light"], width=100,
+    #                                                   variable=appearance, command=self.change_appearance_mode_event)
+    #     appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
+    #
+    #     # First Sequence scale
+    #     _pad_size = (20, 0)
+    #     self.t2_parts_name_combobox = {}
+    #     self.start_seq_scale = {}
+    #     self.end_seq_scale = {}
+    #     self.t2_start_seq_entry = {}
+    #     self.t2_end_seq_entry = {}
+    #     for i in range(2):
+    #         customtkinter.CTkLabel(t2_slider_frame, text=f'Sequence {i + 1} :', font=self.header_font) \
+    #             .grid(row=(i * 2), column=0, padx=10, pady=_pad_size)
+    #
+    #         # Sequence part names combo box
+    #         self.t2_parts_name_combobox[str(i + 1)] = \
+    #             customtkinter.CTkComboBox(t2_slider_frame, width=100, values=[],
+    #                                       command=partial(self.annotation_change_event, str(i + 1)),
+    #                                       variable=self.t2_ds[str(i + 1)].annotation, state="disable")
+    #         self.t2_parts_name_combobox[str(i + 1)].grid(row=(i * 2) + 1, column=0, padx=10, pady=_pad_size)
+    #
+    #         customtkinter.CTkLabel(t2_slider_frame, text='Start').grid(row=(i * 2), column=1, padx=5, pady=_pad_size)
+    #         customtkinter.CTkLabel(t2_slider_frame, text='End').grid(row=(i * 2) + 1, column=1, padx=5, pady=_pad_size)
+    #
+    #         seq_length = len(self.t2_ds[str(i + 1)].seq)
+    #         to_value = seq_length if seq_length > 0 else 1
+    #
+    #         self.start_seq_scale[str(i + 1)] = customtkinter.CTkSlider(t2_slider_frame, from_=0, to=to_value,
+    #                                                                    orientation="horizontal", width=700,
+    #                                                                    variable=self.t2_ds[str(i + 1)].start_seq,
+    #                                                                    command=partial(self.sequence_value_change,
+    #                                                                                    str(i + 1)))
+    #         self.start_seq_scale[str(i + 1)].set(0)
+    #         self.scale_normal_color = self.start_seq_scale[str(i + 1)].cget("button_color")
+    #         self.start_seq_scale[str(i + 1)].configure(state="disabled", button_color="#888888")
+    #         self.start_seq_scale[str(i + 1)].grid(row=(i * 2), column=2, pady=_pad_size)
+    #
+    #         self.t2_start_seq_entry[str(i + 1)] = customtkinter.CTkEntry(t2_slider_frame,
+    #                                                                      textvariable=self.t2_ds[str(i + 1)].start_txt)
+    #         self.t2_start_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.sequence_value_change, "3"))
+    #         self.t2_start_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.sequence_value_change, "3"))
+    #         self.t2_start_seq_entry[str(i + 1)].grid(row=(i * 2), column=3, padx=5, pady=_pad_size)
+    #         seq_s_e_label = customtkinter.CTkLabel(t2_slider_frame, text='bp')
+    #         seq_s_e_label.grid(row=(i * 2), column=4, pady=_pad_size)
+    #
+    #         end_seq_length = self.t2_ds[str(i + 1)].end_seq.get()
+    #         to_value = end_seq_length if end_seq_length > 0 else 1
+    #
+    #         self.end_seq_scale[str(i + 1)] = customtkinter.CTkSlider(t2_slider_frame, from_=0, to=to_value,
+    #                                                                  orientation="horizontal", width=700,
+    #                                                                  variable=self.t2_ds[str(i + 1)].end_seq,
+    #                                                                  command=partial(self.sequence_value_change,
+    #                                                                                  str(i + 1)))
+    #         self.end_seq_scale[str(i + 1)].set(0)
+    #         self.end_seq_scale[str(i + 1)].configure(state="disabled", button_color="#888888")
+    #         self.end_seq_scale[str(i + 1)].grid(row=(i * 2) + 1, column=2, pady=_pad_size)
+    #
+    #         self.t2_end_seq_entry[str(i + 1)] = customtkinter.CTkEntry(t2_slider_frame,
+    #                                                                    textvariable=self.t2_ds[str(i + 1)].end_txt)
+    #         self.t2_end_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.sequence_value_change, "3"))
+    #         self.t2_end_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.sequence_value_change, "3"))
+    #         self.t2_end_seq_entry[str(i + 1)].grid(row=(i * 2) + 1, column=3, padx=5, pady=_pad_size)
+    #         seq_s_e_label_d = customtkinter.CTkLabel(t2_slider_frame, text='bp')
+    #         seq_s_e_label_d.grid(row=(i * 2) + 1, column=4, pady=_pad_size)
+
+    def _build_common_reference(self, parent):
+        pass
+
+    def _build_multispecies_comparator(self, parent):
+        pass
+
+    # --------------------------------------------------
+    # Helper functions for CGR analysis tab
+    # --------------------------------------------------
+    def _upload_files(self):
+        file_paths = filedialog.askopenfilenames(
+            title="Select FASTA files",
+            filetypes=[("FASTA files", "*.fa *.fasta *.fna *.ffn *.faa *.frn"), ("All files", "*.*"), ], )
+        if not file_paths:
+            return  # user cancelled
+
+        # You can avoid duplicates
+        for p in file_paths:
+            if p not in self.uploaded_files:
+                self.uploaded_files.append(p)
+
+        self._refresh_uploaded_file_list()
+
+    def _refresh_uploaded_file_list(self):
+        for widget in self.uploaded_seq_lists_frame.winfo_children():
+            widget.destroy()
+
+        self.file_cards = []  # reset cards list
+
+        if not self.uploaded_files:
+            no_file_label = ctk.CTkLabel(self.uploaded_seq_lists_frame, text="No files uploaded yet.", font=HEADER_FONT,
+                                         anchor="w", text_color=COLORS["TEXT_DISABLE_COLOR"])
+            no_file_label.grid(row=0, column=0, padx=5, pady=5)
+            self.selected_file_index = None
+            return
+
+        for i, path in enumerate(self.uploaded_files):
+            fname = os.path.basename(path)
+
+            # card for each file
+            card = ctk.CTkFrame(self.uploaded_seq_lists_frame, fg_color="transparent")
+            card.grid(row=i, column=0, padx=5, pady=5, sticky="w")
+
+            # make everything inside the card clickable
+            def _make_on_click(index):
+                def _on_click(event=None):
+                    return self._set_selected_uploaded(index)
+
+                return _on_click
+
+            on_click = _make_on_click(i)
+            card.bind("<Button-1>", on_click)
+
+            name_label = ctk.CTkLabel(card, text=fname, anchor="w", text_color=COLORS["TEXT_NORMAL_COLOR"])
+            name_label.grid(row=0, column=0, padx=(1, 1), pady=(2, 0), sticky="w")
+            name_label.bind("<Button-1>", on_click)
+
+            path_label = ctk.CTkLabel(card, text=path, anchor="w", text_color=COLORS["TEXT_DISABLE_COLOR"])
+            path_label.grid(row=1, column=0, padx=(1, 1), pady=(0, 2), sticky="w")
+            path_label.bind("<Button-1>", on_click)
+
+            self.file_cards.append(card)
+
+        # if we had a selection, re-apply highlight (in case the list was redrawn)
+        if self.selected_file_index is not None:
+            if 0 <= self.selected_file_index < len(self.file_cards):
+                self._set_selected_uploaded(self.selected_file_index)
+            else:
+                self.selected_file_index = None
+
+    def _set_selected_uploaded(self, index: int):
+        self.selected_file_index = index
+
+        for i, card in enumerate(self.file_cards):
+            if i == index:
+                # SELECTED STYLE
+                card.configure(fg_color=COLORS["BTN_COLOR"], corner_radius=0)
+                for child in card.winfo_children():
+                    if child.grid_info().get("row") == 0:
+                        child.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
+                    else:
+                        child.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
+            else:
+                card.configure(fg_color="transparent")
+                for child in card.winfo_children():
+                    if child.grid_info().get("row") == 0:
+                        child.configure(fg_color="transparent", text_color=COLORS["TEXT_NORMAL_COLOR"])
+                    else:
+                        child.configure(fg_color="transparent", text_color=COLORS["TEXT_DISABLE_COLOR"])
+
+    def _remove_selected_file(self):
+        if self.selected_file_index is None:
+            messagebox.showinfo("No selection", "Please select a file to remove.")
+            return
+
+        removed_path = self.uploaded_files.pop(self.selected_file_index)  # remove from list
+        self.selected_file_index = None  # reset selection
+        self._refresh_uploaded_file_list()  # refresh GUI
+
+    def _run_analysis_selected_file(self):
+        if self.selected_file_index is None:
+            messagebox.showinfo("No selection", "Please select a file to analyze.")
+            return
+
+        path = self.uploaded_files[self.selected_file_index]
+        if not os.path.isfile(path):
+            messagebox.showinfo("Error", "The selected file does not exist.")
+            return
+
+        name, seq = self._read_fasta(path)
+        if not seq:
+            messagebox.showinfo("Error", "The selected FASTA file contains no sequence data.")
+            return
+
+        # ----- build / rebuild layout in the scrollable right panel -----
+        # clear old content
+        for child in self.display_content_frame.winfo_children():
+            child.destroy()
+
+        # grid configuration for display content:
+        self.display_content_frame.grid_rowconfigure(0, weight=1)
+        self.display_content_frame.grid_rowconfigure(1, weight=1)
+        self.display_content_frame.grid_rowconfigure(2, weight=1)
+        self.display_content_frame.grid_columnconfigure(0, weight=1)  # left
+        self.display_content_frame.grid_columnconfigure(1, weight=2)  # right (larger)
+
+        # top histogram frame (full width)
+        self.hist_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=300)
+        self.hist_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=10, pady=(10, 5), )
+        self.hist_frame.grid_propagate(False)
+
+        # second frame (full width, below histogram)
+        self.middle_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=300)
+        self.middle_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=5, )
+        self.middle_frame.grid_propagate(False)
+
+        # bottom-left frame (smaller)
+        self.bottom_left_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=400)
+        self.bottom_left_frame.grid(row=2, column=0, sticky="nsew", padx=(10, 5), pady=(5, 10), )
+        self.bottom_left_frame.grid_propagate(False)
+
+        # bottom-right frame (larger)
+        self.bottom_right_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=400)
+        self.bottom_right_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 10), pady=(5, 10), )
+        self.bottom_right_frame.grid_propagate(False)
+
+        # ---- the analysis goes here ----
+        # TODO: implement the analysis and plotting functions :
+        #  1) k-mer analysis
+        #  2) over representative and under representative analysis
+        #  3) FCGR plot
+        #  4) 3D FCGR plot
+        # 1) k-mer (k=3) frequency analysis
+        # self.kmer_freq = self._analyze_kmer_frequency(seq, k=3)
+        # self._draw_kmer_histogram()
+
+    @staticmethod
+    def _read_fasta(file_path):
+        sequence = ""
+        record_count = 0
+        with open(file_path) as file:
+            for line in file:
+                line = line.strip()
+                if line.startswith(">"):
+                    record_count += 1
+                    if record_count > 1:
+                        raise ValueError("FASTA contains multiple records; expected exactly one.")
+                    file_name = (line[1:].split()[0] or "unknown")
+                else:
+                    sequence += line
+        return file_name, sequence
+
+    # --------------------------------------------------
+    # Other functions
+    # --------------------------------------------------
     def t3_gen_synth_seq_event(self):
         def _accept_sequence(seq):
             if len(seq) > 0:
@@ -585,7 +718,7 @@ class App(ctk.CTk):
         download_entry.grid(row=1, column=0, sticky="we", padx=(5, 0), pady=(5, 0))
         # Browse button
         browse_button = ctk.CTkButton(download_frame, text="Browse...", width=80,
-                                                command=lambda: self.browse_folder(file_scrollable_frame))
+                                      command=lambda: self.browse_folder(file_scrollable_frame))
         browse_button.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=(5, 0))
 
         # Designing the second frame
@@ -637,13 +770,13 @@ class App(ctk.CTk):
 
         # search button
         search_button = ctk.CTkButton(search_frame, text="Search", width=50,
-                                                command=lambda: self.search_ncbi(email_entry, search_organism))
+                                      command=lambda: self.search_ncbi(email_entry, search_organism))
         search_button.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=(5, 0))
 
         # download button
         download_button = ctk.CTkButton(popup_f2, text="Download selected fasta",
-                                                  command=lambda: self.download_genomes(email_entry, search_organism,
-                                                                                        file_scrollable_frame))
+                                        command=lambda: self.download_genomes(email_entry, search_organism,
+                                                                              file_scrollable_frame))
         download_button.grid(row=3, column=0, sticky="ew", padx=(10, 10), pady=(5, 5))
 
     def browse_folder(self, scrollable_frame):
@@ -670,7 +803,7 @@ class App(ctk.CTk):
 
         if not fasta_files:
             ctk.CTkLabel(frame, text="No FASTA files found", text_color="red").pack(anchor="w", padx=5,
-                                                                                              pady=2)
+                                                                                    pady=2)
             return
 
         for file in sorted(fasta_files):
@@ -839,10 +972,6 @@ class App(ctk.CTk):
             base_path = os.path.abspath(".")
 
         return os.path.join(base_path, relative_path)
-
-    @staticmethod
-    def change_appearance_mode_event(new_appearance_mode: str):
-        ctk.set_appearance_mode(new_appearance_mode)
 
     @staticmethod
     def sync_text_vars(ds, sender, keep_annotation=False):
@@ -1592,14 +1721,14 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         tabview.tab(tab_names[0]).grid_rowconfigure(1, weight=1)
         # Frames
         t1_config = ctk.CTkFrame(tabview.tab(tab_names[0]), corner_radius=10, border_color="#333333",
-                                           border_width=2)
+                                 border_width=2)
         t1_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
         t1_config.grid_columnconfigure(0, weight=1)
         t1_config.grid_columnconfigure(1, weight=1)
         t1_config.grid_columnconfigure(2, weight=1)
 
         self.t1_frame = ctk.CTkFrame(tabview.tab(tab_names[0]), corner_radius=10, border_color="#333333",
-                                               border_width=2, fg_color="white")
+                                     border_width=2, fg_color="white")
         self.t1_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
         self.t1_frame.grid_columnconfigure(0, weight=1)
         self.t1_frame.grid_rowconfigure(0, weight=1)
@@ -1615,14 +1744,14 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
 
         # sequence length
         ctk.CTkLabel(t1_config, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10,
-                                                                         pady=(10, 0))
+                                                               pady=(10, 0))
         self.seq_len = tkinter.StringVar(value="10000")  # Default value
         (ctk.CTkEntry(t1_config, textvariable=self.seq_len)
          .grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
 
         # entropy scaling factor
         ctk.CTkLabel(t1_config, text="Entropy scaling factor: ").grid(row=2, column=0, sticky="w", padx=10,
-                                                                                pady=(10, 0))
+                                                                      pady=(10, 0))
         self.t1_r_var = ctk.DoubleVar(value=1.0)  # Default value
         (ctk.CTkSlider(t1_config, from_=0.25, to=1.0, variable=self.t1_r_var, width=150)
          .grid(row=2, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
@@ -1646,14 +1775,14 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         tabview.tab(tab_names[1]).grid_rowconfigure(1, weight=1)
         # Frames
         t2_config = ctk.CTkFrame(tabview.tab(tab_names[1]), corner_radius=10, border_color="#333333",
-                                           border_width=2)
+                                 border_width=2)
         t2_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
         t2_config.grid_columnconfigure(0, weight=0)
         t2_config.grid_columnconfigure(1, weight=1)
         t2_config.grid_columnconfigure(2, weight=0)
 
         self.t2_frame = ctk.CTkFrame(tabview.tab(tab_names[1]), corner_radius=10, border_color="#333333",
-                                               border_width=2, fg_color="white")
+                                     border_width=2, fg_color="white")
         self.t2_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
         self.t2_frame.grid_columnconfigure(0, weight=1)
         self.t2_frame.grid_rowconfigure(0, weight=1)
@@ -1667,7 +1796,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             padding = 0 if i > 0 else 5
             t2_config.grid_rowconfigure(i, weight=1)
             ctk.CTkLabel(t2_config, text=f"{kmer}: ").grid(row=i, column=0, padx=(10, 0), pady=(padding, 0),
-                                                                     sticky="w")
+                                                           sticky="w")
             # Create a slider
             var = ctk.DoubleVar(value=0.0)
             self.k_var_dict[kmer] = var
@@ -1708,7 +1837,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         tabview.tab(tab_names[2]).grid_rowconfigure(1, weight=1)
         # Frames
         t3_config = ctk.CTkFrame(tabview.tab(tab_names[2]), corner_radius=10, border_color="#333333",
-                                           border_width=2)
+                                 border_width=2)
         t3_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
         t3_config.grid_columnconfigure(0, weight=1)
         t3_config.grid_columnconfigure(1, weight=1)
@@ -1716,7 +1845,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             t3_config.grid_rowconfigure(i, weight=1)
 
         self.t3_frame = ctk.CTkFrame(tabview.tab(tab_names[2]), corner_radius=10, border_color="#333333",
-                                               border_width=2, fg_color="white")
+                                     border_width=2, fg_color="white")
         self.t3_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
         self.t3_frame.grid_columnconfigure(0, weight=1)
         self.t3_frame.grid_rowconfigure(0, weight=1)
@@ -1731,15 +1860,15 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         # Design the configuration frame
         # k combobox
         ctk.CTkLabel(t3_config, text="k-mer length: ").grid(row=0, column=0, padx=10, pady=(10, 0),
-                                                                      sticky="w")
+                                                            sticky="w")
         k_mer_combobox = ctk.CTkComboBox(t3_config, values=values_list, width=80, variable=self.t1_k_var,
-                                                   command=self.set_kmers_event)
+                                         command=self.set_kmers_event)
         k_mer_combobox.set("2")
         k_mer_combobox.grid(row=0, column=1, padx=(0, 10), pady=(10, 0), sticky="w")
 
         # sequence length
         ctk.CTkLabel(t3_config, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10,
-                                                                         pady=(10, 0))
+                                                               pady=(10, 0))
         (ctk.CTkEntry(t3_config, textvariable=self.seq_len)
          .grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
 
