@@ -6,23 +6,22 @@ import tkinter
 import tkinter.messagebox
 from functools import partial
 import random
-from os import error
-from tkinter.constants import DISABLED
 
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+import tkinter.filedialog as fd
 
 import numpy as np
 from Bio import Entrez
 from PIL import Image
 
+import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+import matplotlib.image as mpimg
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib import pyplot as plt
-# from networkx.drawing import display
 
 from chaos_game_representation import CGR
-from chromosomes_holder import ChromosomesHolder
-from constants import RESOLUTION_DICT
 from distances.distance_metrics import get_dist
 from sequence_generation.sampling import generate_kmers
 from sequence_generation.sequence_generation import generate_dna_sequence
@@ -43,6 +42,7 @@ COLORS = dict(
     BORDER_COLOR="#333333", )
 KMERS = [str(i) for i in range(1, 9)]
 DISTANCES = ["Normalized Euclidean", "Cosine", "Manhattan", "Descriptor", "DSSIM", "K-S", "Wasserstein"]
+RESOLUTION_DICT = {2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 4, 9: 4, 10: 4, 11: 4, 12: 4}
 
 
 class GUIDataStructure:
@@ -95,7 +95,7 @@ class App(ctk.CTk):
         self.window_s_toggle = tkinter.IntVar(value=0)  # 0: Variable, 1: Fix
         self.window_s = tkinter.StringVar(value="")  # Window size entry variable
         self.window_entry = None  # Entry widget for window size
-        self.k_var = tkinter.StringVar(value="6")  # k-mer selection variable
+        self.k_var = ctk.IntVar(value=6)  # k-mer selection variable
         self.dist_metric = tkinter.StringVar(value="DSSIM")  # distance metric selection variable
         self.checkbox_RC = {}  # reverse complement checkbox dictionary
         self.checkbox_Random = {}  # random sequence checkbox dictionary
@@ -104,6 +104,10 @@ class App(ctk.CTk):
         self.end_seq_scale = {}
         self.start_seq_entry = {}
         self.end_seq_entry = {}
+
+        self.t2_fig = None
+        self.t2_canvas = None
+        self.t2_save_btn = None
 
         # ------------------------- Build UI -------------------------
         self._create_top_navbar()
@@ -296,7 +300,8 @@ class App(ctk.CTk):
             slider_frame.grid_rowconfigure(i, weight=1)
         slider_frame.grid_columnconfigure(2, weight=1)
         slider_frame.grid_propagate(False)
-        display_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        display_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                     fg_color=COLORS["FRAME_COLOR"])
         display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
         display_frame.grid_columnconfigure(0, weight=1)
         display_frame.grid_rowconfigure(0, weight=1)
@@ -382,9 +387,8 @@ class App(ctk.CTk):
             self.checkbox_Random[str(i + 1)].grid(row=(i * 2) + 1, column=1, padx=(10, 0), pady=(10, 10), sticky="w")
 
         # plot button
-        # TODO: change the command
         plot_button = ctk.CTkButton(config_frame, text="Plot", corner_radius=8, height=35, font=HEADER_FONT,
-                                    command=self.t1_plot)
+                                    command=partial(self.t2_plot, display_frame))
         plot_button.grid(row=4, column=0, pady=(10, 10))
 
         # ---------- Design the slider frame ----------
@@ -734,6 +738,157 @@ class App(ctk.CTk):
         ds[sender].start_seq.set(int(ds[sender].start_txt.get()))
         ds[sender].end_seq.set(int(ds[sender].end_txt.get()))
 
+    def t2_plot(self, display_frame):
+        if self.t2_ds["1"].seq == "" or self.t2_ds["2"].seq == "":
+            messagebox.showerror("Error", "Please upload or choose the sequences first")
+            return
+        if self.k_var.get() == 0:
+            messagebox.showerror("Error", "Please choose the k-mer value")
+            return
+        if self.dist_metric.get() == "":
+            messagebox.showerror("Error", "Please choose the distance measure")
+            return
+        fcgrs_dict = {}
+        for key in self.t2_ds.keys():
+            fcgrs_dict[key] = {}
+            seq = self.t2_ds[key].seq[self.t2_ds[key].start_seq.get():self.t2_ds[key].end_seq.get()]
+            if self.checkbox_RC[key].get():
+                seq = self.get_reverse_complement(seq)
+            if self.checkbox_Random[key].get():
+                seq = list(seq)
+                random.shuffle(seq)
+                seq = ''.join(seq)
+            fcgrs_dict[key]["fcgr"] = CGR(seq, self.k_var.get()).get_fcgr()
+
+            fcgrs_dict[key]["seq_len"] = len(self.t2_ds[key].seq)
+            fcgrs_dict[key]["b"] = self.t2_ds[key].start_seq.get()
+            fcgrs_dict[key]["e"] = self.t2_ds[key].end_seq.get()
+
+        diff = fcgrs_dict["2"]["fcgr"] - fcgrs_dict["1"]["fcgr"]
+        fcgrs_dict["diff"] = diff
+        distance_value = get_dist(fcgrs_dict["1"]["fcgr"], fcgrs_dict["2"]["fcgr"], dist_m=self.dist_metric.get())
+        fcgrs_dict["distance"] = distance_value
+
+        # Visualize the FCGRs
+        # First time: create figure, draw into it off-screen, then attach canvas
+        bg = display_frame.cget("fg_color")
+        if self.t2_fig is None:
+            # Let Tk lay out the frame so grid sizes are sane
+            display_frame.update_idletasks()
+            # Create a reasonably sized figure
+            self.t2_fig = plt.Figure(dpi=120)
+            self.t2_fig.patch.set_facecolor(bg)
+            # Draw everything into the figure *before* the canvas exists
+            self.t2_fig.clear()
+            self._plot_fcgrs(fcgrs_dict, colormap=True, background_color=bg, name="Sequence", fig=self.t2_fig, )
+
+            # Now create and grid the canvas once the figure is ready
+            self.t2_canvas = FigureCanvasTkAgg(self.t2_fig, master=display_frame)
+            widget = self.t2_canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+
+            # Create tiny save button once, bottom-left over the figure
+            if self.t2_save_btn is None:
+                self.t2_save_btn = ctk.CTkButton(master=display_frame, text="💾", width=30, height=30,
+                                                 fg_color=COLORS["BORDER_COLOR"],
+                                                 hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                                 command=self.save_t2_figure, )
+                # place() with relative coords: bottom-left corner of the frame
+                self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+        else:
+            # Subsequent plots: reuse same figure & canvas
+            self.t2_fig.clear()
+            self._plot_fcgrs(fcgrs_dict, colormap=True, background_color=bg, name="Sequence", fig=self.t2_fig, )
+
+        # Redraw (both first and later calls)
+        self.t2_canvas.draw()
+
+    def _plot_fcgrs(self, fcgrs, colormap=False, background_color=None, name="Sequence", fig=None):
+        if fig is None:
+            fig = plt.Figure()
+        ax1, ax2, ax3 = fig.subplots(1, 3)
+        extent = 0, 1, 0, 1
+
+        if background_color is not None:
+            fig.patch.set_facecolor(background_color)
+
+        scale_1, scaling_1 = self.get_scaling(fcgrs["1"]["seq_len"])
+        b1 = fcgrs["1"]["b"]
+        e1 = fcgrs["1"]["e"]
+        scale_2, scaling_2 = self.get_scaling(fcgrs["2"]["seq_len"])
+        b2 = fcgrs["2"]["b"]
+        e2 = fcgrs["2"]["e"]
+
+        # plot the data on the subplots
+        img1 = CGR.array2img(fcgrs["1"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+        img1 = Image.fromarray(img1)
+        ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+        ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+        ax1.set_title(f'{name} 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+
+        im2 = ax2.imshow(fcgrs['diff'], cmap='RdBu', norm=plt.Normalize(-100, 100), extent=extent)
+        ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+        ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
+
+        img2 = CGR.array2img(fcgrs["2"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+        img2 = Image.fromarray(img2)
+        ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+        ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+        ax3.set_title(f'{name} 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
+
+        if colormap:
+            fig.subplots_adjust(bottom=0.2)  # Adjust the bottom margin
+            cbar_ax2 = fig.add_axes([0.36, 0.1, 0.3, 0.02])  # Adjust position as needed
+            cbar = fig.colorbar(im2, cax=cbar_ax2, orientation='horizontal')
+            cbar.set_label(f'Red: Greater k-mer value in {name} 1 , Blue: Greater k-mer value in {name} 2', fontsize=10)
+            cbar.ax.xaxis.set_label_position('top')  # Position label at top of colorbar
+            cbar.ax.xaxis.labelpad = 5
+            cbar.ax.tick_params(labelsize=8)
+
+        return fig
+
+    def save_t2_figure(self):
+        if self.t2_fig is None:
+            messagebox.showerror("Error", "No figure to save. Please plot first.")
+            return
+
+        file_path = fd.asksaveasfilename(defaultextension=".png",
+                                         filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf"),
+                                                    ("SVG Image", "*.svg"), ("All Files", "*.*"), ],
+                                         title="Save figure")
+        if not file_path:
+            return
+
+        try:
+            self.t2_fig.savefig(file_path, dpi=300, bbox_inches="tight")
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not save figure:\n{e}")
+
+    @staticmethod
+    def get_scaling(chromosome_length):
+        scale = 1_000_000
+        while (chromosome_length / scale) < 2:
+            scale //= 1000
+        if scale == 1_000_000:
+            scaling = "Mbp"
+        elif scale == 1_000:
+            scaling = "Kbp"
+        else:
+            scaling = "bp"
+        return scale, scaling
+
+    @staticmethod
+    def get_reverse_complement(sequence):
+        complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
+        bases = [complement[base] for base in sequence]
+        bases = reversed(bases)
+        return ''.join(bases)
+
+    @staticmethod
+    def tk_to_hex(widget, color_name):
+        r, g, b = widget.winfo_rgb(color_name)
+        return f"#{r // 256:02x}{g // 256:02x}{b // 256:02x}"
+
     # --------------------------------------------------
     # Other functions
     # --------------------------------------------------
@@ -1056,128 +1211,12 @@ class App(ctk.CTk):
     # --------------------------------------------------
     #
     # --------------------------------------------------
-    def t1_plot(self):
-        if self.t2_ds["1"].seq == "" or self.t2_ds["2"].seq == "":
-            messagebox.showerror("Error", "Please upload or choose the sequences first")
-            return
-        if self.k_var.get() == 0:
-            messagebox.showerror("Error", "Please choose the k-mer value")
-            return
-        if self.dist_metric.get() == "":
-            messagebox.showerror("Error", "Please choose the distance measure")
-            return
-        fcgrs_dict = {}
-        for key in self.t2_ds.keys():
-            fcgrs_dict[key] = {}
-            seq = self.t2_ds[key].seq[self.t2_ds[key].start_seq.get():self.t2_ds[key].end_seq.get()]
-            if self.checkbox_RC[key].get():
-                seq = ChromosomesHolder.get_reverse_complement(seq)
-            if self.checkbox_Random[key].get():
-                seq = list(seq)
-                random.shuffle(seq)
-                seq = ''.join(seq)
-            cgr = CGR(seq, self.k_var.get())
-            # if self.fcgr.get() == 1:
-            fcgrs_dict[key]["(f)cgr"] = cgr.get_fcgr()
-            # else:
-            #     fcgrs_dict[key]["(f)cgr"] = cgr.get_cgr()
-
-            fcgrs_dict[key]["chr_len"] = len(self.t2_ds[key].seq)
-            fcgrs_dict[key]["b"] = self.t2_ds[key].start_seq.get()
-            fcgrs_dict[key]["e"] = self.t2_ds[key].end_seq.get()
-            fcgrs_dict[key]["species"] = self.t2_ds[key].specie.get()
-
-        diff = fcgrs_dict["2"]["(f)cgr"] - fcgrs_dict["1"]["(f)cgr"]
-        fcgrs_dict["diff"] = diff
-        distance_value = get_dist(fcgrs_dict["1"]["(f)cgr"], fcgrs_dict["2"]["(f)cgr"], dist_m=self.dist_metric.get())
-        fcgrs_dict["distance"] = distance_value
-
-        # Visualize the FCGRs
-        display_frame_color = self.t2_display_frame.cget("fg_color")
-        fig = self.plot_fcgrs(fcgrs_dict, colormap=True, background_color=display_frame_color)
-
-        # Clear the previous figure from the display frame if any
-        for widget in self.t2_display_frame.winfo_children():
-            widget.destroy()
-
-        # Create a canvas and add the figure to it
-        canvas = FigureCanvasTkAgg(fig, master=self.t2_display_frame)
-        canvas.draw()
-
-        # Set the canvas size explicitly
-        canvas_width = self.t2_display_frame.cget("width")
-        canvas_height = self.t2_display_frame.cget("height")
-        canvas.get_tk_widget().config(width=canvas_width, height=canvas_height)
-
-        # Use grid to place the canvas
-        canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
-        plt.close()
-
-    def plot_fcgrs(self, fcgrs, colormap=False, background_color=None, name="Sequence"):
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(20, 6))
-        fig.subplots_adjust(top=0.85)
-        extent = 0, 1, 0, 1
-
-        if background_color is not None:
-            fig.patch.set_facecolor(background_color)
-
-        scale_1, scaling_1 = self.get_scaling(fcgrs["1"]["chr_len"])
-        b1 = fcgrs["1"]["b"]
-        e1 = fcgrs["1"]["e"]
-        scale_2, scaling_2 = self.get_scaling(fcgrs["2"]["chr_len"])
-        b2 = fcgrs["2"]["b"]
-        e2 = fcgrs["2"]["e"]
-
-        # plot the data on the subplots
-        img1 = CGR.array2img(fcgrs["1"]["(f)cgr"], bits=8,  # BITS_DICT[dictionary["species"]]
-                             resolution=RESOLUTION_DICT[self.k_var.get()])
-        img1 = Image.fromarray(img1, 'L')
-        ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
-        ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-        ax1.set_title(f'{name} 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
-
-        im2 = ax2.imshow(fcgrs['diff'], cmap='RdBu', norm=plt.Normalize(-100, 100), extent=extent)
-        ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-        ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
-
-        img2 = CGR.array2img(fcgrs["2"]["(f)cgr"], bits=8,  # BITS_DICT[dictionary["species"]]
-                             resolution=RESOLUTION_DICT[self.k_var.get()])
-        img2 = Image.fromarray(img2, 'L')
-        ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
-        ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-        ax3.set_title(f'{name} 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
-
-        if colormap:
-            fig.subplots_adjust(bottom=0.2)  # Adjust the bottom margin
-            cbar_ax2 = fig.add_axes([0.36, 0.1, 0.3, 0.02])  # Adjust position as needed
-            cbar = fig.colorbar(im2, cax=cbar_ax2, orientation='horizontal')
-            # Red: Greater k-mer value in Sequence 1, Blue: Greater k-mer value in Sequence 2
-            cbar.set_label(f'Red: Greater k-mer value in {name} 1 , Blue: Greater k-mer value in {name} 2', fontsize=10)
-            cbar.ax.xaxis.set_label_position('top')  # Position label at top of colorbar
-            cbar.ax.xaxis.labelpad = 5
-            cbar.ax.tick_params(labelsize=8)
-        # fig.subplots_adjust(bottom=0.0001)  # Adjust bottom margin
-        return fig
-
-    @staticmethod
-    def get_scaling(chromosome_length):
-        scale = 1_000_000
-        while (chromosome_length / scale) < 2:
-            scale //= 1000
-        if scale == 1_000_000:
-            scaling = "Mbp"
-        elif scale == 1_000:
-            scaling = "Kbp"
-        else:
-            scaling = "bp"
-        return scale, scaling
-
     def _change_images(self, index, tab_name, value):
         # plot distance results bar and first index is red
         index = round(value) if value is not None else index
         self._plot_chart(index, tab_name)
         # Load and display the first image set in next plot
-        self._plot_fcgrs(index, tab_name)
+        self.__plot_fcgrs(index, tab_name)
 
     def _plot_chart(self, highlighted_index, tab_name):
         dist_history = None
@@ -1240,7 +1279,7 @@ class App(ctk.CTk):
         canvas.get_tk_widget().grid(row=0, column=0, padx=(8, 8), pady=5, sticky='nsew')
         plt.close()
 
-    def _plot_fcgrs(self, image_index, tab_name):
+    def __plot_fcgrs(self, image_index, tab_name):
         frame, fig = None, None
         if tab_name == "t2":
             with open(f"{self.temp_output_path}/consecutive/pickle/{image_index}.pkl", 'rb') as handle:
