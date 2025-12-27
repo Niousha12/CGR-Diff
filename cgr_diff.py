@@ -15,10 +15,7 @@ import numpy as np
 from Bio import Entrez
 from PIL import Image
 
-import matplotlib
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-import matplotlib.image as mpimg
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib import pyplot as plt
 
 from chaos_game_representation import CGR
@@ -105,6 +102,7 @@ class App(ctk.CTk):
         self.start_seq_entry = {}
         self.end_seq_entry = {}
 
+        self.t2_display_frame = None
         self.t2_fig = None
         self.t2_canvas = None
         self.t2_save_btn = None
@@ -300,12 +298,12 @@ class App(ctk.CTk):
             slider_frame.grid_rowconfigure(i, weight=1)
         slider_frame.grid_columnconfigure(2, weight=1)
         slider_frame.grid_propagate(False)
-        display_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
-                                     fg_color=COLORS["FRAME_COLOR"])
-        display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        display_frame.grid_columnconfigure(0, weight=1)
-        display_frame.grid_rowconfigure(0, weight=1)
-        display_frame.grid_propagate(False)
+        self.t2_display_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1,
+                                             border_color=COLORS["BORDER_COLOR"], fg_color=COLORS["FRAME_COLOR"])
+        self.t2_display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        self.t2_display_frame.grid_columnconfigure(0, weight=1)
+        self.t2_display_frame.grid_rowconfigure(0, weight=1)
+        self.t2_display_frame.grid_propagate(False)
 
         # ---------- Designing the config frame (F2) ----------
         # Choose sequences frame
@@ -388,7 +386,7 @@ class App(ctk.CTk):
 
         # plot button
         plot_button = ctk.CTkButton(config_frame, text="Plot", corner_radius=8, height=35, font=HEADER_FONT,
-                                    command=partial(self.t2_plot, display_frame))
+                                    command=self.t2_plot)
         plot_button.grid(row=4, column=0, pady=(10, 10))
 
         # ---------- Design the slider frame ----------
@@ -439,6 +437,26 @@ class App(ctk.CTk):
                 self.end_seq_entry[str(i + 1)].configure(state="disabled")
             self.end_seq_entry[str(i + 1)].grid(row=(i * 2) + 1, column=3, padx=(5, 0), pady=(10, 0))
             ctk.CTkLabel(slider_frame, text='bp').grid(row=(i * 2) + 1, column=4, padx=(5, 10), pady=(10, 0))
+
+        # ---------- Design the display frame ----------
+        if getattr(self, "t2_fig", None) is not None:
+            # Create a new canvas for the existing figure, attached to the new frame
+            self.t2_canvas = FigureCanvasTkAgg(self.t2_fig, master=self.t2_display_frame)
+            widget = self.t2_canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t2_canvas.draw()
+
+            if getattr(self, "t2_save_btn", None) is not None and self.t2_save_btn.winfo_exists():
+                try:
+                    self.t2_save_btn.destroy()
+                except Exception:
+                    pass
+
+            self.t2_save_btn = ctk.CTkButton(master=self.t2_display_frame, text="💾", width=30, height=30,
+                                             fg_color=COLORS["BORDER_COLOR"],
+                                             hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                             command=self.save_t2_figure, )
+            self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
 
     def _build_common_reference(self, parent):
         pass
@@ -738,7 +756,7 @@ class App(ctk.CTk):
         ds[sender].start_seq.set(int(ds[sender].start_txt.get()))
         ds[sender].end_seq.set(int(ds[sender].end_txt.get()))
 
-    def t2_plot(self, display_frame):
+    def t2_plot(self):
         if self.t2_ds["1"].seq == "" or self.t2_ds["2"].seq == "":
             messagebox.showerror("Error", "Please upload or choose the sequences first")
             return
@@ -771,36 +789,41 @@ class App(ctk.CTk):
 
         # Visualize the FCGRs
         # First time: create figure, draw into it off-screen, then attach canvas
-        bg = display_frame.cget("fg_color")
+        bg = self.t2_display_frame.cget("fg_color")
+        # 1) Create the figure once
         if self.t2_fig is None:
             # Let Tk lay out the frame so grid sizes are sane
-            display_frame.update_idletasks()
+            self.t2_display_frame.update_idletasks()
             # Create a reasonably sized figure
             self.t2_fig = plt.Figure(dpi=120)
             self.t2_fig.patch.set_facecolor(bg)
-            # Draw everything into the figure *before* the canvas exists
-            self.t2_fig.clear()
-            self._plot_fcgrs(fcgrs_dict, colormap=True, background_color=bg, name="Sequence", fig=self.t2_fig, )
 
-            # Now create and grid the canvas once the figure is ready
-            self.t2_canvas = FigureCanvasTkAgg(self.t2_fig, master=display_frame)
+        # 2) Make sure the canvas exists AND is attached to the current display_frame
+        needs_new_canvas = (self.t2_canvas is None
+                            or not self.t2_canvas.get_tk_widget().winfo_exists()
+                            or self.t2_canvas.get_tk_widget().master is not self.t2_display_frame)
+
+        if needs_new_canvas:
+            self.t2_canvas = FigureCanvasTkAgg(self.t2_fig, master=self.t2_display_frame)
             widget = self.t2_canvas.get_tk_widget()
             widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
             # Create tiny save button once, bottom-left over the figure
-            if self.t2_save_btn is None:
-                self.t2_save_btn = ctk.CTkButton(master=display_frame, text="💾", width=30, height=30,
+            if getattr(self, "t2_save_btn", None) is None or \
+                    not self.t2_save_btn.winfo_exists() or \
+                    self.t2_save_btn.master is not self.t2_display_frame:
+                self.t2_save_btn = ctk.CTkButton(master=self.t2_display_frame, text="💾", width=30, height=30,
                                                  fg_color=COLORS["BORDER_COLOR"],
                                                  hover_color=COLORS["FRAME_HOVER_COLOR"],
                                                  command=self.save_t2_figure, )
-                # place() with relative coords: bottom-left corner of the frame
+                # place with relative coords which is bottom-left corner of the frame
                 self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
-        else:
-            # Subsequent plots: reuse same figure & canvas
-            self.t2_fig.clear()
-            self._plot_fcgrs(fcgrs_dict, colormap=True, background_color=bg, name="Sequence", fig=self.t2_fig, )
 
-        # Redraw (both first and later calls)
+        # 3) Clear figure and redraw, regardless of tab switches
+        self.t2_fig.clear()
+        self._plot_fcgrs(fcgrs_dict, colormap=True, background_color=bg, name="Sequence", fig=self.t2_fig, )
+
+        # 4) Redraw canvas
         self.t2_canvas.draw()
 
     def _plot_fcgrs(self, fcgrs, colormap=False, background_color=None, name="Sequence", fig=None):
