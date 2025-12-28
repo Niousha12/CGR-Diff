@@ -621,7 +621,7 @@ class App(ctk.CTk):
 
         # Run button
         plot_button = ctk.CTkButton(config_frame, text="Run", corner_radius=8, height=35, font=HEADER_FONT,
-                                    command=self.t3_run)
+                                    command=partial(self.t3_run, None))
         plot_button.grid(row=2, column=0, pady=(10, 10))
 
     def _build_multispecies_comparator(self, parent):
@@ -809,7 +809,7 @@ class App(ctk.CTk):
             messagebox.showerror("Sequence is Empty!")
 
         # Set start and end in entries
-        self.sync_text_vars(self.t2_ds, sender)
+        self.t2_sync_text_vars(self.t2_ds, sender)
         # Clear segment_size and disable segment size entry
         self.t2_segment_size_toggle.set(0)
         self.t2_segment_size.set("")
@@ -827,6 +827,7 @@ class App(ctk.CTk):
 
     def t2_segment_size_toggle_event(self):
         if self.t2_segment_size_toggle.get() == 0:
+            # ---- turn OFF fixed window mode (variable end) ----
             self.t2_segment_size.set("")
             self.t2_segment_entry.configure(state="disable")
 
@@ -839,45 +840,85 @@ class App(ctk.CTk):
                     value.configure(state="normal")
 
         else:
+            # ---- turn ON fixed window mode ----
             self.t2_segment_entry.configure(state="normal")
-            self.t2_segment_size.set("500_000")
+            # default = 500,000 but not larger than the smallest non-empty seq
+            default_size = 500000
+            non_empty_lengths = [len(ds.seq) for ds in self.t2_ds.values() if ds.seq != '']
+            if non_empty_lengths:
+                default_size = min(default_size, min(non_empty_lengths))
 
-            # end scales
+            self.t2_segment_size.set(self._format_int(default_size))
+
+            # end scales become disabled in fixed window mode
             for key, value in self.t2_end_seq_scale.items():
                 value.configure(state="disable", button_color=COLORS["DISABLED_BTN_COLOR"])
             for key, value in self.t2_end_seq_entry.items():
                 value.configure(state="disable")
-            for key, value in self.t2_ds.items():
-                if len(self.t2_ds[key].seq) > 0:
-                    self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.t2_segment_size.get()))
 
-        for key, value in self.t2_ds.items():
-            self.sync_text_vars(self.t2_ds, key)
+            seg_size = self._parse_int(self.t2_segment_size.get())
+            if seg_size is None or seg_size <= 0:
+                return  # shouldn't happen, but be safe
+
+            for key, ds in self.t2_ds.items():
+                if len(ds.seq) > 0:
+                    self.t2_apply_segment_size_constraint(key, seg_size)
+
+        # After toggling, sync text fields to show the corrected values
+        for key, ds in self.t2_ds.items():
+            self.t2_sync_text_vars(self.t2_ds, key)
 
     def t2_sequence_value_change(self, sender, value):
         if sender == "0":  # Segment size changed
+            seg_size = self._parse_int(self.t2_segment_size.get())
+
+            # Empty or non-digit input is invalid
+            if seg_size is None or seg_size <= 0:
+                return messagebox.showerror("Error", "Segment size must be a positive integer.")
+
             for key, value in self.t2_ds.items():
                 if self.t2_ds[key].seq == '':
                     continue
                 # If segment size is out of range, send an error and set to 500,000
-                if int(self.t2_segment_size.get()) < 1 or int(self.t2_segment_size.get()) > len(self.t2_ds[key].seq):
-                    self.t2_segment_size.set("500_000")
+                if seg_size < 1 or seg_size > len(self.t2_ds[key].seq):
+                    # reset to default if out of range
+                    default_size = min(500000, len(self.t2_ds[key].seq))
+                    self.t2_segment_size.set(self._format_int(default_size))
                     messagebox.showerror("Error", "Segment size is out of range.")
-                self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.t2_segment_size.get()))
+                    seg_size = default_size
+
+                # enforce start + seg_size <= len(seq) and keep seg_size fixed
+                self.t2_apply_segment_size_constraint(key, seg_size)
+
+            # normalize display of the segment size
+            self.t2_segment_size.set(self._format_int(seg_size))
+
         elif sender in ["1", "2"]:  # Scale changed
             if self.t2_segment_size_toggle.get() == 1 and self.t2_ds[sender].seq != '':
-                self.t2_ds[sender].end_seq.set(self.t2_ds[sender].start_seq.get() + int(self.t2_segment_size.get()))
+                seg_size = self._parse_int(self.t2_segment_size.get())
+                if seg_size is None or seg_size <= 0:
+                    return messagebox.showerror("Error", "Segment size must be a positive integer.")
+                # Scale moved then apply fixed-size constraint
+                self.t2_apply_segment_size_constraint(sender, seg_size)
+            # ensure start < end (no message, just auto-fix if needed)
+            self.t2_ensure_start_before_end(self.t2_ds, sender, show_message=False)
+
         elif sender in ["3"]:  # Entry changed
+            # pull values from start_txt / end_txt into start_seq / end_seq
             for key, value in self.t2_ds.items():
-                self.reverse_sync_text_vars(self.t2_ds, key)
+                self.t2_reverse_sync_text_vars(self.t2_ds, key)
             if self.t2_segment_size_toggle.get() == 1:
+                seg_size = self._parse_int(self.t2_segment_size.get())
+                if seg_size is None or seg_size <= 0:
+                    return messagebox.showerror("Error", "Segment size must be a positive integer.")
                 for key, value in self.t2_ds.items():
                     if self.t2_ds[key].seq == '':
                         continue
-                    self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.t2_segment_size.get()))
+                    # Entries typed so respect fixed segment size + bounds
+                    self.t2_apply_segment_size_constraint(key, seg_size)
 
         for key, value in self.t2_ds.items():
-            self.sync_text_vars(self.t2_ds, key)
+            self.t2_sync_text_vars(self.t2_ds, key)
 
     def t2_plot(self):
         if self.t2_ds["1"].seq == "" or self.t2_ds["2"].seq == "":
@@ -894,7 +935,7 @@ class App(ctk.CTk):
             fcgrs_dict[key] = {}
             seq = self.t2_ds[key].seq[self.t2_ds[key].start_seq.get():self.t2_ds[key].end_seq.get()]
             if self.t2_rc[key].get():
-                seq = self.get_reverse_complement(seq)
+                seq = self._reverse_complement(seq)
             if self.t2_shuffle[key].get():
                 seq = list(seq)
                 random.shuffle(seq)
@@ -964,10 +1005,10 @@ class App(ctk.CTk):
         if background_color is not None:
             fig.patch.set_facecolor(background_color)
 
-        scale_1, scaling_1 = self.get_scaling(fcgrs["1"]["seq_len"])
+        scale_1, scaling_1 = self._scaling(fcgrs["1"]["seq_len"])
         b1 = fcgrs["1"]["b"]
         e1 = fcgrs["1"]["e"]
-        scale_2, scaling_2 = self.get_scaling(fcgrs["2"]["seq_len"])
+        scale_2, scaling_2 = self._scaling(fcgrs["2"]["seq_len"])
         b2 = fcgrs["2"]["b"]
         e2 = fcgrs["2"]["e"]
 
@@ -1015,6 +1056,86 @@ class App(ctk.CTk):
             self.t2_fig.savefig(file_path, dpi=300, bbox_inches="tight")
         except Exception as e:
             messagebox.showerror("Error", f"Could not save figure:\n{e}")
+
+    def t2_sync_text_vars(self, ds, sender):
+        ds[sender].start_txt.set(self._format_int(ds[sender].start_seq.get()))
+        ds[sender].end_txt.set(self._format_int(ds[sender].end_seq.get()))
+
+    def t2_reverse_sync_text_vars(self, ds, sender):
+        start_raw = ds[sender].start_txt.get().strip()
+        end_raw = ds[sender].end_txt.get().strip()
+        seq_len = len(ds[sender].seq)
+
+        # Parse integers (supports comma inputs)
+        start_val = self._parse_int(start_raw) if start_raw != "" else 0
+        end_val = self._parse_int(end_raw) if end_raw != "" else len(ds[sender].seq)
+
+        # Prevent error if the entry is not digits (if its "" it is okay)
+        if start_val is None:
+            ds[sender].start_txt.set("0")
+            return messagebox.showerror("Error", "Please enter a valid integer value.")
+
+        if end_val is None:
+            ds[sender].end_txt.set(str(len(ds[sender].seq)))
+            return messagebox.showerror("Error", "Please enter a valid integer value.")
+
+        # Validate range
+        if start_val < 0 or start_val > seq_len:
+            ds[sender].start_txt.set("0")
+            return messagebox.showerror("Error", "The value is out of range.")
+
+        if end_val < 0 or end_val > seq_len:
+            ds[sender].end_txt.set(str(seq_len))
+            return messagebox.showerror("Error", "The value is out of range.")
+
+        # Update sequence values
+        ds[sender].start_seq.set(start_val)
+        ds[sender].end_seq.set(end_val)
+
+        self.t2_ensure_start_before_end(ds, sender, show_message=True)
+
+    def t2_ensure_start_before_end(self, ds, sender, show_message=True):
+        seq_len = len(ds[sender].seq)
+        start_val = ds[sender].start_seq.get()
+        end_val = ds[sender].end_seq.get()
+
+        if start_val >= end_val:
+            # Simple policy:
+            # - try to move end to start+1 if possible
+            # - otherwise move start to end-1
+            if start_val < seq_len:
+                end_val = start_val + 1
+                ds[sender].end_seq.set(end_val)
+                ds[sender].end_txt.set(self._format_int(end_val))
+            else:
+                start_val = max(0, end_val - 1)
+                ds[sender].start_seq.set(start_val)
+                ds[sender].start_txt.set(self._format_int(start_val))
+
+            if show_message:
+                messagebox.showerror("Error", "Start value must be smaller than end value.")
+
+    def t2_apply_segment_size_constraint(self, key, seg_size):
+        ds = self.t2_ds[key]
+        seq_len = len(ds.seq)
+
+        if seq_len == 0 or seg_size is None or seg_size <= 0:
+            return
+
+        # segment size cannot be larger than the sequence
+        if seg_size > seq_len:
+            seg_size = seq_len
+
+        max_start = seq_len - seg_size
+        start = ds.start_seq.get()
+
+        if start < 0:
+            start = 0
+        if start > max_start:
+            start = max_start
+
+        ds.start_seq.set(start)
+        ds.end_seq.set(start + seg_size)
 
     # --------------------------------------------------
     # Helper functions for Common Reference tab
@@ -1111,62 +1232,135 @@ class App(ctk.CTk):
         self.t3_ds['2'].start_seq.set(start)
         self.t3_ds['2'].end_seq.set(end)
 
-    def t3_run(self):
+    def t3_run(self, event):
         pass
-        # self.t3_cgr_distance_history = []
-        # t3_step_length = np.floor(len(self.t3_ds["2"].seq) / int(self.t3_window_s.get()))
-        # # self.t3_progress_bar.set(0)
-        # # self.t3_pic_num.set(0)
-        # self._t3_progress = 0.0
-        #
-        # ref_b = int(self.t3_ds["1"].start_seq.get())
-        # ref_e = int(self.t3_ds["1"].end_seq.get())
-        # ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
-        #
-        # # self.t3_progress_bar.set(1 / (int(t3_step_length) + 2))  # start progress bar
-        # self._t3_progress = 1.0 / (int(t3_step_length) + 2)
-        #
-        # # if self.fcgr.get() == 1:
-        # im1 = ref_cgr.get_fcgr()
-        # # else:
-        # #     im1 = ref_cgr.get_cgr()
-        #
-        # # self.t3_progress_bar.set(2 / (int(t3_step_length) + 2))  # update progress bar
-        # self._t3_progress = 2.0 / (int(t3_step_length) + 2)
-        #
-        # ref_dict = {"(f)cgr": im1, "species": self.t3_ds["1"].specie.get(),
-        #             "chr_len": len(self.t3_ds["1"].seq)}
-        #
-        # path = f"{self.temp_output_path}/common_ref/pickle"
-        # if not os.path.exists(path):
-        #     os.makedirs(path)
-        # with open(f"{path}/ref.pkl", 'wb') as f:
-        #     pickle.dump(ref_dict, f)
-        #
-        # # the sliding sequence
-        # for i in range(int(t3_step_length)):
-        #     # self.t3_progress_bar.set((i + 3) / (int(t3_step_length) + 2))
-        #     self._t3_progress = (i + 3) / (int(t3_step_length) + 2)
-        #     b2 = i * int(self.t3_window_s.get())
-        #     e2 = (i + 1) * int(self.t3_window_s.get())
-        #
-        #     cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
-        #     # if self.fcgr.get() == 1:
-        #     im2 = cgr2.get_fcgr()
-        #     # else:
-        #     #     im2 = cgr2.get_cgr()
-        #
-        #     diff = im2 - im1
-        #
-        #     dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
-        #
-        #     self.t3_cgr_distance_history.append(dist)
-        #
-        #     dictionary = {"(f)cgr": im2, "b": b2, "e": e2, "chr_len": len(self.t3_ds["2"].seq),
-        #                   "diff": diff, "distance": dist, "species": self.t3_ds["2"].specie.get()}
-        #
-        #     with open(f"{path}/{i}.pkl", 'wb') as f:
-        #         pickle.dump(dictionary, f)
+        # if self.t3_ds["1"].seq == "" or self.t3_ds["2"].seq == "":
+        #     messagebox.showerror("Error", "Please upload or choose the sequences first")
+        #     return
+        # if self.k_var.get() == 0:
+        #     messagebox.showerror("Error", "Please choose the k-mer value")
+        #     return
+        # if self.dist_metric.get() == "":
+        #     messagebox.showerror("Error", "Please choose the distance measure")
+        #     return
+        # global foo_thread_2
+        # foo_thread_2 = threading.Thread(target=self.t3_run)
+        # foo_thread_2.daemon = True
+        # foo_thread_2.start()
+        # self.after(20, self.t3_check_thread)
+
+    # def t3_check_thread(self):
+    #     self.t3_progress_bar.set(self._t3_progress)
+    #     if foo_thread_2.is_alive():
+    #         self.after(20, self.t3_check_thread)
+    #     else:
+    #         self.t3_progress_bar.set(1.0)
+    #         self.t3_pic_num.set(0)
+    #         self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
+    #
+    #         # Display the reference image
+    #         with open(f"{self.temp_output_path}/common_ref/pickle/ref.pkl", 'rb') as handle:
+    #             dictionary = pickle.load(handle)
+    #
+    #         fig, (ax1) = plt.subplots(1, 1)
+    #         extent = 0, 1, 0, 1
+    #
+    #         display_frame_color = self.t3_display_frame_1.cget("fg_color")
+    #         fig.patch.set_facecolor(display_frame_color)
+    #
+    #         img1 = CGR.array2img(dictionary["(f)cgr"], bits=8,  # BITS_DICT[dictionary["species"]]
+    #                              resolution=RESOLUTION_DICT[self.k_var.get()])
+    #         img1 = Image.fromarray(img1, 'L')
+    #         ax1.imshow(img1, cmap='gray', extent=extent)
+    #         ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+    #         scale_1, scaling_1 = self._scaling(dictionary["chr_len"])
+    #         b1 = int(self.t3_ds["1"].start_seq.get())
+    #         e1 = int(self.t3_ds["1"].end_seq.get())
+    #         if self.t3_ds["1"].specie.get() == "Custom":
+    #             ax1.set_title(f'Reference\nCustom / '
+    #                           f'{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+    #         else:
+    #             if self.t3_ds["1"].chromosome.get() == "Whole Genome":
+    #                 chromosome = "Genome"
+    #             else:
+    #                 chromosome = f'chr {self.t3_ds["1"].chromosome.get()}'
+    #             ax1.set_title(f'Reference\n{self.t3_ds["1"].specie.get()} / {chromosome} / '
+    #                           f'{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+    #
+    #         # Clear the previous figure from the display frame if any
+    #         for widget in self.t3_display_frame_1.winfo_children():
+    #             widget.destroy()
+    #
+    #         # Create a canvas and add the figure to it
+    #         canvas = FigureCanvasTkAgg(fig, master=self.t3_display_frame_1)
+    #         canvas.draw()
+    #
+    #         # Set the canvas size explicitly
+    #         canvas_width = self.t3_display_frame_1.cget("width")
+    #         canvas_height = self.t3_display_frame_1.cget("height")
+    #         canvas.get_tk_widget().config(width=canvas_width, height=canvas_height)
+    #         # Use grid to place the canvas
+    #         canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
+    #         plt.close()
+    #
+    #         # Display the plot and the first set
+    #         self._change_images(0, "t3", None)
+    #
+    # def t3_run(self):
+    #     self.t3_cgr_distance_history = []
+    #     t3_step_length = np.floor(len(self.t3_ds["2"].seq) / int(self.t3_window_s.get()))
+    #     # self.t3_progress_bar.set(0)
+    #     # self.t3_pic_num.set(0)
+    #     self._t3_progress = 0.0
+    #
+    #     ref_b = int(self.t3_ds["1"].start_seq.get())
+    #     ref_e = int(self.t3_ds["1"].end_seq.get())
+    #     ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
+    #
+    #     # self.t3_progress_bar.set(1 / (int(t3_step_length) + 2))  # start progress bar
+    #     self._t3_progress = 1.0 / (int(t3_step_length) + 2)
+    #
+    #     # if self.fcgr.get() == 1:
+    #     im1 = ref_cgr.get_fcgr()
+    #     # else:
+    #     #     im1 = ref_cgr.get_cgr()
+    #
+    #     # self.t3_progress_bar.set(2 / (int(t3_step_length) + 2))  # update progress bar
+    #     self._t3_progress = 2.0 / (int(t3_step_length) + 2)
+    #
+    #     ref_dict = {"(f)cgr": im1, "species": self.t3_ds["1"].specie.get(),
+    #                 "chr_len": len(self.t3_ds["1"].seq)}
+    #
+    #     path = f"{self.temp_output_path}/common_ref/pickle"
+    #     if not os.path.exists(path):
+    #         os.makedirs(path)
+    #     with open(f"{path}/ref.pkl", 'wb') as f:
+    #         pickle.dump(ref_dict, f)
+    #
+    #     # the sliding sequence
+    #     for i in range(int(t3_step_length)):
+    #         # self.t3_progress_bar.set((i + 3) / (int(t3_step_length) + 2))
+    #         self._t3_progress = (i + 3) / (int(t3_step_length) + 2)
+    #         b2 = i * int(self.t3_window_s.get())
+    #         e2 = (i + 1) * int(self.t3_window_s.get())
+    #
+    #         cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
+    #         # if self.fcgr.get() == 1:
+    #         im2 = cgr2.get_fcgr()
+    #         # else:
+    #         #     im2 = cgr2.get_cgr()
+    #
+    #         diff = im2 - im1
+    #
+    #         dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
+    #
+    #         self.t3_cgr_distance_history.append(dist)
+    #
+    #         dictionary = {"(f)cgr": im2, "b": b2, "e": e2, "chr_len": len(self.t3_ds["2"].seq),
+    #                       "diff": diff, "distance": dist, "species": self.t3_ds["2"].specie.get()}
+    #
+    #         with open(f"{path}/{i}.pkl", 'wb') as f:
+    #             pickle.dump(dictionary, f)
 
     # --------------------------------------------------
     # General helper functions
@@ -1188,14 +1382,14 @@ class App(ctk.CTk):
         return file_name, sequence
 
     @staticmethod
-    def get_reverse_complement(sequence):
+    def _reverse_complement(sequence):
         complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
         bases = [complement[base] for base in sequence]
         bases = reversed(bases)
         return ''.join(bases)
 
     @staticmethod
-    def get_scaling(chromosome_length):
+    def _scaling(chromosome_length):
         scale = 1_000_000
         while (chromosome_length / scale) < 2:
             scale //= 1000
@@ -1208,28 +1402,15 @@ class App(ctk.CTk):
         return scale, scaling
 
     @staticmethod
-    def sync_text_vars(ds, sender):
-        ds[sender].start_txt.set(f"{ds[sender].start_seq.get()}")
-        ds[sender].end_txt.set(f"{ds[sender].end_seq.get()}")
+    def _parse_int(text):
+        if text is None:
+            return None
+        cleaned = text.replace(",", "").strip()
+        return int(cleaned) if cleaned.isdigit() else None
 
     @staticmethod
-    def reverse_sync_text_vars(ds, sender):
-        # Prevent error if the entry is not digits (if its "" it is okay)
-        if not ds[sender].start_txt.get().isdigit() and ds[sender].start_txt.get() != "":
-            ds[sender].start_txt.set(0)
-            return messagebox.showerror("Error", "Please enter a valid integer value.")
-        if not ds[sender].end_txt.get().isdigit() and ds[sender].end_txt.get() != "":
-            ds[sender].end_txt.set(len(ds[sender].seq))
-            return messagebox.showerror("Error", "Please enter a valid integer value.")
-        # Prevent error if the entry is out of range
-        if int(ds[sender].start_txt.get()) < 0 or int(ds[sender].start_txt.get()) > len(ds[sender].seq):
-            ds[sender].start_txt.set(0)
-            return messagebox.showerror("Error", "The value is out of range.")
-        if int(ds[sender].end_txt.get()) < 0 or int(ds[sender].end_txt.get()) > len(ds[sender].seq):
-            ds[sender].end_txt.set(len(ds[sender].seq))
-            return messagebox.showerror("Error", "The value is out of range.")
-        ds[sender].start_seq.set(int(ds[sender].start_txt.get()))
-        ds[sender].end_seq.set(int(ds[sender].end_txt.get()))
+    def _format_int(value):
+        return f"{value:,}"
 
     # --------------------------------------------------
     # Other functions
@@ -1643,7 +1824,7 @@ class App(ctk.CTk):
             display_frame_color = frame.cget("fg_color")
             fig.patch.set_facecolor(display_frame_color)
 
-            scale_2, scaling_2 = self.get_scaling(dictionary["chr_len"])
+            scale_2, scaling_2 = self._scaling(dictionary["chr_len"])
             b2 = dictionary["b"]
             e2 = dictionary["e"]
 
@@ -1679,7 +1860,7 @@ class App(ctk.CTk):
             display_frame_color = frame.cget("fg_color")
             fig.patch.set_facecolor(display_frame_color)
 
-            scale_2, scaling_2 = self.get_scaling(dictionary["chr_len"])
+            scale_2, scaling_2 = self._scaling(dictionary["chr_len"])
             b2 = dictionary["b"]
             e2 = dictionary["e"]
 
@@ -1748,79 +1929,6 @@ class App(ctk.CTk):
         if pic_num.get() < dist_history_len - 1:
             pic_num.set(pic_num.get() + 1)
             self._change_images(pic_num.get(), tab_name, None)
-
-    def run_common_ref(self, event):
-        if self.t3_ds["1"].seq == "" or self.t3_ds["2"].seq == "":
-            messagebox.showerror("Error", "Please upload or choose the sequences first")
-            return
-        if self.k_var.get() == 0:
-            messagebox.showerror("Error", "Please choose the k-mer value")
-            return
-        if self.dist_metric.get() == "":
-            messagebox.showerror("Error", "Please choose the distance measure")
-            return
-        global foo_thread_2
-        foo_thread_2 = threading.Thread(target=self.t3_run)
-        foo_thread_2.daemon = True
-        foo_thread_2.start()
-        self.after(20, self.t3_check_thread)
-
-    def t3_check_thread(self):
-        self.t3_progress_bar.set(self._t3_progress)
-        if foo_thread_2.is_alive():
-            self.after(20, self.t3_check_thread)
-        else:
-            self.t3_progress_bar.set(1.0)
-            self.t3_pic_num.set(0)
-            self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
-
-            # Display the reference image
-            with open(f"{self.temp_output_path}/common_ref/pickle/ref.pkl", 'rb') as handle:
-                dictionary = pickle.load(handle)
-
-            fig, (ax1) = plt.subplots(1, 1)
-            extent = 0, 1, 0, 1
-
-            display_frame_color = self.t3_display_frame_1.cget("fg_color")
-            fig.patch.set_facecolor(display_frame_color)
-
-            img1 = CGR.array2img(dictionary["(f)cgr"], bits=8,  # BITS_DICT[dictionary["species"]]
-                                 resolution=RESOLUTION_DICT[self.k_var.get()])
-            img1 = Image.fromarray(img1, 'L')
-            ax1.imshow(img1, cmap='gray', extent=extent)
-            ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            scale_1, scaling_1 = self.get_scaling(dictionary["chr_len"])
-            b1 = int(self.t3_ds["1"].start_seq.get())
-            e1 = int(self.t3_ds["1"].end_seq.get())
-            if self.t3_ds["1"].specie.get() == "Custom":
-                ax1.set_title(f'Reference\nCustom / '
-                              f'{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
-            else:
-                if self.t3_ds["1"].chromosome.get() == "Whole Genome":
-                    chromosome = "Genome"
-                else:
-                    chromosome = f'chr {self.t3_ds["1"].chromosome.get()}'
-                ax1.set_title(f'Reference\n{self.t3_ds["1"].specie.get()} / {chromosome} / '
-                              f'{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
-
-            # Clear the previous figure from the display frame if any
-            for widget in self.t3_display_frame_1.winfo_children():
-                widget.destroy()
-
-            # Create a canvas and add the figure to it
-            canvas = FigureCanvasTkAgg(fig, master=self.t3_display_frame_1)
-            canvas.draw()
-
-            # Set the canvas size explicitly
-            canvas_width = self.t3_display_frame_1.cget("width")
-            canvas_height = self.t3_display_frame_1.cget("height")
-            canvas.get_tk_widget().config(width=canvas_width, height=canvas_height)
-            # Use grid to place the canvas
-            canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
-            plt.close()
-
-            # Display the plot and the first set
-            self._change_images(0, "t3", None)
 
 
 class GenerateSyntheticSequence(ctk.CTkToplevel):
