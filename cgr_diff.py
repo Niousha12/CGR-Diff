@@ -40,6 +40,7 @@ COLORS = dict(
 KMERS = [str(i) for i in range(1, 9)]
 DISTANCES = ["Normalized Euclidean", "Cosine", "Manhattan", "Descriptor", "DSSIM", "K-S", "Wasserstein"]
 RESOLUTION_DICT = {2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 4, 9: 4, 10: 4, 11: 4, 12: 4}
+PLOT_TYPES = ["Bar plot", "Histogram plot"]
 
 
 class GUIDataStructure:
@@ -77,7 +78,7 @@ class App(ctk.CTk):
         self.nav_buttons = {}
         self.theme_button = None
         self.tab_names = ["CGR Analysis", "CGR Comparator", "Common Reference", "Multispecies Comparator"]
-        self.active_tab = self.tab_names[2]
+        self.active_tab = self.tab_names[0]
 
         # ------------------------- Application state variables -------------------------
         self.uploaded_seq_lists_frame = None  # frame that holds the list of uploaded files
@@ -87,20 +88,21 @@ class App(ctk.CTk):
         self.selected_file_index = None  # index of currently selected file in uploaded_files (or None)
         self.display_content_frame = None  # frame in the right panel to hold analysis sub-frames
 
-        # Variables for page 2 (CGR Comparator)
-        self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        self.window_s_toggle = tkinter.IntVar(value=0)  # 0: Variable, 1: Fix
-        self.window_s = tkinter.StringVar(value="")  # Window size entry variable
-        self.window_entry = None  # Entry widget for window size
         self.k_var = ctk.IntVar(value=6)  # k-mer selection variable
         self.dist_metric = tkinter.StringVar(value="DSSIM")  # distance metric selection variable
-        self.checkbox_RC = {}  # reverse complement checkbox dictionary
-        self.checkbox_Random = {}  # random sequence checkbox dictionary
 
-        self.start_seq_scale = {}
-        self.end_seq_scale = {}
-        self.start_seq_entry = {}
-        self.end_seq_entry = {}
+        # Variables for page 2 (CGR Comparator)
+        self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
+        self.t2_segment_size_toggle = tkinter.IntVar(value=0)  # 0: Variable, 1: Fix
+        self.t2_segment_size = tkinter.StringVar(value="")  # Segment size entry variable
+        self.t2_segment_entry = None  # Entry widget for segment size
+        self.t2_rc = {}  # reverse complement checkbox dictionary
+        self.t2_shuffle = {}  # random sequence checkbox dictionary
+
+        self.t2_start_seq_scale = {}
+        self.t2_end_seq_scale = {}
+        self.t2_start_seq_entry = {}
+        self.t2_end_seq_entry = {}
 
         self.t2_display_frame = None
         self.t2_placeholder_label = None
@@ -109,12 +111,25 @@ class App(ctk.CTk):
         self.t2_save_btn = None
 
         # Variables for page 3 (Common Reference)
+        self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
+        self.t3_segment_size = tkinter.StringVar(value="")
+        self.t3_use_rep_algo = tkinter.IntVar(value=1)  # 0: use start and end, 1: use algo
+        self.t3_rep_algo_type = tkinter.StringVar(value="RepSeg")  # Representation algorithm type
+        self.t3_rep_number = tkinter.StringVar(value="1")  # Number of representations to generate
+        self.t3_plot_type = tkinter.StringVar(value="Bar plot")
+        self.t3_seq_len_label = None
+        self.t3_rep_type_combobox = None
+        self.t3_rep_n_entry = None
+        self.t3_start_entry = None
+        self.t3_end_entry = None
+        self.t3_start_label = None
+        self.t3_end_label = None
 
         # ------------------------- Build UI -------------------------
         self._create_top_navbar()
         self._build_main_content()
 
-        # self._upload_files(hard_coded=True)
+        self._upload_files(hard_coded=True)
 
     def _toggle_theme(self):
         new_mode = "Light" if self.appearance.get() == "Dark" else "Dark"
@@ -327,34 +342,34 @@ class App(ctk.CTk):
             (ctk.CTkLabel(seq_frame, text=f"Sequence {i + 1}: ", font=HEADER_FONT_BOLD)
              .grid(row=i, column=0, sticky="w", padx=(10, 0), pady=(10, 10 * i)))
 
-            t2_seq_combobox[f"{i + 1}"] = ctk.CTkComboBox(seq_frame, values=self.file_names,
+            t2_seq_combobox[f"{i + 1}"] = ctk.CTkComboBox(seq_frame, values=self.file_names, state="readonly",
                                                           variable=self.t2_ds[str(i + 1)].seq_name,
                                                           command=partial(self.t2_sequence_selection_event, f"{i + 1}"))
             t2_seq_combobox[f"{i + 1}"].grid(row=i, column=1, sticky="ew", padx=(0, 10), pady=(10, 10 * i))
 
-        # Radio Button (Window size)
-        # Frame for window size settings
-        window_size_frame = ctk.CTkFrame(config_frame, fg_color="transparent", border_color=COLORS["BORDER_COLOR"],
-                                         border_width=1, corner_radius=8)
-        window_size_frame.grid(row=1, column=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
-        window_size_frame.grid_columnconfigure(0, weight=1)
-        window_size_frame.grid_columnconfigure(1, weight=1)
+        # Radio Button (Segment size)
+        # Frame for segment size settings
+        segment_size_frame = ctk.CTkFrame(config_frame, fg_color="transparent", border_color=COLORS["BORDER_COLOR"],
+                                          border_width=1, corner_radius=8)
+        segment_size_frame.grid(row=1, column=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
+        segment_size_frame.grid_columnconfigure(0, weight=1)
+        segment_size_frame.grid_columnconfigure(1, weight=1)
         for i in range(3):
-            window_size_frame.grid_rowconfigure(i, weight=1)
+            segment_size_frame.grid_rowconfigure(i, weight=1)
 
-        (ctk.CTkLabel(window_size_frame, text="Window Size", font=HEADER_FONT_BOLD)
+        (ctk.CTkLabel(segment_size_frame, text="Segment Size", font=HEADER_FONT_BOLD)
          .grid(row=0, column=0, sticky="w", padx=5))
-        ctk.CTkRadioButton(window_size_frame, text="Variable", variable=self.window_s_toggle, value=0,
-                           command=self.t2_window_size_toggle_event).grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        ctk.CTkRadioButton(window_size_frame, text="Fix", variable=self.window_s_toggle, value=1,
-                           command=self.t2_window_size_toggle_event).grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        ctk.CTkRadioButton(segment_size_frame, text="Variable", variable=self.t2_segment_size_toggle, value=0,
+                           command=self.t2_segment_size_toggle_event).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkRadioButton(segment_size_frame, text="Fix", variable=self.t2_segment_size_toggle, value=1,
+                           command=self.t2_segment_size_toggle_event).grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
-        self.window_entry = ctk.CTkEntry(window_size_frame, textvariable=self.window_s)
-        self.window_entry.bind('<FocusOut>', partial(self.t2_sequence_value_change, "0"))
-        self.window_entry.bind('<Key-Return>', partial(self.t2_sequence_value_change, "0"))
-        if self.window_s_toggle.get() == 0:
-            self.window_entry.configure(state="disabled")
-        self.window_entry.grid(row=2, columnspan=2, padx=(5, 5), pady=(10, 10), sticky="ew")
+        self.t2_segment_entry = ctk.CTkEntry(segment_size_frame, textvariable=self.t2_segment_size)
+        self.t2_segment_entry.bind('<FocusOut>', partial(self.t2_sequence_value_change, "0"))
+        self.t2_segment_entry.bind('<Key-Return>', partial(self.t2_sequence_value_change, "0"))
+        if self.t2_segment_size_toggle.get() == 0:
+            self.t2_segment_entry.configure(state="disabled")
+        self.t2_segment_entry.grid(row=2, columnspan=2, padx=(5, 5), pady=(10, 10), sticky="ew")
 
         # Frame for k-mer selection and distance selection
         # k-mer selection
@@ -366,13 +381,13 @@ class App(ctk.CTk):
         kmer_frame.grid_rowconfigure(1, weight=1)
 
         ctk.CTkLabel(kmer_frame, text="k-mer: ", font=HEADER_FONT_BOLD).grid(row=0, column=0, sticky="w", padx=(5, 0))
-        (ctk.CTkComboBox(kmer_frame, values=KMERS, state="normal", variable=self.k_var)
+        (ctk.CTkComboBox(kmer_frame, values=KMERS, state="readonly", variable=self.k_var)
          .grid(row=0, column=1, sticky="ew", padx=(0, 5)))
 
         # distance measure selection
         (ctk.CTkLabel(kmer_frame, text="Distance measure: ", font=HEADER_FONT_BOLD)
          .grid(row=1, column=0, padx=(5, 0), pady=(10, 0), sticky="w"))
-        (ctk.CTkComboBox(kmer_frame, values=DISTANCES, variable=self.dist_metric)
+        (ctk.CTkComboBox(kmer_frame, values=DISTANCES, state="readonly", variable=self.dist_metric)
          .grid(row=1, column=1, sticky="ew", padx=(0, 5), pady=(10, 0)))
 
         # reverse complement or shuffle sequence
@@ -386,10 +401,10 @@ class App(ctk.CTk):
         for i in range(2):
             (ctk.CTkLabel(rv_frame, text=f'Sequence {i + 1}:', font=HEADER_FONT_BOLD)
              .grid(row=(i * 2), column=0, padx=(10, 0), pady=(10, 0), sticky="w"))
-            self.checkbox_RC[str(i + 1)] = ctk.CTkCheckBox(master=rv_frame, text="Reverse Complement")
-            self.checkbox_RC[str(i + 1)].grid(row=(i * 2), column=1, padx=(10, 0), pady=(10, 0), sticky="w")
-            self.checkbox_Random[str(i + 1)] = ctk.CTkCheckBox(master=rv_frame, text="Shuffle")
-            self.checkbox_Random[str(i + 1)].grid(row=(i * 2) + 1, column=1, padx=(10, 0), pady=(10, 10), sticky="w")
+            self.t2_rc[str(i + 1)] = ctk.CTkCheckBox(master=rv_frame, text="Reverse Complement")
+            self.t2_rc[str(i + 1)].grid(row=(i * 2), column=1, padx=(10, 0), pady=(10, 0), sticky="w")
+            self.t2_shuffle[str(i + 1)] = ctk.CTkCheckBox(master=rv_frame, text="Shuffle")
+            self.t2_shuffle[str(i + 1)].grid(row=(i * 2) + 1, column=1, padx=(10, 0), pady=(10, 10), sticky="w")
 
         # plot button
         plot_button = ctk.CTkButton(config_frame, text="Plot", corner_radius=8, height=35, font=HEADER_FONT,
@@ -408,41 +423,45 @@ class App(ctk.CTk):
             # The start slider and entry
             seq_length = len(self.t2_ds[str(i + 1)].seq)
             to_value = seq_length if seq_length > 0 else 1
-            self.start_seq_scale[str(i + 1)] = ctk.CTkSlider(slider_frame, from_=0, to=to_value,
-                                                             orientation="horizontal",
-                                                             variable=self.t2_ds[str(i + 1)].start_seq,
-                                                             command=partial(self.t2_sequence_value_change, str(i + 1)))
+            self.t2_start_seq_scale[str(i + 1)] = ctk.CTkSlider(slider_frame, from_=0, to=to_value,
+                                                                orientation="horizontal",
+                                                                variable=self.t2_ds[str(i + 1)].start_seq,
+                                                                command=partial(self.t2_sequence_value_change,
+                                                                                str(i + 1)))
             if self.t2_ds[str(i + 1)].seq == '':
-                self.start_seq_scale[str(i + 1)].set(0)
-                self.start_seq_scale[str(i + 1)].configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
-            self.start_seq_scale[str(i + 1)].grid(row=(i * 2), column=2, padx=(5, 0), pady=(10, 0), sticky="ew")
+                self.t2_start_seq_scale[str(i + 1)].set(0)
+                self.t2_start_seq_scale[str(i + 1)].configure(state="disabled",
+                                                              button_color=COLORS["DISABLED_BTN_COLOR"])
+            self.t2_start_seq_scale[str(i + 1)].grid(row=(i * 2), column=2, padx=(5, 0), pady=(10, 0), sticky="ew")
 
-            self.start_seq_entry[str(i + 1)] = ctk.CTkEntry(slider_frame, textvariable=self.t2_ds[str(i + 1)].start_txt)
-            self.start_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.t2_sequence_value_change, "3"))
-            self.start_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.t2_sequence_value_change, "3"))
+            self.t2_start_seq_entry[str(i + 1)] = ctk.CTkEntry(slider_frame,
+                                                               textvariable=self.t2_ds[str(i + 1)].start_txt)
+            self.t2_start_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.t2_sequence_value_change, "3"))
+            self.t2_start_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.t2_sequence_value_change, "3"))
             if self.t2_ds[str(i + 1)].seq == '':
-                self.start_seq_entry[str(i + 1)].configure(state="disabled")
-            self.start_seq_entry[str(i + 1)].grid(row=(i * 2), column=3, padx=(5, 0), pady=(10, 0))
+                self.t2_start_seq_entry[str(i + 1)].configure(state="disabled")
+            self.t2_start_seq_entry[str(i + 1)].grid(row=(i * 2), column=3, padx=(5, 0), pady=(10, 0))
             ctk.CTkLabel(slider_frame, text='bp').grid(row=(i * 2), column=4, padx=(5, 10), pady=(10, 0))
 
             # The end slider and entry
-            self.end_seq_scale[str(i + 1)] = ctk.CTkSlider(slider_frame, from_=0, to=to_value,
-                                                           orientation="horizontal",
-                                                           variable=self.t2_ds[str(i + 1)].end_seq,
-                                                           command=partial(self.t2_sequence_value_change, str(i + 1)))
+            self.t2_end_seq_scale[str(i + 1)] = ctk.CTkSlider(slider_frame, from_=0, to=to_value,
+                                                              orientation="horizontal",
+                                                              variable=self.t2_ds[str(i + 1)].end_seq,
+                                                              command=partial(self.t2_sequence_value_change,
+                                                                              str(i + 1)))
             if self.t2_ds[str(i + 1)].seq == '':
-                self.end_seq_scale[str(i + 1)].set(0)
-                self.end_seq_scale[str(i + 1)].configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
-            if self.window_s_toggle.get() == 1:
-                self.end_seq_scale[str(i + 1)].configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
-            self.end_seq_scale[str(i + 1)].grid(row=(i * 2) + 1, column=2, padx=(5, 0), pady=(10, 0), sticky="ew")
+                self.t2_end_seq_scale[str(i + 1)].set(0)
+                self.t2_end_seq_scale[str(i + 1)].configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+            if self.t2_segment_size_toggle.get() == 1:
+                self.t2_end_seq_scale[str(i + 1)].configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+            self.t2_end_seq_scale[str(i + 1)].grid(row=(i * 2) + 1, column=2, padx=(5, 0), pady=(10, 0), sticky="ew")
 
-            self.end_seq_entry[str(i + 1)] = ctk.CTkEntry(slider_frame, textvariable=self.t2_ds[str(i + 1)].end_txt)
-            self.end_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.t2_sequence_value_change, "3"))
-            self.end_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.t2_sequence_value_change, "3"))
+            self.t2_end_seq_entry[str(i + 1)] = ctk.CTkEntry(slider_frame, textvariable=self.t2_ds[str(i + 1)].end_txt)
+            self.t2_end_seq_entry[str(i + 1)].bind('<FocusOut>', partial(self.t2_sequence_value_change, "3"))
+            self.t2_end_seq_entry[str(i + 1)].bind('<Key-Return>', partial(self.t2_sequence_value_change, "3"))
             if self.t2_ds[str(i + 1)].seq == '':
-                self.end_seq_entry[str(i + 1)].configure(state="disabled")
-            self.end_seq_entry[str(i + 1)].grid(row=(i * 2) + 1, column=3, padx=(5, 0), pady=(10, 0))
+                self.t2_end_seq_entry[str(i + 1)].configure(state="disabled")
+            self.t2_end_seq_entry[str(i + 1)].grid(row=(i * 2) + 1, column=3, padx=(5, 0), pady=(10, 0))
             ctk.CTkLabel(slider_frame, text='bp').grid(row=(i * 2) + 1, column=4, padx=(5, 10), pady=(10, 0))
 
         # ---------- Design the display frame ----------
@@ -476,8 +495,9 @@ class App(ctk.CTk):
         config_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
         config_frame.grid(row=0, column=0, rowspan=3, padx=(5, 5), pady=(5, 5), sticky="nsew")
         config_frame.grid_columnconfigure(0, weight=1)
-        # for i in range(4):
-        #     config_frame.grid_rowconfigure(i, weight=1)
+        config_frame.grid_rowconfigure(0, weight=2)
+        config_frame.grid_rowconfigure(1, weight=2)
+        config_frame.grid_rowconfigure(2, weight=1)
         config_frame.grid_propagate(False)
         # ---------- Right panel ----------
         progress_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
@@ -491,174 +511,118 @@ class App(ctk.CTk):
         display_frame.grid(row=1, column=1, padx=(0, 5), pady=(5, 0), sticky="nsew")
         display_frame.grid_propagate(False)
         statistics_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
-                                      fg_color="transparent")
+                                        fg_color="transparent")
         statistics_frame.grid(row=2, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
         statistics_frame.grid_columnconfigure(0, weight=1)
         statistics_frame.grid_rowconfigure(0, weight=1)
         statistics_frame.grid_propagate(False)
 
         # ---------- Designing the config frame (F3) ----------
+        # Choose sequences frame
+        seq_frame = ctk.CTkFrame(config_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        seq_frame.grid(row=0, column=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
+        seq_frame.grid_columnconfigure(0, weight=1)
+        seq_frame.grid_columnconfigure(1, weight=1)
+        for i in range(6):
+            seq_frame.grid_rowconfigure(i, weight=1)
 
-        # # Search button
-        # search_button = customtkinter.CTkButton(t3_config_frame, image=search_im, width=180, height=25,
-        #                                         text="Search and Download Genomes", command=self.open_popup)
-        # search_button.grid(row=0, columnspan=2, pady=(5, 0))
-        #
-        # self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        # # Creating frame for reference sequence
-        # t3_chr_frame = customtkinter.CTkFrame(t3_config_frame, corner_radius=20)
-        # t3_chr_frame.grid(row=1, columnspan=2, padx=5, pady=5, sticky="ew")
-        #
-        # customtkinter.CTkLabel(t3_chr_frame, text=f"Reference: ", font=self.header_font) \
-        #     .grid(row=0, column=0, sticky="w", padx=10, pady=(5, 0))
-        # # upload button
-        # upload_button = customtkinter.CTkButton(t3_chr_frame, image=upload_im, text="",
-        #                                         command=partial(self.t3_upload_event, "1", None),
-        #                                         width=15, height=10)
-        # upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
-        # # Button for synthetic sequence
-        # customtkinter.CTkButton(t3_chr_frame, text="Generate", command=self.t3_gen_synth_seq_event,
-        #                         width=15, height=10).grid(row=0, column=1, sticky="w", padx=(50, 10), pady=(5, 0))
-        # customtkinter.CTkLabel(t3_chr_frame, text="Species: ", font=self.header_font) \
-        #     .grid(row=1, column=0, sticky="w", padx=10)
-        # customtkinter.CTkLabel(t3_chr_frame, text="Chromosome name: ", font=self.header_font) \
-        #     .grid(row=1, column=1, sticky="w", padx=10)
-        # self.t3_species_combobox_1 = customtkinter.CTkComboBox(t3_chr_frame, values=species_list, width=100,
-        #                                                        command=partial(self.t3_specie_change_event, "1"))
-        #
-        # self.t3_species_combobox_1.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
-        # self.t3_species_combobox_1.set("")
-        #
-        # self.t3_chr_combobox_1 = customtkinter.CTkComboBox(t3_chr_frame, values=[],
-        #                                                    variable=self.t3_ds["1"].chromosome, width=100,
-        #                                                    command=partial(self.t3_chromosome_change_event, "1"))
-        # self.t3_chr_combobox_1.grid(row=2, column=1, sticky="w", padx=10, pady=(0, 10))
-        # self.t3_chr_combobox_1.set("")
-        #
-        # # start and end
-        # customtkinter.CTkLabel(t3_chr_frame, text="Start: ", font=self.header_font).grid(row=3, column=0, sticky="w",
-        #                                                                                  padx=10)
-        # customtkinter.CTkLabel(t3_chr_frame, text="End: ", font=self.header_font) \
-        #     .grid(row=3, column=1, sticky="w", padx=10)
-        #
-        # self.t3_start_seq_entry = customtkinter.CTkEntry(t3_chr_frame, textvariable=self.t3_ds["1"].start_txt)
-        # self.t3_start_seq_entry.bind('<FocusOut>', partial(self.t3_entry_change))
-        # self.t3_start_seq_entry.bind('<Key-Return>', partial(self.t3_entry_change))
-        # self.t3_start_seq_entry.configure(state="disable")
-        # self.t3_start_seq_entry.grid(row=4, column=0, padx=10, pady=(0, 10))
-        #
-        # self.t3_end_seq_entry = customtkinter.CTkEntry(t3_chr_frame, textvariable=self.t3_ds["1"].end_txt)
-        # self.t3_end_seq_entry.bind('<FocusOut>', partial(self.t3_entry_change))
-        # self.t3_end_seq_entry.bind('<Key-Return>', partial(self.t3_entry_change))
-        # self.t3_end_seq_entry.configure(state="disable")
-        # self.t3_end_seq_entry.grid(row=4, column=1, padx=10, pady=(0, 10))
-        #
-        # customtkinter.CTkLabel(t3_chr_frame, text="Annotations: ", font=self.header_font) \
-        #     .grid(row=5, column=0, sticky="w", padx=10, pady=(0, 10))
-        # self.t3_parts_name_combobox = customtkinter.CTkComboBox(t3_chr_frame, values=[], state="disable",
-        #                                                         variable=self.t3_ds["1"].annotation, width=120,
-        #                                                         command=partial(self.t3_annotation_change_event, "1"))
-        # self.t3_parts_name_combobox.grid(row=5, column=1, sticky="w", padx=10, pady=(0, 10))
-        #
-        # # Creating frame for the other sequence
-        # t3_chr_frame_2 = customtkinter.CTkFrame(t3_config_frame, corner_radius=20)
-        # t3_chr_frame_2.grid(row=2, columnspan=2, padx=5, pady=5, sticky="ew")
-        #
-        # customtkinter.CTkLabel(t3_chr_frame_2, text=f"Genome: ", font=self.header_font) \
-        #     .grid(row=0, columnspan=2, sticky="w", padx=10, pady=(5, 0))
-        # upload_button = customtkinter.CTkButton(t3_chr_frame_2, image=upload_im, text="",
-        #                                         command=partial(self.t3_upload_event, "2", None),
-        #                                         width=15, height=10)
-        # upload_button.grid(row=0, column=1, sticky="w", padx=10, pady=(5, 0))
-        # customtkinter.CTkLabel(t3_chr_frame_2, text="Species: ", font=self.header_font) \
-        #     .grid(row=1, column=0, sticky="w", padx=10)
-        # customtkinter.CTkLabel(t3_chr_frame_2, text="Chromosome name: ", font=self.header_font) \
-        #     .grid(row=1, column=1, sticky="w", padx=10)
-        # self.t3_species_combobox_2 = customtkinter.CTkComboBox(t3_chr_frame_2, values=species_list, width=100,
-        #                                                        command=partial(self.t3_specie_change_event, "2"))
-        #
-        # self.t3_species_combobox_2.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
-        # self.t3_species_combobox_2.set("")
-        #
-        # self.t3_chr_combobox_2 = customtkinter.CTkComboBox(t3_chr_frame_2, values=[],
-        #                                                    variable=self.t3_ds["2"].chromosome, width=100,
-        #                                                    command=partial(self.t3_chromosome_change_event, "2"))
-        # self.t3_chr_combobox_2.grid(row=2, column=1, sticky="w", padx=10, pady=(0, 10))
-        # self.t3_chr_combobox_2.set("")
-        #
-        # # Window size
-        # customtkinter.CTkLabel(t3_chr_frame_2, text="Segment Size:", font=self.header_font) \
-        #     .grid(row=3, column=0, padx=10, pady=(0, 10))
-        # self.t3_window_s = tkinter.StringVar(value="")
-        # self.t3_window_entry = customtkinter.CTkEntry(t3_chr_frame_2, textvariable=self.t3_window_s)
-        # self.t3_window_entry.configure(state="disable")
-        # self.t3_window_entry.grid(row=3, column=1, pady=(0, 10), padx=10, sticky="w")
-        #
-        # # k_mer combo box
-        # customtkinter.CTkLabel(t3_config_frame, text="k-mer: ", font=self.header_font) \
-        #     .grid(row=3, column=0, padx=10, pady=(10, 10))
-        # k_mer_combobox = customtkinter.CTkComboBox(t3_config_frame, values=values_list, width=100,
-        #                                            state="normal", variable=self.k_var)
-        # k_mer_combobox.grid(row=3, column=1, sticky="w", padx=10, pady=(10, 10))
-        #
-        # # Distance metrics
-        # customtkinter.CTkLabel(t3_config_frame, text="Distance\n Measure: ", font=self.header_font) \
-        #     .grid(row=4, column=0, pady=(20, 5), padx=(5, 0))
-        # dist_metric_combobox = customtkinter.CTkComboBox(t3_config_frame, values=DISTANCE_METRICS_LIST,
-        #                                                  width=120, variable=self.dist_metric)
-        # dist_metric_combobox.grid(row=4, column=1, pady=(20, 5), sticky="w")
-        # dist_metric_combobox.set("DSSIM")
-        #
-        # # plot type
-        # customtkinter.CTkLabel(t3_config_frame, text="Plot Type: ", font=self.header_font) \
-        #     .grid(row=5, column=0, pady=(20, 5), padx=(5, 0))
-        # plot_type_combobox = customtkinter.CTkComboBox(t3_config_frame, values=PLOT_TYPE_LIST,
-        #                                                width=120, variable=self.plot_type_var)
-        # plot_type_combobox.grid(row=5, column=1, pady=(20, 5), sticky="w")
-        # plot_type_combobox.set("Bar plot")
-        #
-        # # switch = customtkinter.CTkSwitch(t3_config_frame, text=f"Frequency CGR", variable=self.fcgr)
-        # # switch.grid(row=6, columnspan=2, pady=(20, 5))
-        #
-        # # run button
-        # run_button = customtkinter.CTkButton(t3_config_frame, text="Run", command=partial(self.run_common_ref, None))
-        # run_button.grid(row=8, columnspan=2)  # , sticky="ns")
-        #
-        # # Appearance mode
-        # customtkinter.CTkLabel(t3_config_frame, text="Theme: ", font=self.header_font) \
-        #     .grid(row=9, column=0, padx=10, pady=(20, 10))
-        # appearance_mode = customtkinter.CTkOptionMenu(t3_config_frame, values=["Dark", "Light"], width=100,
-        #                                               variable=appearance, command=self.change_appearance_mode_event)
-        # appearance_mode.grid(row=9, column=1, sticky="w", pady=(20, 10))
-        #
-        # # placing the progress bars
-        # self.t3_cgr_distance_history = None
-        #
-        # self.t3_progress_bar = customtkinter.CTkProgressBar(self.tabview.tab(tab_names[2]))
-        # self.t3_progress_bar.set(0)
-        # self.t3_progress_bar.grid(row=0, column=1, padx=(10, 10), pady=(10, 10), sticky="nsew")
-        #
-        # # placing the slider bar
-        # t3_changing_frame = customtkinter.CTkFrame(self.tabview.tab(tab_names[2]), corner_radius=20)
-        # t3_changing_frame.grid(row=3, column=1, sticky="nsew")
-        #
-        # # Designing the changing frame
-        # t3_changing_frame.grid_columnconfigure(0, weight=1)
-        # t3_changing_frame.grid_columnconfigure(1, weight=10)
-        # t3_changing_frame.grid_columnconfigure(2, weight=1)
-        #
-        # self.t3_pic_num = customtkinter.IntVar(value=0)
-        # self.t3_scale = customtkinter.CTkSlider(t3_changing_frame, from_=0, orientation=customtkinter.HORIZONTAL,
-        #                                         variable=self.t3_pic_num,
-        #                                         command=partial(self._change_images, self.t3_pic_num.get(), "t3"))
-        # self.t3_scale.grid(row=0, column=1, pady=(10, 10), sticky="nsew")
-        #
-        # # previous-next button
-        # customtkinter.CTkButton(t3_changing_frame, image=prev_im, text="", width=10,
-        #                         command=partial(self.move_previous, "t3", None)).grid(row=0, column=0)
-        #
-        # customtkinter.CTkButton(t3_changing_frame, image=next_im, text="", width=10,
-        #                         command=partial(self.move_next, "t3", None)).grid(row=0, column=2)
+        # Original sequence selection combobox and reference selection combobox
+        # Sequence selection
+        t3_seq_combobox = {}  # combobox dictionary for sequence and reference selection
+        (ctk.CTkLabel(seq_frame, text=f"Sequence: ", font=HEADER_FONT_BOLD)
+         .grid(row=0, column=0, sticky="w", padx=(10, 0), pady=(10, 0)))
+        t3_seq_combobox["1"] = ctk.CTkComboBox(seq_frame, values=self.file_names, state="readonly",
+                                               variable=self.t3_ds['1'].seq_name,
+                                               command=partial(self.t3_sequence_selection_event, "1"))
+        t3_seq_combobox["1"].grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(10, 0))
+
+        (ctk.CTkLabel(seq_frame, text=f"Representative: ", font=HEADER_FONT_BOLD)
+         .grid(row=1, column=0, sticky="w", padx=(10, 0), pady=(30, 0)))
+        t3_seq_combobox["2"] = ctk.CTkComboBox(seq_frame, values=self.file_names, state="readonly",
+                                               variable=self.t3_ds['2'].seq_name,
+                                               command=partial(self.t3_sequence_selection_event, "2"))
+        t3_seq_combobox["2"].grid(row=1, column=1, columnspan=2, sticky="ew", padx=(0, 10), pady=(30, 0))
+
+        # Checkbox to use representative
+        t3_use_rep_checkbox = ctk.CTkCheckBox(master=seq_frame, text="Use Representative Algorithm",
+                                              variable=self.t3_use_rep_algo,
+                                              command=self.t3_use_rep_checkbox_event)
+        t3_use_rep_checkbox.grid(row=2, column=0, columnspan=2, padx=(10, 0), pady=(10, 0), sticky="w")
+        # Representative type
+        self.t3_rep_type_combobox = ctk.CTkComboBox(seq_frame, values=["RepSeg", "aRepSeg"],
+                                                    variable=self.t3_rep_algo_type,
+                                                    command=self.t3_rep_algo_change_event,
+                                                    state="readonly")
+        self.t3_rep_type_combobox.grid(row=3, column=0, sticky="ew", padx=(10, 0), pady=(10, 0))
+        # Representative number (for aRepSeg)
+        self.t3_rep_n_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_rep_number, state="disable",
+                                           text_color=COLORS["TEXT_DISABLE_COLOR"], )
+        self.t3_rep_n_entry.grid(row=3, column=1, sticky="ew", padx=(10, 10), pady=(10, 0))
+
+        # Set start and end for the representative sequence
+        self.t3_start_label = ctk.CTkLabel(seq_frame, text="Start: ", font=HEADER_FONT,
+                                           text_color=COLORS["TEXT_DISABLE_COLOR"])
+        self.t3_start_label.grid(row=4, column=0, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.t3_start_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].start_txt)
+        self.t3_start_entry.bind('<FocusOut>', partial(self.t3_entry_change, "start"))
+        self.t3_start_entry.bind('<Key-Return>', partial(self.t3_entry_change, "start"))
+        self.t3_start_entry.configure(state="disable")
+        self.t3_start_entry.grid(row=5, column=0, sticky="ew", padx=(10, 0), pady=(0, 10))
+        self.t3_end_label = ctk.CTkLabel(seq_frame, text="End: ", font=HEADER_FONT,
+                                         text_color=COLORS["TEXT_DISABLE_COLOR"])
+        self.t3_end_label.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.t3_end_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].end_txt)
+        self.t3_end_entry.bind('<FocusOut>', partial(self.t3_entry_change, "end"))
+        self.t3_end_entry.bind('<Key-Return>', partial(self.t3_entry_change, "end"))
+        self.t3_end_entry.configure(state="disable")
+        self.t3_end_entry.grid(row=5, column=1, sticky="ew", padx=(10, 10), pady=(0, 10))
+
+        # Frame for k-mer selection and distance selection
+        # k-mer selection
+        kmer_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        kmer_frame.grid(row=1, column=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
+        kmer_frame.grid_columnconfigure(0, weight=1)
+        kmer_frame.grid_columnconfigure(1, weight=1)
+        for i in range(4):
+            kmer_frame.grid_rowconfigure(i, weight=1)
+
+        # segment size selection
+        segment_size_frame = ctk.CTkFrame(kmer_frame, fg_color="transparent")
+        segment_size_frame.grid_columnconfigure(0, weight=1)
+        segment_size_frame.grid_columnconfigure(1, weight=2)
+        segment_size_frame.grid(row=0, column=0, columnspan=2, padx=(0, 0), pady=(0, 0), sticky="nsew")
+        (ctk.CTkLabel(segment_size_frame, text="Segment size: ", font=HEADER_FONT_BOLD)
+         .grid(row=0, column=0, sticky="w", padx=(5, 0), pady=(10, 0)))
+        (ctk.CTkEntry(segment_size_frame, textvariable=self.t3_segment_size)
+         .grid(row=0, column=1, sticky="ew", padx=(0, 5), pady=(10, 0)))
+
+        self.t3_seq_len_label = ctk.CTkLabel(segment_size_frame, text="Sequence length=0", font=('Cambria', 10),
+                                             text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
+        self.t3_seq_len_label.grid(row=1, column=1, sticky="ew", padx=(5, 5), pady=(0, 0))
+        self.t3_seq_len_label.grid_propagate(False)
+
+        # k-mer selection
+        (ctk.CTkLabel(kmer_frame, text="k-mer: ", font=HEADER_FONT_BOLD)
+         .grid(row=1, column=0, sticky="w", padx=(5, 0), pady=(0, 10)))
+        (ctk.CTkComboBox(kmer_frame, values=KMERS, state="readonly", variable=self.k_var)
+         .grid(row=1, column=1, sticky="ew", padx=(0, 5), pady=(0, 10)))
+
+        # distance measure selection
+        (ctk.CTkLabel(kmer_frame, text="Distance measure: ", font=HEADER_FONT_BOLD)
+         .grid(row=2, column=0, sticky="w", padx=(5, 0), pady=(0, 10)))
+        (ctk.CTkComboBox(kmer_frame, values=DISTANCES, state="readonly", variable=self.dist_metric)
+         .grid(row=2, column=1, sticky="ew", padx=(0, 5), pady=(0, 10)))
+
+        # plot type selection
+        (ctk.CTkLabel(kmer_frame, text="Plot type: ", font=HEADER_FONT_BOLD)
+         .grid(row=3, column=0, sticky="w", padx=(5, 0), pady=(0, 10)))
+        (ctk.CTkComboBox(kmer_frame, values=PLOT_TYPES, state="readonly", variable=self.t3_plot_type)
+         .grid(row=3, column=1, sticky="ew", padx=(0, 5), pady=(0, 10)))
+
+        # Run button
+        plot_button = ctk.CTkButton(config_frame, text="Run", corner_radius=8, height=35, font=HEADER_FONT,
+                                    command=self.t3_run)
+        plot_button.grid(row=2, column=0, pady=(10, 10))
 
     def _build_multispecies_comparator(self, parent):
         pass
@@ -832,85 +796,85 @@ class App(ctk.CTk):
         try:
             self.t2_ds[sender].end_seq.set(len(self.t2_ds[sender].seq))
             if len(self.t2_ds[sender].seq) > 0:
-                self.start_seq_scale[sender].configure(state="normal", button_color=COLORS["BTN_COLOR"])
-                self.end_seq_scale[sender].configure(state="normal", button_color=COLORS["BTN_COLOR"])
+                self.t2_start_seq_scale[sender].configure(state="normal", button_color=COLORS["BTN_COLOR"])
+                self.t2_end_seq_scale[sender].configure(state="normal", button_color=COLORS["BTN_COLOR"])
             else:
-                self.start_seq_scale[sender].configure(state="disable", button_color=COLORS["DISABLED_BTN_COLOR"])
-                self.end_seq_scale[sender].configure(state="disable", button_color=COLORS["DISABLED_BTN_COLOR"])
-            self.start_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
-            self.start_seq_scale[sender].set(0)
-            self.end_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
-            self.end_seq_scale[sender].set(len(self.t2_ds[sender].seq))
+                self.t2_start_seq_scale[sender].configure(state="disable", button_color=COLORS["DISABLED_BTN_COLOR"])
+                self.t2_end_seq_scale[sender].configure(state="disable", button_color=COLORS["DISABLED_BTN_COLOR"])
+            self.t2_start_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
+            self.t2_start_seq_scale[sender].set(0)
+            self.t2_end_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
+            self.t2_end_seq_scale[sender].set(len(self.t2_ds[sender].seq))
         except Exception as e:
             messagebox.showerror("Sequence is Empty!")
 
         # Set start and end in entries
         self.sync_text_vars(self.t2_ds, sender)
-        # Clear window_s
-        self.window_s_toggle.set(0)
-        self.window_s.set("")
-        self.window_entry.configure(state="disable")
+        # Clear segment_size and disable segment size entry
+        self.t2_segment_size_toggle.set(0)
+        self.t2_segment_size.set("")
+        self.t2_segment_entry.configure(state="disable")
         # Make end scales and entries normal
-        for key, value in self.end_seq_scale.items():
+        for key, value in self.t2_end_seq_scale.items():
             if len(self.t2_ds[key].seq) > 0:
                 value.configure(state="normal", button_color=COLORS["BTN_COLOR"])
-        for key, value in self.end_seq_entry.items():
+        for key, value in self.t2_end_seq_entry.items():
             if len(self.t2_ds[key].seq) > 0:
                 value.configure(state="normal")
-        for key, value in self.start_seq_entry.items():
+        for key, value in self.t2_start_seq_entry.items():
             if len(self.t2_ds[key].seq) > 0:
                 value.configure(state="normal")
 
-    def t2_window_size_toggle_event(self):
-        if self.window_s_toggle.get() == 0:
-            self.window_s.set("")
-            self.window_entry.configure(state="disable")
+    def t2_segment_size_toggle_event(self):
+        if self.t2_segment_size_toggle.get() == 0:
+            self.t2_segment_size.set("")
+            self.t2_segment_entry.configure(state="disable")
 
             # end scales
-            for key, value in self.end_seq_scale.items():
+            for key, value in self.t2_end_seq_scale.items():
                 if len(self.t2_ds[key].seq) > 0:
                     value.configure(state="normal", button_color=COLORS["BTN_COLOR"])
-            for key, value in self.end_seq_entry.items():
+            for key, value in self.t2_end_seq_entry.items():
                 if len(self.t2_ds[key].seq) > 0:
                     value.configure(state="normal")
 
         else:
-            self.window_entry.configure(state="normal")
-            self.window_s.set("500_000")
+            self.t2_segment_entry.configure(state="normal")
+            self.t2_segment_size.set("500_000")
 
             # end scales
-            for key, value in self.end_seq_scale.items():
+            for key, value in self.t2_end_seq_scale.items():
                 value.configure(state="disable", button_color=COLORS["DISABLED_BTN_COLOR"])
-            for key, value in self.end_seq_entry.items():
+            for key, value in self.t2_end_seq_entry.items():
                 value.configure(state="disable")
             for key, value in self.t2_ds.items():
                 if len(self.t2_ds[key].seq) > 0:
-                    self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.window_s.get()))
+                    self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.t2_segment_size.get()))
 
         for key, value in self.t2_ds.items():
             self.sync_text_vars(self.t2_ds, key)
 
     def t2_sequence_value_change(self, sender, value):
-        if sender == "0":  # Window size changed
+        if sender == "0":  # Segment size changed
             for key, value in self.t2_ds.items():
                 if self.t2_ds[key].seq == '':
                     continue
-                # If window size is out of range, send an error and set to 500,000
-                if int(self.window_s.get()) < 1 or int(self.window_s.get()) > len(self.t2_ds[key].seq):
-                    self.window_s.set("500_000")
-                    messagebox.showerror("Error", "Window size is out of range.")
-                self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.window_s.get()))
+                # If segment size is out of range, send an error and set to 500,000
+                if int(self.t2_segment_size.get()) < 1 or int(self.t2_segment_size.get()) > len(self.t2_ds[key].seq):
+                    self.t2_segment_size.set("500_000")
+                    messagebox.showerror("Error", "Segment size is out of range.")
+                self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.t2_segment_size.get()))
         elif sender in ["1", "2"]:  # Scale changed
-            if self.window_s_toggle.get() == 1 and self.t2_ds[sender].seq != '':
-                self.t2_ds[sender].end_seq.set(self.t2_ds[sender].start_seq.get() + int(self.window_s.get()))
+            if self.t2_segment_size_toggle.get() == 1 and self.t2_ds[sender].seq != '':
+                self.t2_ds[sender].end_seq.set(self.t2_ds[sender].start_seq.get() + int(self.t2_segment_size.get()))
         elif sender in ["3"]:  # Entry changed
             for key, value in self.t2_ds.items():
                 self.reverse_sync_text_vars(self.t2_ds, key)
-            if self.window_s_toggle.get() == 1:
+            if self.t2_segment_size_toggle.get() == 1:
                 for key, value in self.t2_ds.items():
                     if self.t2_ds[key].seq == '':
                         continue
-                    self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.window_s.get()))
+                    self.t2_ds[key].end_seq.set(self.t2_ds[key].start_seq.get() + int(self.t2_segment_size.get()))
 
         for key, value in self.t2_ds.items():
             self.sync_text_vars(self.t2_ds, key)
@@ -929,9 +893,9 @@ class App(ctk.CTk):
         for key in self.t2_ds.keys():
             fcgrs_dict[key] = {}
             seq = self.t2_ds[key].seq[self.t2_ds[key].start_seq.get():self.t2_ds[key].end_seq.get()]
-            if self.checkbox_RC[key].get():
+            if self.t2_rc[key].get():
                 seq = self.get_reverse_complement(seq)
-            if self.checkbox_Random[key].get():
+            if self.t2_shuffle[key].get():
                 seq = list(seq)
                 random.shuffle(seq)
                 seq = ''.join(seq)
@@ -1053,8 +1017,156 @@ class App(ctk.CTk):
             messagebox.showerror("Error", f"Could not save figure:\n{e}")
 
     # --------------------------------------------------
-    # Helper functions for Commmon Reference tab
+    # Helper functions for Common Reference tab
     # --------------------------------------------------
+    def t3_sequence_selection_event(self, sender, value):
+        sequence_path = self.uploaded_files[self.file_names.index(value)]
+        sequence = self._read_fasta(sequence_path)[1]
+        seq_len = len(sequence)
+        if sender == "1":
+            self.t3_ds['1'].seq = sequence
+            # Set the representative sequence as the sequence
+            self.t3_ds['2'].seq = sequence
+            self.t3_ds['2'].seq_name.set(value)
+            # Set the sequence length
+            self.t3_seq_len_label.configure(text=f"Sequence length={seq_len:,}")
+            self.t3_use_rep_algo.set(1)
+            self.t3_use_rep_checkbox_event()
+        elif sender == "2":
+            self.t3_ds['2'].seq = sequence
+            self.t3_ds['2'].seq_name.set(value)
+            self.t3_use_rep_algo.set(0)
+            self.t3_use_rep_checkbox_event()
+
+    def t3_use_rep_checkbox_event(self):
+        if self.t3_use_rep_algo.get() == 1:
+            # Enable the algo type combobox
+            self.t3_rep_type_combobox.configure(state="normal")
+            if self.t3_rep_algo_type.get() == "aRepSeg":
+                self.t3_rep_n_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
+            # Disable start and end
+            self.t3_start_label.configure(text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.t3_start_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.t3_end_label.configure(text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.t3_end_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
+        else:
+            # Disable the algo type combobox
+            self.t3_rep_type_combobox.configure(state="disable")
+            self.t3_rep_n_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
+            # Enable start and end
+            self.t3_start_label.configure(text_color=COLORS["TEXT_NORMAL_COLOR"])
+            self.t3_start_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
+            self.t3_end_label.configure(text_color=COLORS["TEXT_NORMAL_COLOR"])
+            self.t3_end_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
+
+    def t3_rep_algo_change_event(self, value):
+        if value == "aRepSeg":
+            self.t3_rep_number.set("30")
+            self.t3_rep_n_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
+        elif value == "RepSeg":
+            self.t3_rep_number.set("1")
+            self.t3_rep_n_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
+
+    def t3_entry_change(self, which, event=None):
+        start_str = self.t3_ds['2'].start_txt.get().strip()
+        end_str = self.t3_ds['2'].end_txt.get().strip()
+
+        # No sequence selected
+        if self.t3_ds['2'].seq == '':
+            if which == "start":
+                self.t3_ds['2'].start_txt.set("")
+            else:
+                self.t3_ds['2'].end_txt.set("")
+            messagebox.showerror("Error", "No sequence selected")
+            return
+
+        # If the other field is empty, don't validate yet
+        if start_str == "" or end_str == "":
+            return
+
+        # Non-numeric check
+        if not start_str.isdigit() or not end_str.isdigit():
+            if which == "start":
+                self.t3_ds['2'].start_txt.set("")
+            else:
+                self.t3_ds['2'].end_txt.set("")
+            messagebox.showerror("Error", "Start and end must be numeric.")
+            return
+
+        # Safe to convert
+        start = int(start_str)
+        end = int(end_str)
+        seq_len = len(self.t3_ds['2'].seq)
+
+        # Range validation
+        if start < 0 or start > seq_len or end < 0 or end > seq_len or start >= end:
+            if which == "start":
+                self.t3_ds['2'].start_txt.set("")
+            else:
+                self.t3_ds['2'].end_txt.set("")
+            messagebox.showerror("Error", "Invalid start or end position.")
+            return
+
+        # All good so update stored values
+        self.t3_ds['2'].start_seq.set(start)
+        self.t3_ds['2'].end_seq.set(end)
+
+    def t3_run(self):
+        pass
+        # self.t3_cgr_distance_history = []
+        # t3_step_length = np.floor(len(self.t3_ds["2"].seq) / int(self.t3_window_s.get()))
+        # # self.t3_progress_bar.set(0)
+        # # self.t3_pic_num.set(0)
+        # self._t3_progress = 0.0
+        #
+        # ref_b = int(self.t3_ds["1"].start_seq.get())
+        # ref_e = int(self.t3_ds["1"].end_seq.get())
+        # ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
+        #
+        # # self.t3_progress_bar.set(1 / (int(t3_step_length) + 2))  # start progress bar
+        # self._t3_progress = 1.0 / (int(t3_step_length) + 2)
+        #
+        # # if self.fcgr.get() == 1:
+        # im1 = ref_cgr.get_fcgr()
+        # # else:
+        # #     im1 = ref_cgr.get_cgr()
+        #
+        # # self.t3_progress_bar.set(2 / (int(t3_step_length) + 2))  # update progress bar
+        # self._t3_progress = 2.0 / (int(t3_step_length) + 2)
+        #
+        # ref_dict = {"(f)cgr": im1, "species": self.t3_ds["1"].specie.get(),
+        #             "chr_len": len(self.t3_ds["1"].seq)}
+        #
+        # path = f"{self.temp_output_path}/common_ref/pickle"
+        # if not os.path.exists(path):
+        #     os.makedirs(path)
+        # with open(f"{path}/ref.pkl", 'wb') as f:
+        #     pickle.dump(ref_dict, f)
+        #
+        # # the sliding sequence
+        # for i in range(int(t3_step_length)):
+        #     # self.t3_progress_bar.set((i + 3) / (int(t3_step_length) + 2))
+        #     self._t3_progress = (i + 3) / (int(t3_step_length) + 2)
+        #     b2 = i * int(self.t3_window_s.get())
+        #     e2 = (i + 1) * int(self.t3_window_s.get())
+        #
+        #     cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
+        #     # if self.fcgr.get() == 1:
+        #     im2 = cgr2.get_fcgr()
+        #     # else:
+        #     #     im2 = cgr2.get_cgr()
+        #
+        #     diff = im2 - im1
+        #
+        #     dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
+        #
+        #     self.t3_cgr_distance_history.append(dist)
+        #
+        #     dictionary = {"(f)cgr": im2, "b": b2, "e": e2, "chr_len": len(self.t3_ds["2"].seq),
+        #                   "diff": diff, "distance": dist, "species": self.t3_ds["2"].specie.get()}
+        #
+        #     with open(f"{path}/{i}.pkl", 'wb') as f:
+        #         pickle.dump(dictionary, f)
 
     # --------------------------------------------------
     # General helper functions
@@ -1637,86 +1749,6 @@ class App(ctk.CTk):
             pic_num.set(pic_num.get() + 1)
             self._change_images(pic_num.get(), tab_name, None)
 
-    def t3_upload_event(self, sender, value):
-        file_path = filedialog.askopenfilename()
-        _, sequence = ChromosomesHolder.read_fasta(file_path)
-        if len(sequence) > 0:
-            self.t3_ds[sender].specie.set("Custom")
-            self.t3_ds[sender].invalidate_based_specie()
-            self.t3_ds[sender].seq = sequence
-            self.t3_ds[sender].end_seq.set(len(self.t3_ds[sender].seq))
-            if sender == "1":
-                self.t3_species_combobox_1.set("Custom")
-                self.t3_chr_combobox_1.configure(values=[])
-                self.t3_parts_name_combobox.configure(values=[])
-                self.t3_start_seq_entry.configure(state="normal")
-                self.t3_end_seq_entry.configure(state="normal")
-            elif sender == "2":
-                self.t3_species_combobox_2.set("Custom")
-                self.t3_chr_combobox_2.configure(values=[])
-                self.t3_window_s.set("")
-                self.t3_window_entry.configure(state="normal")
-            self.sync_text_vars(self.t3_ds, sender)
-
-    def t3_specie_change_event(self, sender, value):
-        if sender == "1":
-            self.t3_species_combobox_1.set(value)
-        elif sender == "2":
-            self.t3_species_combobox_2.set(value)
-        self.t3_ds[sender].specie.set(value)
-
-        specie = self.t3_ds[sender].specie.get()
-        if sender == "1":
-            self.t3_chr_combobox_1.configure(
-                values=ChromosomesHolder(specie, self.data_path).get_all_chromosomes_name(include_whole_genome=True))
-            # disable annotation combobox
-            self.t3_parts_name_combobox.configure(values=[])
-            self.t3_parts_name_combobox.configure(state="disable")
-            self.t3_start_seq_entry.configure(state="disable")
-            self.t3_end_seq_entry.configure(state="disable")
-        elif sender == "2":
-            self.t3_chr_combobox_2.configure(
-                values=ChromosomesHolder(specie, self.data_path).get_all_chromosomes_name(include_whole_genome=True))
-            self.t3_window_s.set("")
-            self.t3_window_entry.configure(state="disable")
-        self.t3_ds[sender].invalidate_based_specie()
-        self.sync_text_vars(self.t3_ds, sender)
-
-    def t3_chromosome_change_event(self, sender, value):
-        specie = self.t3_ds[sender].specie.get()
-        chromosome = self.t3_ds[sender].chromosome.get()
-        # set its sequence
-        self.t3_ds[sender].seq = ChromosomesHolder(specie, self.data_path).get_chromosome_sequence(chromosome)
-        # set the annotation combobox
-        if sender == "1":
-            self.t3_start_seq_entry.configure(state="normal")
-            self.t3_end_seq_entry.configure(state="normal")
-            self.t3_parts_name_combobox.configure(state="normal")
-            self.t3_parts_name_combobox.configure(
-                values=ChromosomesHolder(specie, self.data_path).cytobands[chromosome])
-        elif sender == "2":
-            self.t3_window_entry.configure(state="normal")
-        self.t3_ds[sender].invalidate_based_chromosome()
-        # set end
-        self.t3_ds[sender].end_seq.set(len(self.t3_ds[sender].seq))
-        # sync with text
-
-        self.sync_text_vars(self.t3_ds, sender)
-
-    def t3_annotation_change_event(self, sender, value):
-        annotation = self.t3_ds[sender].annotation.get()
-        chromosome_name = self.t3_ds[sender].chromosome.get()
-        annotation_info = ChromosomesHolder(self.t3_ds[sender].specie.get(), self.data_path).cytobands[chromosome_name][
-            annotation]
-        self.t3_ds[sender].start_seq.set(annotation_info.start)
-        self.t3_ds[sender].end_seq.set(annotation_info.end)
-        self.sync_text_vars(self.t3_ds, sender, keep_annotation=True)
-
-    def t3_entry_change(self, value):
-        self.t3_ds["1"].annotation.set("")
-        self.t3_ds["1"].start_seq.set(int(self.t3_ds["1"].start_txt.get()))
-        self.t3_ds["1"].end_seq.set(int(self.t3_ds["1"].end_txt.get()))
-
     def run_common_ref(self, event):
         if self.t3_ds["1"].seq == "" or self.t3_ds["2"].seq == "":
             messagebox.showerror("Error", "Please upload or choose the sequences first")
@@ -1789,62 +1821,6 @@ class App(ctk.CTk):
 
             # Display the plot and the first set
             self._change_images(0, "t3", None)
-
-    def t3_run(self):
-        self.t3_cgr_distance_history = []
-        t3_step_length = np.floor(len(self.t3_ds["2"].seq) / int(self.t3_window_s.get()))
-        # self.t3_progress_bar.set(0)
-        # self.t3_pic_num.set(0)
-        self._t3_progress = 0.0
-
-        ref_b = int(self.t3_ds["1"].start_seq.get())
-        ref_e = int(self.t3_ds["1"].end_seq.get())
-        ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
-
-        # self.t3_progress_bar.set(1 / (int(t3_step_length) + 2))  # start progress bar
-        self._t3_progress = 1.0 / (int(t3_step_length) + 2)
-
-        # if self.fcgr.get() == 1:
-        im1 = ref_cgr.get_fcgr()
-        # else:
-        #     im1 = ref_cgr.get_cgr()
-
-        # self.t3_progress_bar.set(2 / (int(t3_step_length) + 2))  # update progress bar
-        self._t3_progress = 2.0 / (int(t3_step_length) + 2)
-
-        ref_dict = {"(f)cgr": im1, "species": self.t3_ds["1"].specie.get(),
-                    "chr_len": len(self.t3_ds["1"].seq)}
-
-        path = f"{self.temp_output_path}/common_ref/pickle"
-        if not os.path.exists(path):
-            os.makedirs(path)
-        with open(f"{path}/ref.pkl", 'wb') as f:
-            pickle.dump(ref_dict, f)
-
-        # the sliding sequence
-        for i in range(int(t3_step_length)):
-            # self.t3_progress_bar.set((i + 3) / (int(t3_step_length) + 2))
-            self._t3_progress = (i + 3) / (int(t3_step_length) + 2)
-            b2 = i * int(self.t3_window_s.get())
-            e2 = (i + 1) * int(self.t3_window_s.get())
-
-            cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
-            # if self.fcgr.get() == 1:
-            im2 = cgr2.get_fcgr()
-            # else:
-            #     im2 = cgr2.get_cgr()
-
-            diff = im2 - im1
-
-            dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
-
-            self.t3_cgr_distance_history.append(dist)
-
-            dictionary = {"(f)cgr": im2, "b": b2, "e": e2, "chr_len": len(self.t3_ds["2"].seq),
-                          "diff": diff, "distance": dist, "species": self.t3_ds["2"].specie.get()}
-
-            with open(f"{path}/{i}.pkl", 'wb') as f:
-                pickle.dump(dictionary, f)
 
 
 class GenerateSyntheticSequence(ctk.CTkToplevel):
