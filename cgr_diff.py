@@ -412,8 +412,6 @@ class App(ctk.CTk):
         plot_button.grid(row=4, column=0, pady=(10, 10))
 
         # ---------- Design the slider frame ----------
-        # TODO: When the window size is fixed, start slider should have a limit and entry cannot go beyond the limit
-        #  also end entry cannot go beyond the limit of the sequence length
         for i in range(2):
             (ctk.CTkLabel(slider_frame, text=f'Sequence {i + 1}:', font=HEADER_FONT_BOLD)
              .grid(row=(i * 2), column=0, padx=(10, 0), pady=(10, 0)))
@@ -894,30 +892,89 @@ class App(ctk.CTk):
             self.t2_segment_size.set(self._format_int(seg_size))
 
         elif sender in ["1", "2"]:  # Scale changed
-            if self.t2_segment_size_toggle.get() == 1 and self.t2_ds[sender].seq != '':
+            if self.t2_ds[sender].seq == '':
+                return
+            seq_len = len(self.t2_ds[sender].seq)
+            slider_val = float(value)
+
+            if self.t2_segment_size_toggle.get() == 1:
+                # -------- FIXED WINDOW MODE --------
                 seg_size = self._parse_int(self.t2_segment_size.get())
                 if seg_size is None or seg_size <= 0:
                     return messagebox.showerror("Error", "Segment size must be a positive integer.")
-                # Scale moved then apply fixed-size constraint
+
+                # Apply fixed-size constraint (this also ensures start < end)
                 self.t2_apply_segment_size_constraint(sender, seg_size)
-            # ensure start < end (no message, just auto-fix if needed)
-            self.t2_ensure_start_before_end(self.t2_ds, sender, show_message=False)
+                # Extra safety, but usually redundant now:
+                self.t2_ensure_start_before_end(self.t2_ds, sender, show_message=False)
+
+            else:
+                # -------- VARIABLE WINDOW MODE --------
+                # We keep the nice auto-fix but without any hidden window-size limits.
+                start = self.t2_ds[sender].start_seq.get()
+                end = self.t2_ds[sender].end_seq.get()
+
+                # Clamp raw values into [0, seq_len]
+                start = max(0, min(start, seq_len))
+                end = max(0, min(end, seq_len))
+
+                # Decide which slider moved: the one whose current value is closest to slider_val
+                # (CTkSlider passes its own value as 'value' into the callback)
+                if abs(slider_val - start) <= abs(slider_val - end):
+                    # User moved START slider
+                    start = slider_val
+
+                    # Ensure start is in range
+                    if start < 0:
+                        start = 0
+                    if start > seq_len:
+                        start = seq_len
+
+                    # Maintain start < end
+                    if start >= end:
+                        if start >= seq_len - 1:
+                            # Push to the very end: [seq_len-1, seq_len]
+                            start = max(seq_len - 1, 0)
+                            end = seq_len
+                        else:
+                            end = start + 1
+                else:
+                    # User moved END slider
+                    end = slider_val
+
+                    if end < 0:
+                        end = 0
+                    if end > seq_len:
+                        end = seq_len
+
+                    # Maintain start < end
+                    if end <= start:
+                        if end <= 1:
+                            start = 0
+                            end = max(1, end)
+                        else:
+                            start = end - 1
+
+                # Write back
+                self.t2_ds[sender].start_seq.set(int(start))
+                self.t2_ds[sender].end_seq.set(int(end))
 
         elif sender in ["3"]:  # Entry changed
             # pull values from start_txt / end_txt into start_seq / end_seq
-            for key, value in self.t2_ds.items():
+            for key, ds in self.t2_ds.items():
                 self.t2_reverse_sync_text_vars(self.t2_ds, key)
             if self.t2_segment_size_toggle.get() == 1:
                 seg_size = self._parse_int(self.t2_segment_size.get())
                 if seg_size is None or seg_size <= 0:
                     return messagebox.showerror("Error", "Segment size must be a positive integer.")
-                for key, value in self.t2_ds.items():
-                    if self.t2_ds[key].seq == '':
+                for key, ds in self.t2_ds.items():
+                    if ds.seq == '':
                         continue
                     # Entries typed so respect fixed segment size + bounds
                     self.t2_apply_segment_size_constraint(key, seg_size)
 
-        for key, value in self.t2_ds.items():
+        # Sync text fields (with commas) at the end
+        for key, ds in self.t2_ds.items():
             self.t2_sync_text_vars(self.t2_ds, key)
 
     def t2_plot(self):
