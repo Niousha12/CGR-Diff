@@ -804,7 +804,7 @@ class App(ctk.CTk):
             self.t2_end_seq_scale[sender].configure(to=len(self.t2_ds[sender].seq))
             self.t2_end_seq_scale[sender].set(len(self.t2_ds[sender].seq))
         except Exception as e:
-            messagebox.showerror("Sequence is Empty!")
+            messagebox.showerror("Error", f"Failed to load sequence {sender}.")
 
         # Set start and end in entries
         self.t2_sync_text_vars(self.t2_ds, sender)
@@ -979,14 +979,11 @@ class App(ctk.CTk):
 
     def t2_plot(self):
         if self.t2_ds["1"].seq == "" or self.t2_ds["2"].seq == "":
-            messagebox.showerror("Error", "Please upload or choose the sequences first")
-            return
+            return messagebox.showerror("Error", "Please upload or choose the sequences first.")
         if self.k_var.get() == 0:
-            messagebox.showerror("Error", "Please choose the k-mer value")
-            return
+            return messagebox.showerror("Error", "Please choose the k-mer value.")
         if self.dist_metric.get() == "":
-            messagebox.showerror("Error", "Please choose the distance measure")
-            return
+            return messagebox.showerror("Error", "Please choose the distance measure.")
         fcgrs_dict = {}
         for key in self.t2_ds.keys():
             fcgrs_dict[key] = {}
@@ -1099,8 +1096,7 @@ class App(ctk.CTk):
 
     def t2_save_figure(self):
         if self.t2_fig is None:
-            messagebox.showerror("Error", "No figure to save. Please plot first.")
-            return
+            return messagebox.showerror("Error", "No figure to save. Please plot first.")
 
         file_path = fd.asksaveasfilename(defaultextension=".png",
                                          filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf"),
@@ -1112,7 +1108,7 @@ class App(ctk.CTk):
         try:
             self.t2_fig.savefig(file_path, dpi=300, bbox_inches="tight")
         except Exception as e:
-            messagebox.showerror("Error", f"Could not save figure:\n{e}")
+            messagebox.showerror("Error", f"Could not save figure.")
 
     def t2_sync_text_vars(self, ds, sender):
         ds[sender].start_txt.set(self._format_int(ds[sender].start_seq.get()))
@@ -1130,20 +1126,20 @@ class App(ctk.CTk):
         # Prevent error if the entry is not digits (if its "" it is okay)
         if start_val is None:
             ds[sender].start_txt.set("0")
-            return messagebox.showerror("Error", "Please enter a valid integer value.")
+            return messagebox.showerror("Error", "Start value must be a positive integer.")
 
         if end_val is None:
             ds[sender].end_txt.set(str(len(ds[sender].seq)))
-            return messagebox.showerror("Error", "Please enter a valid integer value.")
+            return messagebox.showerror("Error", "End value must be a positive integer.")
 
         # Validate range
         if start_val < 0 or start_val > seq_len:
             ds[sender].start_txt.set("0")
-            return messagebox.showerror("Error", "The value is out of range.")
+            return messagebox.showerror("Error", "Start value is out of range.")
 
         if end_val < 0 or end_val > seq_len:
             ds[sender].end_txt.set(str(seq_len))
-            return messagebox.showerror("Error", "The value is out of range.")
+            return messagebox.showerror("Error", "End value is out of range.")
 
         # Update sequence values
         ds[sender].start_seq.set(start_val)
@@ -1246,8 +1242,8 @@ class App(ctk.CTk):
             self.t3_rep_n_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
 
     def t3_entry_change(self, which, event=None):
-        start_str = self.t3_ds['2'].start_txt.get().strip()
-        end_str = self.t3_ds['2'].end_txt.get().strip()
+        start_raw = self.t3_ds['2'].start_txt.get().strip()
+        end_raw = self.t3_ds['2'].end_txt.get().strip()
 
         # No sequence selected
         if self.t3_ds['2'].seq == '':
@@ -1255,51 +1251,92 @@ class App(ctk.CTk):
                 self.t3_ds['2'].start_txt.set("")
             else:
                 self.t3_ds['2'].end_txt.set("")
-            messagebox.showerror("Error", "No sequence selected")
-            return
+            return messagebox.showerror("Error", "No sequence selected.")
 
         # If the other field is empty, don't validate yet
-        if start_str == "" or end_str == "":
+        if start_raw == "" or end_raw == "":
             return
 
-        # Non-numeric check
-        if not start_str.isdigit() or not end_str.isdigit():
+        # Parse comma-friendly integer values
+        start = self._parse_int(start_raw)
+        end = self._parse_int(end_raw)
+
+        # Parse-int check failed
+        if start is None or end is None:
             if which == "start":
                 self.t3_ds['2'].start_txt.set("")
             else:
                 self.t3_ds['2'].end_txt.set("")
-            messagebox.showerror("Error", "Start and end must be numeric.")
-            return
+            return messagebox.showerror("Error", "Start and end values must be positive integers, "
+                                                 "within sequence length.")
 
-        # Safe to convert
-        start = int(start_str)
-        end = int(end_str)
         seq_len = len(self.t3_ds['2'].seq)
-
         # Range validation
         if start < 0 or start > seq_len or end < 0 or end > seq_len or start >= end:
             if which == "start":
                 self.t3_ds['2'].start_txt.set("")
             else:
                 self.t3_ds['2'].end_txt.set("")
-            messagebox.showerror("Error", "Invalid start or end position.")
-            return
+            return messagebox.showerror("Error", "Start and end values must be positive integers, "
+                                                 "within sequence length, and start < end.")
 
         # All good so update stored values
         self.t3_ds['2'].start_seq.set(start)
         self.t3_ds['2'].end_seq.set(end)
 
+        # Normalize formatting with commas so display is consistent
+        self.t3_ds['2'].start_txt.set(self._format_int(start))
+        self.t3_ds['2'].end_txt.set(self._format_int(end))
+
     def t3_run(self, event):
-        pass
-        # if self.t3_ds["1"].seq == "" or self.t3_ds["2"].seq == "":
-        #     messagebox.showerror("Error", "Please upload or choose the sequences first")
-        #     return
-        # if self.k_var.get() == 0:
-        #     messagebox.showerror("Error", "Please choose the k-mer value")
-        #     return
-        # if self.dist_metric.get() == "":
-        #     messagebox.showerror("Error", "Please choose the distance measure")
-        #     return
+        if self.t3_ds["1"].seq == "" or self.t3_ds["2"].seq == "":
+            return messagebox.showerror("Error", "Please upload or choose the sequences first.")
+
+        # if using the representative check the validity of combobox and the entry value
+        if self.t3_use_rep_algo.get() == 1:
+            if self.t3_rep_algo_type.get() == "":
+                return messagebox.showerror("Error", "Please choose the representative algorithm.")
+            if self.t3_rep_algo_type.get() == "aRepSeg":
+                n_val = self._parse_int(self.t3_rep_number.get())
+                if n_val is None or n_val <= 0:
+                    return messagebox.showerror("Error", "Please enter a valid positive integer for n.")
+
+        # if not using representative check the validity of start and end entries
+        if self.t3_use_rep_algo.get() == 0:
+            start_str = self.t3_ds['2'].start_txt.get().strip()
+            end_str = self.t3_ds['2'].end_txt.get().strip()
+            if start_str == "" or end_str == "":
+                return messagebox.showerror("Error", "Start and end values must be positive integers, "
+                                                     "within sequence length.")
+            # Allow numbers with commas
+            start = self._parse_int(start_str)
+            end = self._parse_int(end_str)
+            if start is None or end is None:
+                return messagebox.showerror("Error", "Start and end values must be positive integers, "
+                                                     "within sequence length.")
+            seq_len = len(self.t3_ds['2'].seq)
+            if start < 0 or start > seq_len or end < 0 or end > seq_len or start >= end:
+                return messagebox.showerror("Error", "Start and end values must be positive integers, "
+                                                     "within sequence length, and start < end.")
+
+        # check the validity of the entry for segment size (should be a positive digit smaller than the sequence length)
+        seg_str = self.t3_segment_size.get().strip()
+        if seg_str == "":
+            return messagebox.showerror("Error", "Segment size must be a positive integer.")
+        seg_size = self._parse_int(seg_str)
+        if seg_size is None:
+            return messagebox.showerror("Error", "Segment size must be a positive integer.")
+        if seg_size <= 0 or seg_size > len(self.t3_ds["2"].seq):
+            return messagebox.showerror("Error", "Segment size is out of range.")
+        self.t3_segment_size.set(self._format_int(seg_size))  # normalize formatting to include commas
+
+        # check the validity of other options
+        if self.k_var.get() == 0:
+            return messagebox.showerror("Error", "Please choose the k-mer value.")
+        if self.dist_metric.get() == "":
+            return messagebox.showerror("Error", "Please choose the distance measure.")
+        if self.t3_plot_type.get() == "":
+            return messagebox.showerror("Error", "Please choose the plot type.")
         # global foo_thread_2
         # foo_thread_2 = threading.Thread(target=self.t3_run)
         # foo_thread_2.daemon = True
