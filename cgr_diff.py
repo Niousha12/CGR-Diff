@@ -62,6 +62,10 @@ class GUIDataStructure:
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+        # TODO: need to clear this at some point
+        self.temp_output_path = self._resource_path(".gui_temp_outputs")
+        if not os.path.exists(self.temp_output_path):
+            os.makedirs(self.temp_output_path)
 
         self.title("CGR-Diff.py")
         screen_width = self.winfo_screenwidth()
@@ -112,7 +116,7 @@ class App(ctk.CTk):
 
         # Variables for page 3 (Common Reference)
         self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        self.t3_segment_size = tkinter.StringVar(value="")
+        self.t3_segment_size = tkinter.StringVar(value="500,000")
         self.t3_use_rep_algo = tkinter.IntVar(value=1)  # 0: use start and end, 1: use algo
         self.t3_rep_algo_type = tkinter.StringVar(value="RepSeg")  # Representation algorithm type
         self.t3_rep_number = tkinter.StringVar(value="1")  # Number of representations to generate
@@ -124,6 +128,19 @@ class App(ctk.CTk):
         self.t3_end_entry = None
         self.t3_start_label = None
         self.t3_end_label = None
+
+        self.t3_cgr_distance_history = []
+        self._t3_progress = 0.0
+        self.t3_progress_bar = None
+        self.t3_3d_display_frame = None
+        self.t3_plot_display_frame = None
+        self.t3_fcgr_display_frame = None
+        self.t3_fcgr_placeholder_label = None
+        self.t3_fig = None
+        self.t3_canvas = None
+        self.t3_save_btn = None
+        self.t3_scale = None
+        self.t3_pic_num = ctk.IntVar(value=0)
 
         # ------------------------- Build UI -------------------------
         self._create_top_navbar()
@@ -479,43 +496,25 @@ class App(ctk.CTk):
             self.t2_save_btn = ctk.CTkButton(master=self.t2_display_frame, text="💾", width=30, height=30,
                                              fg_color=COLORS["BORDER_COLOR"],
                                              hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                             command=self.t2_save_figure, )
+                                             command=partial(self._save_figure, self.t2_fig), )
             self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
 
     def _build_common_reference(self, parent):
         parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
         parent.grid_columnconfigure(1, weight=1)  # right panel
         parent.grid_rowconfigure(0, weight=0, minsize=1)
-        parent.grid_rowconfigure(1, weight=4)
-        parent.grid_rowconfigure(2, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
 
         # ---------- Left panel ----------
         config_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
-        config_frame.grid(row=0, column=0, rowspan=3, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        config_frame.grid(row=0, column=0, rowspan=4, padx=(5, 5), pady=(5, 5), sticky="nsew")
         config_frame.grid_columnconfigure(0, weight=1)
         config_frame.grid_rowconfigure(0, weight=2)
         config_frame.grid_rowconfigure(1, weight=2)
         config_frame.grid_rowconfigure(2, weight=1)
         config_frame.grid_propagate(False)
-        # ---------- Right panel ----------
-        progress_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
-                                      fg_color="transparent", height=50)
-        progress_frame.grid(row=0, column=1, padx=(0, 5), pady=(5, 0), sticky="nsew")
-        progress_frame.grid_columnconfigure(0, weight=1)
-        progress_frame.grid_rowconfigure(0, weight=1)
-        progress_frame.grid_rowconfigure(1, weight=2)
-        progress_frame.grid_propagate(False)
-        display_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
-        display_frame.grid(row=1, column=1, padx=(0, 5), pady=(5, 0), sticky="nsew")
-        display_frame.grid_propagate(False)
-        statistics_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
-                                        fg_color="transparent")
-        statistics_frame.grid(row=2, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
-        statistics_frame.grid_columnconfigure(0, weight=1)
-        statistics_frame.grid_rowconfigure(0, weight=1)
-        statistics_frame.grid_propagate(False)
 
-        # ---------- Designing the config frame (F3) ----------
+        # ---- Designing the config frame (F3) ----
         # Choose sequences frame
         seq_frame = ctk.CTkFrame(config_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
         seq_frame.grid(row=0, column=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
@@ -619,8 +618,102 @@ class App(ctk.CTk):
 
         # Run button
         plot_button = ctk.CTkButton(config_frame, text="Run", corner_radius=8, height=35, font=HEADER_FONT,
-                                    command=partial(self.t3_run, None))
+                                    command=partial(self.t3_run_manager, None))
         plot_button.grid(row=2, column=0, pady=(10, 10))
+
+        # ---------- Right panel ----------
+        progress_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                      fg_color="transparent", height=40)
+        progress_frame.grid(row=0, column=1, padx=(0, 5), pady=(5, 0), sticky="nsew")
+        progress_frame.grid_columnconfigure(0, weight=1)
+        progress_frame.grid_rowconfigure(0, weight=1)
+        progress_frame.grid_rowconfigure(1, weight=5)
+        progress_frame.grid_propagate(False)
+
+        display_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        display_frame.grid(row=1, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
+        display_frame.grid_columnconfigure(0, weight=1)
+        display_frame.grid_columnconfigure(1, weight=2)
+        display_frame.grid_rowconfigure(0, weight=1)
+        display_frame.grid_rowconfigure(1, weight=1)
+        display_frame.grid_rowconfigure(2, weight=0, minsize=1)
+        display_frame.grid_propagate(False)
+
+        # ---- Designing each frames ----
+        # Progress frame
+        self.t3_progress_bar = ctk.CTkProgressBar(master=progress_frame, orientation="horizontal", )
+        if getattr(self, "_t3_progress", None) is not None:
+            self.t3_progress_bar.set(self._t3_progress)
+        else:
+            self.t3_progress_bar.set(0)
+        self.t3_progress_bar.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        # TODO: add a label to show progress percentage or status
+
+        # Display frame
+        # 3D frame
+        self.t3_3d_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, fg_color="transparent",
+                                                border_width=1, border_color=COLORS["BORDER_COLOR"])
+        self.t3_3d_display_frame.grid(row=0, column=0, padx=(5, 0), pady=(5, 0), sticky="nsew")
+
+        # FCGR frame
+        self.t3_fcgr_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, fg_color=COLORS["FRAME_COLOR"],
+                                                  border_width=1, border_color=COLORS["BORDER_COLOR"])
+        self.t3_fcgr_display_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 0), sticky="nsew")
+        self.t3_fcgr_display_frame.grid_columnconfigure(0, weight=1)
+        self.t3_fcgr_display_frame.grid_rowconfigure(0, weight=1)
+        self.t3_fcgr_display_frame.grid_propagate(False)
+
+        self.t3_fcgr_placeholder_label = ctk.CTkLabel(master=self.t3_fcgr_display_frame, text="Display Area",
+                                                      font=HEADER_FONT, text_color="black")
+        self.t3_fcgr_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
+        if getattr(self, "t3_fig", None) is not None:
+            # Create a new canvas for the existing figure, attached to the new frame
+            self.t3_canvas = FigureCanvasTkAgg(self.t3_fig, master=self.t3_fcgr_display_frame)
+            widget = self.t3_canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t3_canvas.draw()
+
+            if getattr(self, "t3_save_btn", None) is not None and self.t3_save_btn.winfo_exists():
+                try:
+                    self.t3_save_btn.destroy()
+                except Exception:
+                    pass
+
+            self.t3_save_btn = ctk.CTkButton(master=self.t3_fcgr_display_frame, text="💾", width=30, height=30,
+                                             fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                             command=partial(self._save_figure, self.t3_fig))
+            self.t3_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+
+        # Plot frame
+        self.t3_plot_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1,
+                                                  border_color=COLORS["BORDER_COLOR"], fg_color="white")
+        self.t3_plot_display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        self.t3_plot_display_frame.grid_columnconfigure(0, weight=1)
+        self.t3_plot_display_frame.grid_rowconfigure(0, weight=1)
+        self.t3_plot_display_frame.grid_propagate(False)
+
+        # Changing the picture with slider frame
+        changing_frame = ctk.CTkFrame(display_frame, fg_color="transparent", height=20)
+        changing_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 5), pady=(0, 5))
+        changing_frame.grid_columnconfigure(0, weight=0, minsize=1)
+        changing_frame.grid_columnconfigure(1, weight=10)
+        changing_frame.grid_columnconfigure(2, weight=0, minsize=1)
+
+        self.t3_scale = ctk.CTkSlider(changing_frame, from_=0, orientation=ctk.HORIZONTAL, variable=self.t3_pic_num,
+                                      command=partial(self.t3_change_images, self.t3_pic_num.get()))
+        self.t3_scale.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        (ctk.CTkButton(changing_frame, text="⬅", width=20, command=partial(self.t3_move_previous, None))
+         .grid(row=0, column=0, padx=(0, 0)))
+        (ctk.CTkButton(changing_frame, text="⮕", width=20, command=partial(self.t3_move_next, None))
+         .grid(row=0, column=2, padx=(0, 0)))
+
+        # Statistics frame
+        stats_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                   fg_color="transparent")
+        stats_frame.grid(row=1, column=0, rowspan=2, padx=(5, 0), pady=(5, 5), sticky="nsew")
+        stats_label = ctk.CTkLabel(stats_frame, text="Area for statistical analysis", font=HEADER_FONT,
+                                   text_color="white")
+        stats_label.place(relx=0.5, rely=0.01, anchor="n")
 
     def _build_multispecies_comparator(self, parent):
         pass
@@ -1005,110 +1098,9 @@ class App(ctk.CTk):
         distance_value = get_dist(fcgrs_dict["1"]["fcgr"], fcgrs_dict["2"]["fcgr"], dist_m=self.dist_metric.get())
         fcgrs_dict["distance"] = distance_value
 
-        # Visualize the FCGRs
-        # First time: create figure, draw into it off-screen, then attach canvas
-        bg = self.t2_display_frame.cget("fg_color")
-        # 1) Create the figure once
-        if self.t2_fig is None:
-            # Let Tk lay out the frame so grid sizes are sane
-            self.t2_display_frame.update_idletasks()
-            # Create a reasonably sized figure
-            self.t2_fig = plt.Figure(dpi=120)
-            self.t2_fig.patch.set_facecolor(bg)
-
-        # 2) Make sure the canvas exists AND is attached to the current display_frame
-        needs_new_canvas = (self.t2_canvas is None
-                            or not self.t2_canvas.get_tk_widget().winfo_exists()
-                            or self.t2_canvas.get_tk_widget().master is not self.t2_display_frame)
-
-        if needs_new_canvas:
-            self.t2_canvas = FigureCanvasTkAgg(self.t2_fig, master=self.t2_display_frame)
-            widget = self.t2_canvas.get_tk_widget()
-            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-
-            # Create tiny save button once, bottom-left over the figure
-            if getattr(self, "t2_save_btn", None) is None or \
-                    not self.t2_save_btn.winfo_exists() or \
-                    self.t2_save_btn.master is not self.t2_display_frame:
-                self.t2_save_btn = ctk.CTkButton(master=self.t2_display_frame, text="💾", width=30, height=30,
-                                                 fg_color=COLORS["BORDER_COLOR"],
-                                                 hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                                 command=self.t2_save_figure, )
-                # place with relative coords which is bottom-left corner of the frame
-                self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
-
-        # 3) Clear figure and redraw, regardless of tab switches
-        self.t2_fig.clear()
-        self._plot_fcgrs(fcgrs_dict, colormap=True, background_color=bg, name="Sequence", fig=self.t2_fig, )
-
-        if hasattr(self, "t2_placeholder_label") and self.t2_placeholder_label.winfo_exists():
-            try:
-                self.t2_placeholder_label.place_forget()
-            except:
-                pass
-
-        # 4) Redraw canvas
-        self.t2_canvas.draw()
-
-    def _plot_fcgrs(self, fcgrs, colormap=False, background_color=None, name="Sequence", fig=None):
-        if fig is None:
-            fig = plt.Figure()
-        ax1, ax2, ax3 = fig.subplots(1, 3)
-        extent = 0, 1, 0, 1
-
-        if background_color is not None:
-            fig.patch.set_facecolor(background_color)
-
-        scale_1, scaling_1 = self._scaling(fcgrs["1"]["seq_len"])
-        b1 = fcgrs["1"]["b"]
-        e1 = fcgrs["1"]["e"]
-        scale_2, scaling_2 = self._scaling(fcgrs["2"]["seq_len"])
-        b2 = fcgrs["2"]["b"]
-        e2 = fcgrs["2"]["e"]
-
-        # plot the data on the subplots
-        img1 = CGR.array2img(fcgrs["1"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-        img1 = Image.fromarray(img1)
-        ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
-        ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-        ax1.set_title(f'{name} 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
-
-        im2 = ax2.imshow(fcgrs['diff'], cmap='RdBu', norm=plt.Normalize(-100, 100), extent=extent)
-        ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-        ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
-
-        img2 = CGR.array2img(fcgrs["2"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-        img2 = Image.fromarray(img2)
-        ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
-        ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-        ax3.set_title(f'{name} 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
-
-        if colormap:
-            fig.subplots_adjust(bottom=0.2)  # Adjust the bottom margin
-            cbar_ax2 = fig.add_axes([0.36, 0.1, 0.3, 0.02])  # Adjust position as needed
-            cbar = fig.colorbar(im2, cax=cbar_ax2, orientation='horizontal')
-            cbar.set_label(f'Red: Greater k-mer value in {name} 1 , Blue: Greater k-mer value in {name} 2', fontsize=10)
-            cbar.ax.xaxis.set_label_position('top')  # Position label at top of colorbar
-            cbar.ax.xaxis.labelpad = 5
-            cbar.ax.tick_params(labelsize=8)
-
-        return fig
-
-    def t2_save_figure(self):
-        if self.t2_fig is None:
-            return messagebox.showerror("Error", "No figure to save. Please plot first.")
-
-        file_path = fd.asksaveasfilename(defaultextension=".png",
-                                         filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf"),
-                                                    ("SVG Image", "*.svg"), ("All Files", "*.*"), ],
-                                         title="Save figure")
-        if not file_path:
-            return
-
-        try:
-            self.t2_fig.savefig(file_path, dpi=300, bbox_inches="tight")
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not save figure.")
+        self._draw_fcgr_panel(frame=self.t2_display_frame, fig_attr="t2_fig", canvas_attr="t2_canvas",
+                              save_btn_attr="t2_save_btn", save_command=lambda: self._save_figure("t2_fig"),
+                              placeholder_attr="t2_placeholder_label", fcgrs_dict=fcgrs_dict, )
 
     def t2_sync_text_vars(self, ds, sender):
         ds[sender].start_txt.set(self._format_int(ds[sender].start_seq.get()))
@@ -1288,7 +1280,7 @@ class App(ctk.CTk):
         self.t3_ds['2'].start_txt.set(self._format_int(start))
         self.t3_ds['2'].end_txt.set(self._format_int(end))
 
-    def t3_run(self, event):
+    def t3_run_manager(self, event):
         if self.t3_ds["1"].seq == "" or self.t3_ds["2"].seq == "":
             return messagebox.showerror("Error", "Please upload or choose the sequences first.")
 
@@ -1328,7 +1320,6 @@ class App(ctk.CTk):
             return messagebox.showerror("Error", "Segment size must be a positive integer.")
         if seg_size <= 0 or seg_size > len(self.t3_ds["2"].seq):
             return messagebox.showerror("Error", "Segment size is out of range.")
-        self.t3_segment_size.set(self._format_int(seg_size))  # normalize formatting to include commas
 
         # check the validity of other options
         if self.k_var.get() == 0:
@@ -1337,128 +1328,106 @@ class App(ctk.CTk):
             return messagebox.showerror("Error", "Please choose the distance measure.")
         if self.t3_plot_type.get() == "":
             return messagebox.showerror("Error", "Please choose the plot type.")
-        # global foo_thread_2
-        # foo_thread_2 = threading.Thread(target=self.t3_run)
-        # foo_thread_2.daemon = True
-        # foo_thread_2.start()
-        # self.after(20, self.t3_check_thread)
+        global foo_thread_2
+        foo_thread_2 = threading.Thread(target=self.t3_run)
+        foo_thread_2.daemon = True
+        foo_thread_2.start()
+        self.after(20, self.t3_check_thread)
 
-    # def t3_check_thread(self):
-    #     self.t3_progress_bar.set(self._t3_progress)
-    #     if foo_thread_2.is_alive():
-    #         self.after(20, self.t3_check_thread)
-    #     else:
-    #         self.t3_progress_bar.set(1.0)
-    #         self.t3_pic_num.set(0)
-    #         self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
-    #
-    #         # Display the reference image
-    #         with open(f"{self.temp_output_path}/common_ref/pickle/ref.pkl", 'rb') as handle:
-    #             dictionary = pickle.load(handle)
-    #
-    #         fig, (ax1) = plt.subplots(1, 1)
-    #         extent = 0, 1, 0, 1
-    #
-    #         display_frame_color = self.t3_display_frame_1.cget("fg_color")
-    #         fig.patch.set_facecolor(display_frame_color)
-    #
-    #         img1 = CGR.array2img(dictionary["(f)cgr"], bits=8,  # BITS_DICT[dictionary["species"]]
-    #                              resolution=RESOLUTION_DICT[self.k_var.get()])
-    #         img1 = Image.fromarray(img1, 'L')
-    #         ax1.imshow(img1, cmap='gray', extent=extent)
-    #         ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-    #         scale_1, scaling_1 = self._scaling(dictionary["chr_len"])
-    #         b1 = int(self.t3_ds["1"].start_seq.get())
-    #         e1 = int(self.t3_ds["1"].end_seq.get())
-    #         if self.t3_ds["1"].specie.get() == "Custom":
-    #             ax1.set_title(f'Reference\nCustom / '
-    #                           f'{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
-    #         else:
-    #             if self.t3_ds["1"].chromosome.get() == "Whole Genome":
-    #                 chromosome = "Genome"
-    #             else:
-    #                 chromosome = f'chr {self.t3_ds["1"].chromosome.get()}'
-    #             ax1.set_title(f'Reference\n{self.t3_ds["1"].specie.get()} / {chromosome} / '
-    #                           f'{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
-    #
-    #         # Clear the previous figure from the display frame if any
-    #         for widget in self.t3_display_frame_1.winfo_children():
-    #             widget.destroy()
-    #
-    #         # Create a canvas and add the figure to it
-    #         canvas = FigureCanvasTkAgg(fig, master=self.t3_display_frame_1)
-    #         canvas.draw()
-    #
-    #         # Set the canvas size explicitly
-    #         canvas_width = self.t3_display_frame_1.cget("width")
-    #         canvas_height = self.t3_display_frame_1.cget("height")
-    #         canvas.get_tk_widget().config(width=canvas_width, height=canvas_height)
-    #         # Use grid to place the canvas
-    #         canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
-    #         plt.close()
-    #
-    #         # Display the plot and the first set
-    #         self._change_images(0, "t3", None)
-    #
-    # def t3_run(self):
-    #     self.t3_cgr_distance_history = []
-    #     t3_step_length = np.floor(len(self.t3_ds["2"].seq) / int(self.t3_window_s.get()))
-    #     # self.t3_progress_bar.set(0)
-    #     # self.t3_pic_num.set(0)
-    #     self._t3_progress = 0.0
-    #
-    #     ref_b = int(self.t3_ds["1"].start_seq.get())
-    #     ref_e = int(self.t3_ds["1"].end_seq.get())
-    #     ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
-    #
-    #     # self.t3_progress_bar.set(1 / (int(t3_step_length) + 2))  # start progress bar
-    #     self._t3_progress = 1.0 / (int(t3_step_length) + 2)
-    #
-    #     # if self.fcgr.get() == 1:
-    #     im1 = ref_cgr.get_fcgr()
-    #     # else:
-    #     #     im1 = ref_cgr.get_cgr()
-    #
-    #     # self.t3_progress_bar.set(2 / (int(t3_step_length) + 2))  # update progress bar
-    #     self._t3_progress = 2.0 / (int(t3_step_length) + 2)
-    #
-    #     ref_dict = {"(f)cgr": im1, "species": self.t3_ds["1"].specie.get(),
-    #                 "chr_len": len(self.t3_ds["1"].seq)}
-    #
-    #     path = f"{self.temp_output_path}/common_ref/pickle"
-    #     if not os.path.exists(path):
-    #         os.makedirs(path)
-    #     with open(f"{path}/ref.pkl", 'wb') as f:
-    #         pickle.dump(ref_dict, f)
-    #
-    #     # the sliding sequence
-    #     for i in range(int(t3_step_length)):
-    #         # self.t3_progress_bar.set((i + 3) / (int(t3_step_length) + 2))
-    #         self._t3_progress = (i + 3) / (int(t3_step_length) + 2)
-    #         b2 = i * int(self.t3_window_s.get())
-    #         e2 = (i + 1) * int(self.t3_window_s.get())
-    #
-    #         cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
-    #         # if self.fcgr.get() == 1:
-    #         im2 = cgr2.get_fcgr()
-    #         # else:
-    #         #     im2 = cgr2.get_cgr()
-    #
-    #         diff = im2 - im1
-    #
-    #         dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
-    #
-    #         self.t3_cgr_distance_history.append(dist)
-    #
-    #         dictionary = {"(f)cgr": im2, "b": b2, "e": e2, "chr_len": len(self.t3_ds["2"].seq),
-    #                       "diff": diff, "distance": dist, "species": self.t3_ds["2"].specie.get()}
-    #
-    #         with open(f"{path}/{i}.pkl", 'wb') as f:
-    #             pickle.dump(dictionary, f)
+    def t3_run(self):
+        self.t3_cgr_distance_history = []
+        seg_size = self._parse_int(self.t3_segment_size.get().strip())
+
+        path = f"{self.temp_output_path}/t3_run/pickle"
+        if not os.path.exists(path):
+            os.makedirs(path)
+        fcgrs_dict = {}
+
+        if self.t3_use_rep_algo.get() == 0:
+            t3_step_length = np.floor(len(self.t3_ds["2"].seq) / seg_size)
+            self._t3_progress = 0.0
+
+            ref_b = self._parse_int(self.t3_ds['2'].start_txt.get().strip())
+            ref_e = self._parse_int(self.t3_ds['2'].end_txt.get().strip())
+            ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
+
+            self._t3_progress = 1.0 / (int(t3_step_length) + 2)
+            im1 = ref_cgr.get_fcgr()
+            self._t3_progress = 2.0 / (int(t3_step_length) + 2)
+
+            fcgrs_dict["0"] = {"fcgr": im1, "b": ref_b, "e": ref_e, "seq_len": len(self.t3_ds["1"].seq)}
+
+            # the sliding sequence
+            for i in range(int(t3_step_length)):
+                self._t3_progress = (i + 3) / (int(t3_step_length) + 2)
+                b2 = i * seg_size
+                e2 = (i + 1) * seg_size
+                cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
+                im2 = cgr2.get_fcgr()
+
+                diff = im2 - im1
+                dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
+                self.t3_cgr_distance_history.append(dist)
+
+                fcgrs_dict[i] = {"fcgr": im2, "b": b2, "e": e2, "seq_len": len(self.t3_ds["2"].seq),
+                                 "diff": diff, "distance": dist}
+
+            with open(f"{path}/t3_run.pkl", 'wb') as f:
+                pickle.dump(fcgrs_dict, f)
+
+        elif self.t3_use_rep_algo.get() == 1:
+            # TODO: need to fill the run for representative algorithm
+            pass
+        else:
+            messagebox.showerror("Error", "Unknown representative algorithm option.")
+
+    def t3_check_thread(self):
+        self.t3_progress_bar.set(self._t3_progress)
+        if foo_thread_2.is_alive():
+            self.after(20, self.t3_check_thread)
+        else:
+            self.t3_progress_bar.set(1.0)
+            self.t3_pic_num.set(0)
+            self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
+
+            # Display the 3d plot, image, and the chart
+            self._draw_fcgr_panel(frame=self.t3_fcgr_display_frame, fig_attr="t3_fig", canvas_attr="t3_canvas",
+                                  save_btn_attr="t3_save_btn", save_command=lambda: self._save_figure("t3_fig"),
+                                  placeholder_attr="t3_placeholder_label", fcgrs_dict=None, index=0)
+
+    def t3_change_images(self, index, value):
+        # plot distance results bar and first index is red
+        index = round(value) if value is not None else index
+        self._draw_fcgr_panel(frame=self.t3_fcgr_display_frame, fig_attr="t3_fig", canvas_attr="t3_canvas",
+                              save_btn_attr="t3_save_btn", save_command=lambda: self._save_figure("t3_fig"),
+                              placeholder_attr="t3_placeholder_label", fcgrs_dict=None, index=index)
+
+    def t3_move_previous(self, value):
+        pic_num = self.t3_pic_num
+        if pic_num.get() > 0:
+            pic_num.set(pic_num.get() - 1)
+            self.t3_change_images(pic_num.get(), None)
+
+    def t3_move_next(self, value):
+        pic_num = self.t3_pic_num
+        dist_history_len = len(self.t3_cgr_distance_history)
+        if pic_num.get() < dist_history_len - 1:
+            pic_num.set(pic_num.get() + 1)
+            self.t3_change_images(pic_num.get(), None)
 
     # --------------------------------------------------
     # General helper functions
     # --------------------------------------------------
+    @staticmethod
+    def _resource_path(relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        if getattr(sys, 'frozen', False):  # If running as a bundled .app
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+
     @staticmethod
     def _read_fasta(file_path):
         sequence = ""
@@ -1505,6 +1474,151 @@ class App(ctk.CTk):
     @staticmethod
     def _format_int(value):
         return f"{value:,}"
+
+    def _save_figure(self, fig_attr):
+        fig = getattr(self, fig_attr, None)
+        if fig is None:
+            return messagebox.showerror("Error", "No figure to save. Please plot first.")
+
+        file_path = fd.asksaveasfilename(defaultextension=".png",
+                                         filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf"),
+                                                    ("SVG Image", "*.svg"), ("All Files", "*.*")],
+                                         title="Save figure")
+        if not file_path:
+            return  # user cancelled
+
+        try:
+            fig.savefig(file_path, dpi=300, bbox_inches="tight")
+        except Exception:
+            messagebox.showerror("Error", "Could not save figure.")
+
+    def _plot_fcgrs(self, fcgrs, background_color=None, fig=None, index=0):
+        if fig is None:
+            fig = plt.Figure()
+        extent = (0, 1, 0, 1)
+        if background_color is not None:
+            fig.patch.set_facecolor(background_color)
+
+        if fig == self.t2_fig:
+            ax1, ax2, ax3 = fig.subplots(1, 3)
+
+            scale_1, scaling_1 = self._scaling(fcgrs["1"]["seq_len"])
+            b1 = fcgrs["1"]["b"]
+            e1 = fcgrs["1"]["e"]
+            scale_2, scaling_2 = self._scaling(fcgrs["2"]["seq_len"])
+            b2 = fcgrs["2"]["b"]
+            e2 = fcgrs["2"]["e"]
+
+            # plot the data on the subplots
+            img1 = CGR.array2img(fcgrs["1"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img1 = Image.fromarray(img1)
+            ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+            ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax1.set_title(f'Sequence 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+
+            im2 = ax2.imshow(fcgrs['diff'], cmap='RdBu', norm=plt.Normalize(-100, 100), extent=extent)
+            ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
+
+            img2 = CGR.array2img(fcgrs["2"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img2 = Image.fromarray(img2)
+            ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+            ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax3.set_title(f'Sequence 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
+
+            # --- add color panel ---
+            fig.subplots_adjust(bottom=0.2)  # Adjust the bottom margin
+            cbar_ax2 = fig.add_axes([0.36, 0.1, 0.3, 0.02])  # Adjust position as needed
+            cbar = fig.colorbar(im2, cax=cbar_ax2, orientation='horizontal')
+            cbar.set_label(f'Red: Greater k-mer value in Sequence 1 , Blue: Greater k-mer value in Sequence 2',
+                           fontsize=10)
+            cbar.ax.xaxis.set_label_position('top')  # Position label at top of colorbar
+            cbar.ax.xaxis.labelpad = 5
+            cbar.ax.tick_params(labelsize=8)
+
+        elif fig == self.t3_fig:
+            ax1, ax3 = fig.subplots(1, 2)
+
+            scale_1, scaling_1 = self._scaling(fcgrs["0"]["seq_len"])
+            b1 = fcgrs["0"]["b"]
+            e1 = fcgrs["0"]["e"]
+            scale_2, scaling_2 = self._scaling(fcgrs[index]["seq_len"])
+            b2 = fcgrs[index]["b"]
+            e2 = fcgrs[index]["e"]
+
+            # plot the data on the subplots
+            img1 = CGR.array2img(fcgrs["0"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img1 = Image.fromarray(img1)
+            ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+            ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax1.set_title(f'Representative \n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+
+            img2 = CGR.array2img(fcgrs[index]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img2 = Image.fromarray(img2)
+            ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+            ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax3.set_title(f'Segment\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
+
+            # --- add distance text below both panels ---
+            fig.subplots_adjust(bottom=0.12)  # make room for the text
+            fig.text(0.5, 0.06, f"Distance = {round(fcgrs[index]['distance'], 4)}",
+                     ha="center", va="center", fontsize=10)
+
+        return fig
+
+    def _draw_fcgr_panel(self, frame, fig_attr, canvas_attr, save_btn_attr, save_command, placeholder_attr, fcgrs_dict,
+                         index=None):
+        # --- 1) Figure setup ---
+        bg = frame.cget("fg_color")
+
+        fig = getattr(self, fig_attr, None)
+        if fig is None:
+            frame.update_idletasks()
+
+            dpi = 80 if fig_attr == "t3_fig" else 120
+
+            fig = plt.Figure(dpi=dpi)
+            fig.patch.set_facecolor(bg)
+            setattr(self, fig_attr, fig)
+
+        # --- 2) Canvas setup ---
+        canvas = getattr(self, canvas_attr, None)
+        needs_new_canvas = (canvas is None
+                            or not canvas.get_tk_widget().winfo_exists()
+                            or canvas.get_tk_widget().master is not frame)
+        if needs_new_canvas:
+            canvas = FigureCanvasTkAgg(fig, master=frame)
+            widget = canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            setattr(self, canvas_attr, canvas)
+
+            # --- Save button setup ---
+            save_btn = getattr(self, save_btn_attr, None)
+            if (save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame):
+                save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30, fg_color=COLORS["BORDER_COLOR"],
+                                         hover_color=COLORS["FRAME_HOVER_COLOR"], command=save_command, )
+                save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+                setattr(self, save_btn_attr, save_btn)
+
+        # --- 3) Clear figure and re-plot ---
+        fig.clear()
+        # If we are in third tab and no fcgrs_dict provided, load from pickle
+        if fig == self.t3_fig and not fcgrs_dict:
+            with open(f"{self.temp_output_path}/t3_run/pickle/t3_run.pkl", 'rb') as handle:
+                fcgrs_dict = pickle.load(handle)
+        # Plot fcgrs
+        self._plot_fcgrs(fcgrs_dict, background_color=bg, fig=fig, index=index)
+
+        # --- 4) Hide placeholder if present ---
+        placeholder = getattr(self, placeholder_attr, None)
+        if placeholder is not None and placeholder.winfo_exists():
+            try:
+                placeholder.place_forget()
+            except Exception:
+                pass
+
+        # --- 5) Redraw canvas ---
+        canvas.draw()
 
     # --------------------------------------------------
     # Other functions
@@ -1828,13 +1942,6 @@ class App(ctk.CTk):
     # --------------------------------------------------
     #
     # --------------------------------------------------
-    def _change_images(self, index, tab_name, value):
-        # plot distance results bar and first index is red
-        index = round(value) if value is not None else index
-        self._plot_chart(index, tab_name)
-        # Load and display the first image set in next plot
-        self.__plot_fcgrs(index, tab_name)
-
     def _plot_chart(self, highlighted_index, tab_name):
         dist_history = None
         frame = None
@@ -1994,35 +2101,6 @@ class App(ctk.CTk):
         # Use grid to place the canvas
         canvas.get_tk_widget().grid(row=0, column=0, padx=5, pady=10, sticky='nsew')
         plt.close()
-
-    def move_previous(self, tab_name, value):
-        pic_num = None
-        if tab_name == "t2":
-            pic_num = self.t2_pic_num
-        elif tab_name == "t3":
-            pic_num = self.t3_pic_num
-        elif tab_name == "t4":
-            pic_num = self.t4_pic_num
-
-        if pic_num.get() > 0:
-            pic_num.set(pic_num.get() - 1)
-            self._change_images(pic_num.get(), tab_name, None)
-
-    def move_next(self, tab_name, value):
-        pic_num, dist_history_len = None, None
-        if tab_name == "t2":
-            pic_num = self.t2_pic_num
-            dist_history_len = len(self.cgr_distance_history)
-        elif tab_name == "t3":
-            pic_num = self.t3_pic_num
-            dist_history_len = len(self.t3_cgr_distance_history)
-        elif tab_name == "t4":
-            pic_num = self.t4_pic_num
-            dist_history_len = len(self.t4_cgr_distance_history)
-
-        if pic_num.get() < dist_history_len - 1:
-            pic_num.set(pic_num.get() + 1)
-            self._change_images(pic_num.get(), tab_name, None)
 
 
 class GenerateSyntheticSequence(ctk.CTkToplevel):
