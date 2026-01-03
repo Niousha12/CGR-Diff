@@ -1429,106 +1429,17 @@ class App(ctk.CTk):
             self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
 
             # Display the 3d plot, image, and the chart
-            # FCGR plot is here
-            self._draw_panel(frame=self.t3_fcgr_display_frame, fig_attr="t3_fcgr_fig",
-                             canvas_attr="t3_fcgr_canvas", save_btn_attr="t3_fcgr_save_btn",
-                             save_command=lambda: self._save_figure("t3_fcgr_fig"),
-                             placeholder_attr="t3_fcgr_placeholder_label", fcgrs_dict=None, index=0)
-            # Chart is here
-            self._draw_panel(frame=self.t3_plot_display_frame, fig_attr="t3_plot_fig",
-                             canvas_attr="t3_plot_canvas", save_btn_attr="t3_plot_save_btn",
-                             save_command=lambda: self._save_figure("t3_plot_fig"),
-                             placeholder_attr="t3_plot_placeholder_label", fcgrs_dict=None, index=0, panel_type="chart")
-
-    # def _draw_t3_interactive_plot(self, index=0):
-    #     frame = self.t3_plot_display_frame
-    #     dists = list(self.t3_cgr_distance_history)
-    #     index = max(0, min(int(index), len(dists) - 1))  # Clamp index
-    #
-    #     # --- Figure / canvas setup ---
-    #     bg = frame.cget("fg_color")
-    #     fig = getattr(self, "t3_plot_fig", None)
-    #     if fig is None:
-    #         frame.update_idletasks()
-    #         fig = plt.Figure(dpi=120)
-    #         fig.patch.set_facecolor(bg)
-    #         self.t3_plot_fig = fig
-    #     else:
-    #         fig.clf()
-    #         fig.patch.set_facecolor(bg)
-    #
-    #     canvas = getattr(self, "t3_plot_canvas", None)
-    #     needs_new_canvas = (canvas is None
-    #                         or not canvas.get_tk_widget().winfo_exists()
-    #                         or canvas.get_tk_widget().master is not frame)
-    #     if needs_new_canvas:
-    #         # Clear any previous widgets in the frame (old canvas/toolbar)
-    #         for w in frame.winfo_children():
-    #             try:
-    #                 w.destroy()
-    #             except Exception:
-    #                 pass
-    #
-    #         canvas = FigureCanvasTkAgg(fig, master=frame)
-    #         widget = canvas.get_tk_widget()
-    #         widget.grid(row=0, column=0, padx=10, pady=(10, 0), sticky="nsew")
-    #         self.t3_plot_canvas = canvas
-    #
-    #         # Add Matplotlib toolbar (pan/zoom/save) for interactivity
-    #         toolbar = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
-    #         toolbar.update()
-    #         toolbar.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
-    #         self.t3_plot_toolbar = toolbar
-    #
-    #     # Disconnect old callbacks (important when redrawing)
-    #     self._t3_disconnect_plot_events()
-    #
-    #     plot_type = self.t3_plot_type.get().strip()
-    #
-    #     if plot_type == "Bar plot":
-    #         # Default: Bar plot
-    #         ax = fig.add_subplot(111)
-    #         ax.set_facecolor(bg)
-    #
-    #         xs = list(range(len(dists)))
-    #         bars = ax.bar(xs, dists, picker=True)
-    #         ax.set_title("Distances by segment (click a bar to jump)")
-    #         ax.set_xlabel("Segment index")
-    #         ax.set_ylabel(f"{self.dist_metric.get()} distance")
-    #
-    #         # Highlight selected bar
-    #         try:
-    #             bars[index].set_linewidth(2.5)
-    #         except Exception:
-    #             pass
-    #
-    #         # Optional hover tooltips
-    #         if mplcursors is not None:
-    #             try:
-    #                 mplcursors.cursor(bars, hover=True).connect(
-    #                     "add",
-    #                     lambda sel_obj: sel_obj.annotation.set_text(
-    #                         f"idx={sel_obj.index}\n{self.dist_metric.get()}={dists[sel_obj.index]:.4g}"
-    #                     )
-    #                 )
-    #             except Exception:
-    #                 pass
-    #
-    #         def on_pick(event):
-    #             artist = event.artist
-    #             # Matplotlib returns a Rectangle for a bar; figure out its index
-    #             try:
-    #                 new_idx = list(bars).index(artist)
-    #             except ValueError:
-    #                 return
-    #             self.t3_pic_num.set(new_idx)
-    #             self.t3_change_images(new_idx, None)
-    #
-    #         cid = canvas.mpl_connect("pick_event", on_pick)
-    #         self._t3_plot_cids.append(cid)
-    #
-    #     fig.tight_layout()
-    #     canvas.draw_idle()
+            self.after_idle(lambda: self.t3_change_images(0, None))
+            # # FCGR plot is here
+            # self._draw_panel(frame=self.t3_fcgr_display_frame, fig_attr="t3_fcgr_fig",
+            #                  canvas_attr="t3_fcgr_canvas", save_btn_attr="t3_fcgr_save_btn",
+            #                  save_command=lambda: self._save_figure("t3_fcgr_fig"),
+            #                  placeholder_attr="t3_fcgr_placeholder_label", fcgrs_dict=None, index=0)
+            # # Chart is here
+            # self._draw_panel(frame=self.t3_plot_display_frame, fig_attr="t3_plot_fig",
+            #                  canvas_attr="t3_plot_canvas", save_btn_attr="t3_plot_save_btn",
+            #                  save_command=lambda: self._save_figure("t3_plot_fig"),
+            #                  placeholder_attr="t3_plot_placeholder_label", fcgrs_dict=None, index=0, panel_type="chart")
 
     def t3_change_images(self, index, value):
         # plot distance results bar and first index is red
@@ -1702,7 +1613,7 @@ class App(ctk.CTk):
             # --- add distance text below both panels ---
             fig.subplots_adjust(bottom=0.12)  # make room for the text
             fig.text(0.5, 0.06, f"Distance = {round(fcgrs[index]['distance'], 4)}",
-                     ha="center", va="center", fontsize=10)
+                     ha="center", va="center", fontsize=14)
 
         return fig
 
@@ -1803,7 +1714,7 @@ class App(ctk.CTk):
         cid_motion = canvas.mpl_connect("motion_notify_event", on_motion)
         self._t3_plot_cids.append(cid_motion)
 
-        fig.tight_layout()
+        # fig.tight_layout()
         canvas.draw_idle()
 
     def _draw_panel(self, frame, fig_attr, canvas_attr, save_btn_attr, save_command, placeholder_attr, fcgrs_dict,
