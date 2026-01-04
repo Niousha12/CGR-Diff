@@ -47,7 +47,7 @@ COLORS = dict(
 KMERS = [str(i) for i in range(1, 9)]
 DISTANCES = ["Normalized Euclidean", "Cosine", "Manhattan", "Descriptor", "DSSIM", "K-S", "Wasserstein"]
 RESOLUTION_DICT = {2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 4, 9: 4, 10: 4, 11: 4, 12: 4}
-PLOT_TYPES = ["Bar plot", "Histogram plot"]
+PLOT_TYPES = ["Bar plot", "Line plot", "Histogram plot"]
 
 
 class GUIDataStructure:
@@ -511,7 +511,7 @@ class App(ctk.CTk):
             self.t2_save_btn = ctk.CTkButton(master=self.t2_display_frame, text="💾", width=30, height=30,
                                              fg_color=COLORS["BORDER_COLOR"],
                                              hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                             command=partial(self._save_figure, self.t2_fig), )
+                                             command=partial(self._save_figure, "t2_fig"), )
             self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
 
     def _build_common_reference(self, parent):
@@ -697,7 +697,7 @@ class App(ctk.CTk):
             self.t3_fcgr_save_btn = ctk.CTkButton(master=self.t3_fcgr_display_frame, text="💾", width=30, height=30,
                                                   fg_color=COLORS["BORDER_COLOR"],
                                                   hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                                  command=partial(self._save_figure, self.t3_fcgr_fig))
+                                                  command=partial(self._save_figure, "t3_fcgr_fig"))
             self.t3_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
 
         # Plot frame
@@ -727,7 +727,7 @@ class App(ctk.CTk):
             self.t3_plot_save_btn = ctk.CTkButton(master=self.t3_plot_display_frame, text="💾", width=30, height=30,
                                                   fg_color=COLORS["BORDER_COLOR"],
                                                   hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                                  command=partial(self._save_figure, self.t3_plot_fig))
+                                                  command=partial(self._save_figure, "t3_plot_fig"))
             self.t3_plot_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
 
         # Changing the picture with slider frame
@@ -1430,16 +1430,6 @@ class App(ctk.CTk):
 
             # Display the 3d plot, image, and the chart
             self.after_idle(lambda: self.t3_change_images(0, None))
-            # # FCGR plot is here
-            # self._draw_panel(frame=self.t3_fcgr_display_frame, fig_attr="t3_fcgr_fig",
-            #                  canvas_attr="t3_fcgr_canvas", save_btn_attr="t3_fcgr_save_btn",
-            #                  save_command=lambda: self._save_figure("t3_fcgr_fig"),
-            #                  placeholder_attr="t3_fcgr_placeholder_label", fcgrs_dict=None, index=0)
-            # # Chart is here
-            # self._draw_panel(frame=self.t3_plot_display_frame, fig_attr="t3_plot_fig",
-            #                  canvas_attr="t3_plot_canvas", save_btn_attr="t3_plot_save_btn",
-            #                  save_command=lambda: self._save_figure("t3_plot_fig"),
-            #                  placeholder_attr="t3_plot_placeholder_label", fcgrs_dict=None, index=0, panel_type="chart")
 
     def t3_change_images(self, index, value):
         # plot distance results bar and first index is red
@@ -1644,78 +1634,175 @@ class App(ctk.CTk):
         ax = fig.add_subplot(111)
         ax.set_facecolor(bg)
 
-        xs = range(len(dists))
-        bars = ax.bar(xs, dists, picker=True)
-
         ax.set_xlabel("Segment index")
         ax.set_ylabel(f"{self.dist_metric.get()} distance")
 
-        # --- Colors ---
-        default_color = bars[0].get_facecolor() if bars else None
+        plot_type = self.t3_plot_type.get().strip()
+
+        # Shared colors
         selected_color = "red"
         hover_color = "#CC8899"
 
-        # --- Apply initial colors ---
-        for i, b in enumerate(bars):
-            if i == index:
-                b.set_facecolor(selected_color)
-            else:
-                b.set_facecolor(default_color)
+        # ============================================================
+        # LINE PLOT
+        # ============================================================
+        if plot_type == "Line plot":
+            xs = list(range(len(dists)))
+            ys = dists
 
-        # --- Map bar artist -> index ---
-        bar_to_idx = {bar: i for i, bar in enumerate(bars)}
+            default_color = "tab:blue"
 
-        # Track currently hovered bar
-        hovered_bar = {"bar": None}
+            # --- Draw the LINE (visual only, not interactive) ---
+            ax.plot(xs, ys, linestyle='-', linewidth=1.5, color=default_color, zorder=1)
 
-        # ---------- CLICK ----------
-        def on_pick(event):
-            bar = getattr(event, "artist", None)
-            new_idx = bar_to_idx.get(bar, None)
-            if new_idx is None:
-                return
-            self.t3_pic_num.set(new_idx)
-            self.t3_change_images(new_idx, None)
+            # --- Draw MARKERS as scatter (for interaction) ---
+            colors = [default_color] * len(xs)
+            colors[index] = selected_color
 
-        cid_pick = canvas.mpl_connect("pick_event", on_pick)
-        self._t3_plot_cids.append(cid_pick)
+            sc = ax.scatter(xs, ys, c=colors, s=30, picker=True, zorder=2)
 
-        # ---------- HOVER ----------
-        def on_motion(event):
-            if event.inaxes != ax:
-                return
+            ax.set_title("Distances by segment (line plot)")
+            ax.set_xlabel("Segment index")
+            ax.set_ylabel(f"{self.dist_metric.get()} distance")
 
-            found_bar = None
-            for bar in bars:
-                contains, _ = bar.contains(event)
-                if contains:
-                    found_bar = bar
-                    break
+            hovered_idx = {"idx": None}
 
-            # No change → do nothing
-            if found_bar is hovered_bar["bar"]:
-                return
+            def base_color(i):
+                return selected_color if i == index else default_color
 
-            # Restore previous hovered bar color
-            if hovered_bar["bar"] is not None:
-                i = bar_to_idx[hovered_bar["bar"]]
-                if i == index:
-                    hovered_bar["bar"].set_facecolor(selected_color)
-                else:
-                    hovered_bar["bar"].set_facecolor(default_color)
+            # ---------- CLICK ----------
+            def on_pick(event):
+                if not hasattr(event, "ind") or event.ind is None or len(event.ind) == 0:
+                    return
+                new_idx = int(event.ind[0])
+                self.t3_pic_num.set(new_idx)
+                self.t3_change_images(new_idx, None)
 
-            # Apply hover color
-            if found_bar is not None:
-                found_bar.set_facecolor(hover_color)
+            cid_pick = canvas.mpl_connect("pick_event", on_pick)
+            self._t3_plot_cids.append(cid_pick)
 
-            hovered_bar["bar"] = found_bar
+            # ---------- HOVER ----------
+            def on_motion(event):
+                if event.inaxes != ax:
+                    return
+
+                contains, info = sc.contains(event)
+                if not contains:
+                    if hovered_idx["idx"] is not None:
+                        colors[hovered_idx["idx"]] = base_color(hovered_idx["idx"])
+                        sc.set_color(colors)
+                        hovered_idx["idx"] = None
+                        canvas.draw_idle()
+                    return
+
+                new_hover = int(info["ind"][0])
+                if new_hover == hovered_idx["idx"]:
+                    return
+
+                # restore previous hover
+                if hovered_idx["idx"] is not None:
+                    colors[hovered_idx["idx"]] = base_color(hovered_idx["idx"])
+
+                # apply hover color
+                colors[new_hover] = hover_color
+                sc.set_color(colors)
+                hovered_idx["idx"] = new_hover
+                canvas.draw_idle()
+
+            cid_motion = canvas.mpl_connect("motion_notify_event", on_motion)
+            self._t3_plot_cids.append(cid_motion)
+
             canvas.draw_idle()
+            return
 
-        cid_motion = canvas.mpl_connect("motion_notify_event", on_motion)
-        self._t3_plot_cids.append(cid_motion)
+        # ============================================================
+        # HISTOGRAM PLOT
+        # ============================================================
+        if plot_type == "Histogram plot":
+            ax.set_xlabel(f"{self.dist_metric.get()} distance")
+            ax.set_ylabel("Count")
 
-        # fig.tight_layout()
-        canvas.draw_idle()
+            n, bins, patches = ax.hist(dists, bins=min(30, max(5, int(len(dists) ** 0.5))))
+
+            # selected vertical marker
+            ax.axvline(dists[index], linestyle="--", linewidth=2, color=selected_color)
+
+            canvas.draw_idle()
+            return
+
+        # ============================================================
+        # BAR PLOT
+        # ============================================================
+        if plot_type == "Bar plot":
+            xs = range(len(dists))
+            bars = ax.bar(xs, dists, picker=True)
+
+            ax.set_xlabel("Segment index")
+            ax.set_ylabel(f"{self.dist_metric.get()} distance")
+
+            # --- Colors ---
+            default_color = bars[0].get_facecolor() if bars else None
+
+            # --- Apply initial colors ---
+            for i, b in enumerate(bars):
+                if i == index:
+                    b.set_facecolor(selected_color)
+                else:
+                    b.set_facecolor(default_color)
+
+            # --- Map bar artist -> index ---
+            bar_to_idx = {bar: i for i, bar in enumerate(bars)}
+
+            # Track currently hovered bar
+            hovered_bar = {"bar": None}
+
+            # ---------- CLICK ----------
+            def on_pick(event):
+                bar = getattr(event, "artist", None)
+                new_idx = bar_to_idx.get(bar, None)
+                if new_idx is None:
+                    return
+                self.t3_pic_num.set(new_idx)
+                self.t3_change_images(new_idx, None)
+
+            cid_pick = canvas.mpl_connect("pick_event", on_pick)
+            self._t3_plot_cids.append(cid_pick)
+
+            # ---------- HOVER ----------
+            def on_motion(event):
+                if event.inaxes != ax:
+                    return
+
+                found_bar = None
+                for bar in bars:
+                    contains, _ = bar.contains(event)
+                    if contains:
+                        found_bar = bar
+                        break
+
+                # No change → do nothing
+                if found_bar is hovered_bar["bar"]:
+                    return
+
+                # Restore previous hovered bar color
+                if hovered_bar["bar"] is not None:
+                    i = bar_to_idx[hovered_bar["bar"]]
+                    if i == index:
+                        hovered_bar["bar"].set_facecolor(selected_color)
+                    else:
+                        hovered_bar["bar"].set_facecolor(default_color)
+
+                # Apply hover color
+                if found_bar is not None:
+                    found_bar.set_facecolor(hover_color)
+
+                hovered_bar["bar"] = found_bar
+                canvas.draw_idle()
+
+            cid_motion = canvas.mpl_connect("motion_notify_event", on_motion)
+            self._t3_plot_cids.append(cid_motion)
+
+            canvas.draw_idle()
 
     def _draw_panel(self, frame, fig_attr, canvas_attr, save_btn_attr, save_command, placeholder_attr, fcgrs_dict,
                     index=None, panel_type="fcgr"):
