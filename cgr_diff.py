@@ -14,6 +14,7 @@ import tkinter.filedialog as fd
 import numpy as np
 from Bio import Entrez
 from PIL import Image
+from sklearn.manifold import MDS
 from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -123,7 +124,7 @@ class App(ctk.CTk):
 
         # Variables for page 3 (Common Reference)
         self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        self.t3_segment_size = tkinter.StringVar(value="500,000")
+        self.t3_segment_size = tkinter.StringVar(value="")  # 500,000 for test
         self.t3_use_rep_algo = tkinter.IntVar(value=1)  # 0: use start and end, 1: use algo
         self.t3_rep_algo_type = tkinter.StringVar(value="RepSeg")  # Representation algorithm type
         self.t3_rep_number = tkinter.StringVar(value="1")  # Number of representations to generate
@@ -749,8 +750,8 @@ class App(ctk.CTk):
         stats_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
                                    fg_color="transparent")
         stats_frame.grid(row=1, column=0, rowspan=2, padx=(5, 0), pady=(5, 5), sticky="nsew")
-        stats_label = ctk.CTkLabel(stats_frame, text="Area for statistical analysis", font=HEADER_FONT,
-                                   text_color="white")
+        stats_label = ctk.CTkLabel(stats_frame, text="Statistical Analysis", font=HEADER_FONT,
+                                   text_color=COLORS["FRAME_COLOR"])
         stats_label.place(relx=0.5, rely=0.01, anchor="n")
 
     def _build_multispecies_comparator(self, parent):
@@ -1376,28 +1377,29 @@ class App(ctk.CTk):
         self.t3_cgr_distance_history = []
         seg_size = self._parse_int(self.t3_segment_size.get().strip())
 
-        path = f"{self.temp_output_path}/t3_run/pickle"
+        path = f"{self.temp_output_path}/t3_run"
         if not os.path.exists(path):
             os.makedirs(path)
         fcgrs_dict = {}
 
         if self.t3_use_rep_algo.get() == 0:
             t3_step_length = np.floor(len(self.t3_ds["2"].seq) / seg_size)
+            t3_step_length = int(t3_step_length)
             self._t3_progress = 0.0
 
             ref_b = self._parse_int(self.t3_ds['2'].start_txt.get().strip())
             ref_e = self._parse_int(self.t3_ds['2'].end_txt.get().strip())
             ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
 
-            self._t3_progress = 1.0 / (int(t3_step_length) + 2)
+            self._t3_progress = 1.0 / (t3_step_length + 2)
             im1 = ref_cgr.get_fcgr()
-            self._t3_progress = 2.0 / (int(t3_step_length) + 2)
+            self._t3_progress = 2.0 / (t3_step_length + 2)
 
-            fcgrs_dict["0"] = {"fcgr": im1, "b": ref_b, "e": ref_e, "seq_len": len(self.t3_ds["1"].seq)}
+            fcgrs_dict["ref"] = {"fcgr": im1, "b": ref_b, "e": ref_e, "seq_len": len(self.t3_ds["1"].seq)}
 
             # the sliding sequence
-            for i in range(int(t3_step_length)):
-                self._t3_progress = (i + 3) / (int(t3_step_length) + 2)
+            for i in range(t3_step_length):
+                self._t3_progress = (i + 3) / (t3_step_length + 2)
                 b2 = i * seg_size
                 e2 = (i + 1) * seg_size
                 cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
@@ -1410,7 +1412,7 @@ class App(ctk.CTk):
                 fcgrs_dict[i] = {"fcgr": im2, "b": b2, "e": e2, "seq_len": len(self.t3_ds["2"].seq),
                                  "diff": diff, "distance": dist}
 
-            with open(f"{path}/t3_run.pkl", 'wb') as f:
+            with open(f"{path}/fcgrs.pkl", 'wb') as f:
                 pickle.dump(fcgrs_dict, f)
 
         elif self.t3_use_rep_algo.get() == 1:
@@ -1429,6 +1431,9 @@ class App(ctk.CTk):
             self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
 
             # Display the 3d plot, image, and the chart
+            # TODO: Display 3d plot
+
+            # Display image and chart
             self.after_idle(lambda: self.t3_change_images(0, None))
 
     def t3_change_images(self, index, value):
@@ -1580,15 +1585,15 @@ class App(ctk.CTk):
         elif fig == self.t3_fcgr_fig:
             ax1, ax3 = fig.subplots(1, 2)
 
-            scale_1, scaling_1 = self._scaling(fcgrs["0"]["seq_len"])
-            b1 = fcgrs["0"]["b"]
-            e1 = fcgrs["0"]["e"]
+            scale_1, scaling_1 = self._scaling(fcgrs["ref"]["seq_len"])
+            b1 = fcgrs["ref"]["b"]
+            e1 = fcgrs["ref"]["e"]
             scale_2, scaling_2 = self._scaling(fcgrs[index]["seq_len"])
             b2 = fcgrs[index]["b"]
             e2 = fcgrs[index]["e"]
 
             # plot the data on the subplots
-            img1 = CGR.array2img(fcgrs["0"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img1 = CGR.array2img(fcgrs["ref"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
             img1 = Image.fromarray(img1)
             ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
@@ -1661,7 +1666,6 @@ class App(ctk.CTk):
 
             sc = ax.scatter(xs, ys, c=colors, s=30, picker=True, zorder=2)
 
-            ax.set_title("Distances by segment (line plot)")
             ax.set_xlabel("Segment index")
             ax.set_ylabel(f"{self.dist_metric.get()} distance")
 
@@ -1846,7 +1850,7 @@ class App(ctk.CTk):
         if panel_type == "fcgr":
             # If we are in third tab and no fcgrs_dict provided, load from pickle
             if fig_attr == "t3_fcgr_fig" and not fcgrs_dict:
-                with open(f"{self.temp_output_path}/t3_run/pickle/t3_run.pkl", 'rb') as handle:
+                with open(f"{self.temp_output_path}/t3_run/fcgrs.pkl", 'rb') as handle:
                     fcgrs_dict = pickle.load(handle)
             self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
         else:
