@@ -14,6 +14,7 @@ import tkinter.filedialog as fd
 import numpy as np
 from Bio import Entrez
 from PIL import Image
+from matplotlib.colors import to_rgba
 from sklearn.manifold import MDS
 from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 
@@ -43,6 +44,7 @@ COLORS = dict(
     TEXT_NORMAL_COLOR=ctk.ThemeManager.theme["CTkButton"]["text_color"],
     TEXT_DISABLE_COLOR="#707370",  # BTN_THEME.get("text_color_disabled", TEXT_NORMAL_COLOR)
     FRAME_COLOR="#707370",
+    FRAME_NORMAL_COLOR="#2B2B2B",
     FRAME_HOVER_COLOR="#444444",
     BORDER_COLOR="#333333", )
 KMERS = [str(i) for i in range(1, 9)]
@@ -140,7 +142,13 @@ class App(ctk.CTk):
         self.t3_cgr_distance_history = []
         self._t3_progress = 0.0
         self.t3_progress_bar = None
+
         self.t3_3d_display_frame = None
+        self.t3_3d_placeholder_label = None
+        self.t3_3d_fig = None
+        self.t3_3d_canvas = None
+        self._t3_mds_drawn = False
+        self.t3_mds_toolbar = None
 
         self.t3_fcgr_display_frame = None
         self.t3_fcgr_placeholder_label = None
@@ -562,32 +570,52 @@ class App(ctk.CTk):
                                               command=self.t3_use_rep_checkbox_event)
         t3_use_rep_checkbox.grid(row=2, column=0, columnspan=2, padx=(10, 0), pady=(10, 0), sticky="w")
         # Representative type
+        if self.t3_rep_type_combobox is not None and self.t3_rep_type_combobox.winfo_exists():
+            state = self.t3_rep_type_combobox.cget("state")
+        else:
+            state = "readonly"
         self.t3_rep_type_combobox = ctk.CTkComboBox(seq_frame, values=["RepSeg", "aRepSeg"],
                                                     variable=self.t3_rep_algo_type,
                                                     command=self.t3_rep_algo_change_event,
-                                                    state="readonly")
+                                                    state=state)
         self.t3_rep_type_combobox.grid(row=3, column=0, sticky="ew", padx=(10, 0), pady=(10, 0))
         # Representative number (for aRepSeg)
-        self.t3_rep_n_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_rep_number, state="disable",
-                                           text_color=COLORS["TEXT_DISABLE_COLOR"], )
+        if self.t3_rep_n_entry is not None and self.t3_rep_n_entry.winfo_exists():
+            text_color = self.t3_rep_n_entry.cget("text_color")
+            state = self.t3_rep_n_entry.cget("state")
+        else:
+            text_color = COLORS["TEXT_DISABLE_COLOR"]
+            state = "disable"
+        self.t3_rep_n_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_rep_number, state=state,
+                                           text_color=text_color, )
         self.t3_rep_n_entry.grid(row=3, column=1, sticky="ew", padx=(10, 10), pady=(10, 0))
 
         # Set start and end for the representative sequence
-        self.t3_start_label = ctk.CTkLabel(seq_frame, text="Start: ", font=HEADER_FONT,
-                                           text_color=COLORS["TEXT_DISABLE_COLOR"])
+        if self.t3_start_label is not None and self.t3_start_label.winfo_exists():
+            text_color = self.t3_start_label.cget("text_color")
+            state = self.t3_start_label.cget("state")
+        else:
+            text_color = COLORS["TEXT_DISABLE_COLOR"]
+            state = "disable"
+        self.t3_start_label = ctk.CTkLabel(seq_frame, text="Start: ", font=HEADER_FONT, text_color=text_color)
         self.t3_start_label.grid(row=4, column=0, sticky="w", padx=(10, 0), pady=(10, 0))
         self.t3_start_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].start_txt)
         self.t3_start_entry.bind('<FocusOut>', partial(self.t3_entry_change, "start"))
         self.t3_start_entry.bind('<Key-Return>', partial(self.t3_entry_change, "start"))
-        self.t3_start_entry.configure(state="disable")
+        self.t3_start_entry.configure(state=state)
         self.t3_start_entry.grid(row=5, column=0, sticky="ew", padx=(10, 0), pady=(0, 10))
-        self.t3_end_label = ctk.CTkLabel(seq_frame, text="End: ", font=HEADER_FONT,
-                                         text_color=COLORS["TEXT_DISABLE_COLOR"])
+        if self.t3_end_label is not None and self.t3_end_label.winfo_exists():
+            text_color = self.t3_end_label.cget("text_color")
+            state = self.t3_end_label.cget("state")
+        else:
+            text_color = COLORS["TEXT_DISABLE_COLOR"]
+            state = "disable"
+        self.t3_end_label = ctk.CTkLabel(seq_frame, text="End: ", font=HEADER_FONT, text_color=text_color)
         self.t3_end_label.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
         self.t3_end_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].end_txt)
         self.t3_end_entry.bind('<FocusOut>', partial(self.t3_entry_change, "end"))
         self.t3_end_entry.bind('<Key-Return>', partial(self.t3_entry_change, "end"))
-        self.t3_end_entry.configure(state="disable")
+        self.t3_end_entry.configure(state=state)
         self.t3_end_entry.grid(row=5, column=1, sticky="ew", padx=(10, 10), pady=(0, 10))
 
         # Frame for k-mer selection and distance selection
@@ -609,7 +637,11 @@ class App(ctk.CTk):
         (ctk.CTkEntry(segment_size_frame, textvariable=self.t3_segment_size)
          .grid(row=0, column=1, sticky="ew", padx=(0, 5), pady=(10, 0)))
 
-        self.t3_seq_len_label = ctk.CTkLabel(segment_size_frame, text="Sequence length=0", font=('Cambria', 10),
+        if self.t3_seq_len_label is not None and self.t3_seq_len_label.winfo_exists():
+            text = self.t3_seq_len_label.cget("text")
+        else:
+            text = "Sequence length=0"
+        self.t3_seq_len_label = ctk.CTkLabel(segment_size_frame, text=text, font=('Cambria', 10),
                                              text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
         self.t3_seq_len_label.grid(row=1, column=1, sticky="ew", padx=(5, 5), pady=(0, 0))
         self.t3_seq_len_label.grid_propagate(False)
@@ -667,9 +699,22 @@ class App(ctk.CTk):
 
         # Display frame
         # 3D frame
-        self.t3_3d_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, fg_color="transparent",
+        self.t3_3d_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, fg_color=COLORS["FRAME_NORMAL_COLOR"],
                                                 border_width=1, border_color=COLORS["BORDER_COLOR"])
         self.t3_3d_display_frame.grid(row=0, column=0, padx=(5, 0), pady=(5, 0), sticky="nsew")
+        self.t3_3d_display_frame.grid_columnconfigure(0, weight=1)
+        self.t3_3d_display_frame.grid_rowconfigure(0, weight=1)
+        self.t3_3d_display_frame.grid_propagate(False)
+
+        self.t3_3d_placeholder_label = ctk.CTkLabel(master=self.t3_3d_display_frame, text="Display Area",
+                                                    font=HEADER_FONT, text_color=COLORS["FRAME_COLOR"])
+        self.t3_3d_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
+        if getattr(self, "t3_3d_fig", None) is not None:
+            # Create a new canvas for the existing figure, attached to the new frame
+            self.t3_3d_canvas = FigureCanvasTkAgg(self.t3_3d_fig, master=self.t3_3d_display_frame)
+            widget = self.t3_3d_canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t3_3d_canvas.draw()
 
         # FCGR frame
         self.t3_fcgr_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, fg_color=COLORS["FRAME_COLOR"],
@@ -1256,7 +1301,7 @@ class App(ctk.CTk):
             self.t3_end_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
         else:
             # Disable the algo type combobox
-            self.t3_rep_type_combobox.configure(state="disable")
+            self.t3_rep_type_combobox.configure(state="disabled")
             self.t3_rep_n_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
             # Enable start and end
             self.t3_start_label.configure(text_color=COLORS["TEXT_NORMAL_COLOR"])
@@ -1383,26 +1428,28 @@ class App(ctk.CTk):
         fcgrs_dict = {}
 
         if self.t3_use_rep_algo.get() == 0:
-            t3_step_length = np.floor(len(self.t3_ds["2"].seq) / seg_size)
+            t3_step_length = np.floor(len(self.t3_ds["1"].seq) / seg_size)
             t3_step_length = int(t3_step_length)
             self._t3_progress = 0.0
 
             ref_b = self._parse_int(self.t3_ds['2'].start_txt.get().strip())
             ref_e = self._parse_int(self.t3_ds['2'].end_txt.get().strip())
-            ref_cgr = CGR(self.t3_ds["1"].seq[ref_b:ref_e], self.k_var.get())
+            ref_cgr = CGR(self.t3_ds['2'].seq[ref_b:ref_e], self.k_var.get())
 
             self._t3_progress = 1.0 / (t3_step_length + 2)
             im1 = ref_cgr.get_fcgr()
             self._t3_progress = 2.0 / (t3_step_length + 2)
 
-            fcgrs_dict["ref"] = {"fcgr": im1, "b": ref_b, "e": ref_e, "seq_len": len(self.t3_ds["1"].seq)}
+            fcgrs_dict["ref"] = {"fcgr": im1, "b": ref_b, "e": ref_e, "seq_len": len(self.t3_ds["2"].seq)}
+
+            distance_matrix = np.zeros((t3_step_length, t3_step_length))
 
             # the sliding sequence
             for i in range(t3_step_length):
                 self._t3_progress = (i + 3) / (t3_step_length + 2)
                 b2 = i * seg_size
                 e2 = (i + 1) * seg_size
-                cgr2 = CGR(self.t3_ds["2"].seq[b2:e2], self.k_var.get())
+                cgr2 = CGR(self.t3_ds["1"].seq[b2:e2], self.k_var.get())
                 im2 = cgr2.get_fcgr()
 
                 diff = im2 - im1
@@ -1412,8 +1459,24 @@ class App(ctk.CTk):
                 fcgrs_dict[i] = {"fcgr": im2, "b": b2, "e": e2, "seq_len": len(self.t3_ds["2"].seq),
                                  "diff": diff, "distance": dist}
 
-            with open(f"{path}/fcgrs.pkl", 'wb') as f:
+                # Calculate pairwise distance between this new image and all previous images
+                for j in range(i + 1):
+                    distance_matrix[i, j] = get_dist(fcgrs_dict[i]["fcgr"], fcgrs_dict[j]["fcgr"],
+                                                     dist_m=self.dist_metric.get())
+                    distance_matrix[j, i] = distance_matrix[i, j]
+
+            ref_d = np.asarray(self.t3_cgr_distance_history, dtype=np.float32)  # (t3_step_length,)
+            D = np.zeros((t3_step_length + 1, t3_step_length + 1), dtype=np.float32)
+            # put reference-to-segment distances into first row/col
+            D[0, 1:] = ref_d
+            D[1:, 0] = ref_d
+            # put segment-to-segment distances into remaining cells
+            D[1:, 1:] = distance_matrix.astype(np.float32)
+
+            with open(f"{path}/t3_run.pkl", 'wb') as f:
                 pickle.dump(fcgrs_dict, f)
+            with open(f"{path}/t3_distance_matrix.pkl", 'wb') as f:
+                pickle.dump(D, f)
 
         elif self.t3_use_rep_algo.get() == 1:
             # TODO: need to fill the run for representative algorithm
@@ -1431,14 +1494,24 @@ class App(ctk.CTk):
             self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
 
             # Display the 3d plot, image, and the chart
-            # TODO: Display 3d plot
+            with open(f"{self.temp_output_path}/t3_run/t3_distance_matrix.pkl", 'rb') as handle:
+                D = pickle.load(handle)
+            # MDS (3d)
+            self._t3_mds_drawn = False
+            self._draw_panel(frame=self.t3_3d_display_frame, fig_attr="t3_3d_fig",
+                             canvas_attr="t3_3d_canvas", save_btn_attr="t3_3d_save_btn",
+                             save_command=lambda: self._save_figure("t3_3d_fig"),
+                             placeholder_attr="t3_3d_placeholder_label", fcgrs_dict=None, index=0, panel_type="mds",
+                             D=D)
 
             # Display image and chart
             self.after_idle(lambda: self.t3_change_images(0, None))
 
     def t3_change_images(self, index, value):
-        # plot distance results bar and first index is red
         index = round(value) if value is not None else index
+        # MDS change color
+        self._t3_mds_set_selected(index)
+        # FCGR image
         self._draw_panel(frame=self.t3_fcgr_display_frame, fig_attr="t3_fcgr_fig", canvas_attr="t3_fcgr_canvas",
                          save_btn_attr="t3_fcgr_save_btn", save_command=lambda: self._save_figure("t3_fcgr_fig"),
                          placeholder_attr="t3_fcgr_placeholder_label", fcgrs_dict=None, index=index)
@@ -1809,7 +1882,7 @@ class App(ctk.CTk):
             canvas.draw_idle()
 
     def _draw_panel(self, frame, fig_attr, canvas_attr, save_btn_attr, save_command, placeholder_attr, fcgrs_dict,
-                    index=None, panel_type="fcgr"):
+                    index=None, panel_type="fcgr", D=None):
         # --- 1) Figure setup ---
         bg = frame.cget("fg_color")
 
@@ -1838,24 +1911,49 @@ class App(ctk.CTk):
             setattr(self, canvas_attr, canvas)
 
             # --- Save button setup ---
-            save_btn = getattr(self, save_btn_attr, None)
-            if (save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame):
-                save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30, fg_color=COLORS["BORDER_COLOR"],
-                                         hover_color=COLORS["FRAME_HOVER_COLOR"], command=save_command, )
-                save_btn.place(relx=0.01, rely=0.99, anchor="sw")
-                setattr(self, save_btn_attr, save_btn)
+            if panel_type == "fcgr" or panel_type == "chart":
+                save_btn = getattr(self, save_btn_attr, None)
+                if (save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame):
+                    save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30,
+                                             fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                             command=save_command, )
+                    save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+                    setattr(self, save_btn_attr, save_btn)
+            else:
+                # TODO: need to add save, zoom, pan, reset buttons for 3d plot
+                pass
+                # if getattr(self, "t3_mds_toolbar", None) is None or not self.t3_mds_toolbar.winfo_exists():
+                #     bg = self._get_effective_bg_color(frame)  # MUST be hex after your converter
+                #
+                #     tb = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
+                #     tb.update()
+                #
+                #     self._configure_mds_toolbar(tb, frame_bg=bg, keep_buttons=("Home", "Pan", "Zoom", "Save"),
+                #                                 btn_bg=COLORS["BORDER_COLOR"], btn_active=COLORS["FRAME_HOVER_COLOR"])
+                #     # Put toolbar
+                #     frame.grid_columnconfigure(0, weight=1)
+                #     tb.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+                #     tb.configure(background=bg, bd=0, relief="flat", highlightthickness=0)
+                #
+                #     self.t3_mds_toolbar = tb
+                # # tb = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
+                # # tb.update()
+                # # tb.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+                # # self.mds_toolbar = tb
 
         # --- 3) Clear figure and re-plot ---
         fig.clear()
         if panel_type == "fcgr":
             # If we are in third tab and no fcgrs_dict provided, load from pickle
             if fig_attr == "t3_fcgr_fig" and not fcgrs_dict:
-                with open(f"{self.temp_output_path}/t3_run/fcgrs.pkl", 'rb') as handle:
+                with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as handle:
                     fcgrs_dict = pickle.load(handle)
             self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
-        else:
+        elif panel_type == "chart":
             dists = list(self.t3_cgr_distance_history)
             self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
+        elif panel_type == "mds":
+            self._plot_mds(fig=fig, bg=bg, D=D, index=index, canvas=canvas)
 
         # --- 4) Hide placeholder if present ---
         placeholder = getattr(self, placeholder_attr, None)
@@ -1867,6 +1965,206 @@ class App(ctk.CTk):
 
         # --- 5) Redraw canvas ---
         canvas.draw()
+
+    def _t3_mds_set_selected(self, index):
+        fig = getattr(self, "t3_3d_fig", None)
+        canvas = getattr(self, "t3_3d_canvas", None)
+        if fig is None or canvas is None or not fig.axes:
+            return
+
+        ax = fig.axes[0]
+
+        sc_seg = None
+        for col in ax.collections:
+            if col.get_gid() == "t3_mds_segments":
+                sc_seg = col
+                break
+        if sc_seg is None or not hasattr(sc_seg, "_t3_colors"):
+            return
+
+        n = sc_seg._t3_colors.shape[0]
+        try:
+            index = int(index)
+        except Exception:
+            index = 0
+        index = max(0, min(index, n - 1))
+
+        old = sc_seg._t3_selected_idx
+        if old == index:
+            return
+
+        # restore old selected color (unless it's hovered)
+        if sc_seg._t3_hovered_idx == old:
+            sc_seg._t3_colors[old] = sc_seg._t3_hover
+        else:
+            sc_seg._t3_colors[old] = sc_seg._t3_default
+
+        # set new selected color (unless it is hovered -> keep selected stronger)
+        sc_seg._t3_selected_idx = index
+        sc_seg._t3_colors[index] = sc_seg._t3_selected
+
+        sc_seg.set_facecolors(sc_seg._t3_colors)
+        canvas.draw_idle()
+
+    def _plot_mds(self, fig, bg, D, index, canvas):
+        # If already drawn, just update selection color and return
+        if getattr(self, "_t3_mds_drawn", False):
+            self._t3_mds_set_selected(index)
+            canvas.draw_idle()
+            return
+
+        D = np.asarray(D, dtype=float)
+        n_total = D.shape[0]  # (ref + segments)
+        n_seg = n_total - 1
+        if n_seg <= 0:
+            return
+        index = max(0, min(int(index), n_seg - 1))
+
+        # ---- Compute 3D MDS embedding once ----
+        mds = MDS(n_components=3, dissimilarity="precomputed", random_state=0)
+        X = mds.fit_transform(D)  # shape (n_total, 3)
+
+        X_ref = X[0]
+        X_seg = X[1:]  # shape (n_seg, 3) -> seg indices 0..n_seg-1
+
+        # ---- Draw ----
+        fig.clf()
+        fig.patch.set_facecolor(bg)
+
+        ax = fig.add_subplot(111, projection="3d")
+        ax.set_facecolor(bg)
+        ax.set_position([0.02, 0.02, 0.96, 0.96])
+
+        # Subtle grid
+        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+            axis._axinfo["grid"]["color"] = (0.4, 0.4, 0.4, 0.3)
+            axis._axinfo["grid"]["linewidth"] = 0.5
+            axis._axinfo["grid"]["linestyle"] = "-"
+
+        # Labels
+        label_tick_color = "black"
+        ax.set_xlabel("X", labelpad=0, size=5, color=label_tick_color)
+        ax.set_ylabel("Y", labelpad=0, size=5, color=label_tick_color)
+        ax.set_zlabel("Z", labelpad=0, size=5, color=label_tick_color)
+
+        # Tick params
+        ax.tick_params(axis="x", pad=0, labelsize=5)
+        ax.tick_params(axis="y", pad=0, labelsize=5)
+        ax.tick_params(axis="z", pad=0, labelsize=5)
+
+        for tick in ax.get_xticklabels():
+            tick.set_color(label_tick_color)
+        for tick in ax.get_yticklabels():
+            tick.set_color(label_tick_color)
+        for tick in ax.get_zticklabels():
+            tick.set_color(label_tick_color)
+
+        # ---- Colors ----
+        default_color = to_rgba("tab:blue")
+        selected_color = to_rgba("red")
+        hover_color = to_rgba("#CC8899")
+        ref_color = to_rgba("purple")
+
+        # ---- Reference point: separate artist, NOT pickable ----
+        sc_ref = ax.scatter(
+            [X_ref[0]], [X_ref[1]], [X_ref[2]],
+            c=[ref_color], s=60, picker=False, zorder=5
+        )
+        sc_ref.set_gid("t3_mds_ref")
+
+        # ---- Segment points: pickable ----
+        xs, ys, zs = X_seg[:, 0], X_seg[:, 1], X_seg[:, 2]
+
+        colors = np.tile(default_color, (n_seg, 1))
+        colors[index] = selected_color
+
+        sc_seg = ax.scatter(xs, ys, zs, s=30, picker=True)
+        sc_seg.set_gid("t3_mds_segments")
+        sc_seg.set_facecolors(colors)
+
+        # Store ONLY tiny state on the artist itself (not big arrays on self)
+        sc_seg._t3_colors = colors
+        sc_seg._t3_default = default_color
+        sc_seg._t3_selected = selected_color
+        sc_seg._t3_hover = hover_color
+        sc_seg._t3_selected_idx = index
+        sc_seg._t3_hovered_idx = None
+
+        # ---- Prevent duplicate callbacks (store cids on canvas, not on self) ----
+        if not hasattr(canvas, "_t3_mds_cids"):
+            canvas._t3_mds_cids = []
+        for cid in canvas._t3_mds_cids:
+            try:
+                canvas.mpl_disconnect(cid)
+            except Exception:
+                pass
+        canvas._t3_mds_cids = []
+
+        # ---- Pick ----
+        def on_pick(event):
+            if event.artist is not sc_seg:
+                return
+            if not hasattr(event, "ind") or event.ind is None or len(event.ind) == 0:
+                return
+
+            new_idx = int(event.ind[0])  # 0..n_seg-1
+            self.t3_pic_num.set(new_idx)
+            self.t3_change_images(new_idx, None)
+
+        canvas._t3_mds_cids.append(canvas.mpl_connect("pick_event", on_pick))
+
+        # ---- Hover ----
+        def _apply_colors():
+            sc_seg.set_facecolors(sc_seg._t3_colors)
+            canvas.draw_idle()
+
+        def on_motion(event):
+            if event.inaxes != ax:
+                # clear hover when leaving axes
+                if sc_seg._t3_hovered_idx is not None:
+                    i_old = sc_seg._t3_hovered_idx
+                    sc_seg._t3_hovered_idx = None
+                    # restore old hovered point color
+                    if i_old == sc_seg._t3_selected_idx:
+                        sc_seg._t3_colors[i_old] = sc_seg._t3_selected
+                    else:
+                        sc_seg._t3_colors[i_old] = sc_seg._t3_default
+                    _apply_colors()
+                return
+
+            contains, info = sc_seg.contains(event)
+            if not contains:
+                if sc_seg._t3_hovered_idx is not None:
+                    i_old = sc_seg._t3_hovered_idx
+                    sc_seg._t3_hovered_idx = None
+                    sc_seg._t3_colors[i_old] = (
+                        sc_seg._t3_selected if i_old == sc_seg._t3_selected_idx else sc_seg._t3_default
+                    )
+                    _apply_colors()
+                return
+
+            i_new = int(info["ind"][0])
+            if i_new == sc_seg._t3_hovered_idx:
+                return
+
+            # restore previous hovered
+            if sc_seg._t3_hovered_idx is not None:
+                i_old = sc_seg._t3_hovered_idx
+                sc_seg._t3_colors[i_old] = (
+                    sc_seg._t3_selected if i_old == sc_seg._t3_selected_idx else sc_seg._t3_default
+                )
+
+            # apply new hover (but don't override selected)
+            sc_seg._t3_hovered_idx = i_new
+            if i_new != sc_seg._t3_selected_idx:
+                sc_seg._t3_colors[i_new] = sc_seg._t3_hover
+
+            _apply_colors()
+
+        canvas._t3_mds_cids.append(canvas.mpl_connect("motion_notify_event", on_motion))
+
+        self._t3_mds_drawn = True
+        canvas.draw_idle()
 
     # --------------------------------------------------
     # Other functions
@@ -2186,6 +2484,105 @@ class App(ctk.CTk):
         self.t4_species_combobox.configure(values=folders)
         # add a value of 8 to BITS_DICT for this species
         # BITS_DICT.update({folder: 8 for folder in folders})
+
+    def _get_effective_bg_color(self, widget):
+        w = widget
+        while w is not None:
+            try:
+                raw = w.cget("fg_color")
+                color = self._resolve_ctk_color(raw)
+                if color is not None:
+                    return color
+            except Exception:
+                pass
+            w = w.master
+
+        # fallback
+        try:
+            return self._resolve_ctk_color(self.cget("fg_color")) or "#FFFFFF"
+        except Exception:
+            return "#FFFFFF"
+
+    def _resolve_ctk_color(self, color):
+        if color in (None, "transparent"):
+            return None
+
+        if isinstance(color, (list, tuple)) and len(color) == 2:
+            mode = ctk.get_appearance_mode()  # "Light" or "Dark"
+            color = color[0] if mode == "Light" else color[1]
+
+        # Convert Tk/CTk color name -> hex for Matplotlib
+        return self._tk_color_to_hex(color)
+
+    def _tk_color_to_hex(self, color):
+        if color is None:
+            return None
+
+        # already hex
+        if isinstance(color, str) and color.startswith("#") and len(color) in (7, 9):
+            return color[:7]  # ignore alpha if present
+
+        try:
+            r, g, b = self.winfo_rgb(color)  # 0..65535
+            return f"#{r // 256:02x}{g // 256:02x}{b // 256:02x}"
+        except Exception:
+            # fallback: return as-is (might still work for some names)
+            return color
+
+    def _configure_mds_toolbar(self, tb, frame_bg, keep_buttons=("Home", "Pan", "Zoom", "Save"),
+                               btn_bg="#E6E6E6", btn_active="#F2F2F2"):
+        try:
+            tb.configure(background=frame_bg, bd=0, relief="flat", highlightthickness=0)
+        except Exception:
+            pass
+
+        # Remove the status message area
+        if hasattr(tb, "_message_label") and tb._message_label is not None:
+            try:
+                tb._message_label.configure(background=frame_bg)
+                tb._message_label.pack_forget()
+            except Exception:
+                pass
+
+        # Walk children once: filter + style
+        for w in tb.winfo_children():
+            cls = w.winfo_class()
+
+            # Filter toolbar buttons
+            if cls == "Button":
+                txt = (w.cget("text") or "").strip()
+
+                # Hide unwanted buttons
+                if txt not in set(keep_buttons):
+                    try:
+                        w.pack_forget()
+                    except Exception:
+                        try:
+                            w.grid_forget()
+                        except Exception:
+                            pass
+                    continue
+
+                # Style kept buttons (make icons visible)
+                try:
+                    w.configure(background=btn_bg, activebackground=btn_active, relief="flat",
+                                borderwidth=0, highlightthickness=0, padx=4, pady=2)
+                except Exception:
+                    pass
+
+            # Internal frames/spacers: flatten & match bg
+            elif cls in ("Frame", "Labelframe"):
+                try:
+                    w.configure(background=frame_bg, bd=0, relief="flat", highlightthickness=0)
+                except Exception:
+                    pass
+
+            # Everything else: match bg
+            else:
+                try:
+                    w.configure(background=frame_bg)
+                except Exception:
+                    pass
 
 
 class GenerateSyntheticSequence(ctk.CTkToplevel):
