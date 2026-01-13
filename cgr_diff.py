@@ -4,6 +4,7 @@ import sys
 import threading
 import tkinter
 import tkinter.messagebox
+from collections import Counter
 from functools import partial
 import random
 
@@ -15,11 +16,13 @@ import numpy as np
 from Bio import Entrez
 from PIL import Image
 from matplotlib.colors import to_rgba
+from matplotlib.lines import Line2D
+from matplotlib.ticker import ScalarFormatter, MaxNLocator, FuncFormatter
 from sklearn.manifold import MDS
 from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, colors
 
 # Optional: adds hover tooltips for Matplotlib artists
 try:
@@ -46,8 +49,9 @@ COLORS = dict(
     FRAME_COLOR="#707370",
     FRAME_NORMAL_COLOR="#2B2B2B",
     FRAME_HOVER_COLOR="#444444",
-    BORDER_COLOR="#333333", )
-KMERS = [str(i) for i in range(1, 9)]
+    BORDER_COLOR="#333333",
+    LIGHT_FRAME_COLOR="#DBDBDB", )
+KMERS = [str(i) for i in range(1, 10)]
 DISTANCES = ["Normalized Euclidean", "Cosine", "Manhattan", "Descriptor", "DSSIM", "K-S", "Wasserstein"]
 RESOLUTION_DICT = {2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 4, 9: 4, 10: 4, 11: 4, 12: 4}
 PLOT_TYPES = ["Bar plot", "Line plot", "Histogram plot"]
@@ -126,12 +130,13 @@ class App(ctk.CTk):
 
         # Variables for page 3 (Common Reference)
         self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        self.t3_segment_size = tkinter.StringVar(value="")  # 500,000 for test
+        self.t3_segment_size = tkinter.StringVar(value="500,000")  # 500,000 for test
         self.t3_use_rep_algo = tkinter.IntVar(value=1)  # 0: use start and end, 1: use algo
         self.t3_rep_algo_type = tkinter.StringVar(value="RepSeg")  # Representation algorithm type
         self.t3_rep_number = tkinter.StringVar(value="1")  # Number of representations to generate
         self.t3_plot_type = tkinter.StringVar(value="Bar plot")
         self.t3_seq_len_label = None
+        self.t3_rep_len_label = None
         self.t3_rep_type_combobox = None
         self.t3_rep_n_entry = None
         self.t3_start_entry = None
@@ -557,7 +562,7 @@ class App(ctk.CTk):
                                                command=partial(self.t3_sequence_selection_event, "1"))
         t3_seq_combobox["1"].grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(10, 0))
 
-        (ctk.CTkLabel(seq_frame, text=f"Representative: ", font=HEADER_FONT_BOLD)
+        (ctk.CTkLabel(seq_frame, text=f"Reference: ", font=HEADER_FONT_BOLD)
          .grid(row=1, column=0, sticky="w", padx=(10, 0), pady=(30, 0)))
         t3_seq_combobox["2"] = ctk.CTkComboBox(seq_frame, values=self.file_names, state="readonly",
                                                variable=self.t3_ds['2'].seq_name,
@@ -565,7 +570,8 @@ class App(ctk.CTk):
         t3_seq_combobox["2"].grid(row=1, column=1, columnspan=2, sticky="ew", padx=(0, 10), pady=(30, 0))
 
         # Checkbox to use representative
-        t3_use_rep_checkbox = ctk.CTkCheckBox(master=seq_frame, text="Use Representative Algorithm",
+        t3_use_rep_checkbox = ctk.CTkCheckBox(master=seq_frame, text="Use representative algorithm to\n"
+                                                                     "choose the reference sequence",
                                               variable=self.t3_use_rep_algo,
                                               command=self.t3_use_rep_checkbox_event)
         t3_use_rep_checkbox.grid(row=2, column=0, columnspan=2, padx=(10, 0), pady=(10, 0), sticky="w")
@@ -590,13 +596,15 @@ class App(ctk.CTk):
                                            text_color=text_color, )
         self.t3_rep_n_entry.grid(row=3, column=1, sticky="ew", padx=(10, 10), pady=(10, 0))
 
-        # Set start and end for the representative sequence
+        # Set start and end for the Reference sequence
         if self.t3_start_label is not None and self.t3_start_label.winfo_exists():
             text_color = self.t3_start_label.cget("text_color")
             state = self.t3_start_label.cget("state")
         else:
             text_color = COLORS["TEXT_DISABLE_COLOR"]
             state = "disable"
+        self.t3_ds['2'].start_txt = tkinter.StringVar(value="200,000")
+        self.t3_ds['2'].end_txt = tkinter.StringVar(value="700,000")
         self.t3_start_label = ctk.CTkLabel(seq_frame, text="Start: ", font=HEADER_FONT, text_color=text_color)
         self.t3_start_label.grid(row=4, column=0, sticky="w", padx=(10, 0), pady=(10, 0))
         self.t3_start_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].start_txt)
@@ -617,6 +625,15 @@ class App(ctk.CTk):
         self.t3_end_entry.bind('<Key-Return>', partial(self.t3_entry_change, "end"))
         self.t3_end_entry.configure(state=state)
         self.t3_end_entry.grid(row=5, column=1, sticky="ew", padx=(10, 10), pady=(0, 10))
+
+        if self.t3_rep_len_label is not None and self.t3_rep_len_label.winfo_exists():
+            text = self.t3_rep_len_label.cget("text")
+        else:
+            text = "Reference length=0"
+        self.t3_rep_len_label = ctk.CTkLabel(seq_frame, text=text, font=('Cambria', 10),
+                                             text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
+        self.t3_rep_len_label.grid(row=6, column=0, columnspan=2, sticky="ew", padx=(15, 10), pady=(0, 10))
+        self.t3_rep_len_label.grid_propagate(False)
 
         # Frame for k-mer selection and distance selection
         # k-mer selection
@@ -680,8 +697,8 @@ class App(ctk.CTk):
 
         display_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
         display_frame.grid(row=1, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
-        display_frame.grid_columnconfigure(0, weight=1)
-        display_frame.grid_columnconfigure(1, weight=2)
+        display_frame.grid_columnconfigure(0, weight=2)
+        display_frame.grid_columnconfigure(1, weight=3)
         display_frame.grid_rowconfigure(0, weight=1)
         display_frame.grid_rowconfigure(1, weight=1)
         display_frame.grid_rowconfigure(2, weight=0, minsize=1)
@@ -699,15 +716,16 @@ class App(ctk.CTk):
 
         # Display frame
         # 3D frame
-        self.t3_3d_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, fg_color=COLORS["FRAME_NORMAL_COLOR"],
+        self.t3_3d_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, fg_color=COLORS["FRAME_COLOR"],
                                                 border_width=1, border_color=COLORS["BORDER_COLOR"])
         self.t3_3d_display_frame.grid(row=0, column=0, padx=(5, 0), pady=(5, 0), sticky="nsew")
         self.t3_3d_display_frame.grid_columnconfigure(0, weight=1)
         self.t3_3d_display_frame.grid_rowconfigure(0, weight=1)
+        self.t3_3d_display_frame.grid_rowconfigure(1, weight=1, minsize=1)
         self.t3_3d_display_frame.grid_propagate(False)
 
         self.t3_3d_placeholder_label = ctk.CTkLabel(master=self.t3_3d_display_frame, text="Display Area",
-                                                    font=HEADER_FONT, text_color=COLORS["FRAME_COLOR"])
+                                                    font=HEADER_FONT, text_color="black")
         self.t3_3d_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
         if getattr(self, "t3_3d_fig", None) is not None:
             # Create a new canvas for the existing figure, attached to the new frame
@@ -748,7 +766,8 @@ class App(ctk.CTk):
 
         # Plot frame
         self.t3_plot_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1,
-                                                  border_color=COLORS["BORDER_COLOR"], fg_color="white")
+                                                  border_color=COLORS["BORDER_COLOR"],
+                                                  fg_color=COLORS["LIGHT_FRAME_COLOR"])
         self.t3_plot_display_frame.grid(row=1, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
         self.t3_plot_display_frame.grid_columnconfigure(0, weight=1)
         self.t3_plot_display_frame.grid_rowconfigure(0, weight=1)
@@ -785,6 +804,12 @@ class App(ctk.CTk):
 
         self.t3_scale = ctk.CTkSlider(changing_frame, from_=0, orientation=ctk.HORIZONTAL, variable=self.t3_pic_num,
                                       command=partial(self.t3_change_images, self.t3_pic_num.get()))
+        if self.t3_cgr_distance_history:
+            self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))
+            # The scale should be at the last position
+            self.t3_scale.set(self.t3_pic_num.get())
+        else:
+            self.t3_scale.configure(to=0)
         self.t3_scale.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
         (ctk.CTkButton(changing_frame, text="⬅", width=20, command=partial(self.t3_move_previous, None))
          .grid(row=0, column=0, padx=(0, 0)))
@@ -793,10 +818,10 @@ class App(ctk.CTk):
 
         # Statistics frame
         stats_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
-                                   fg_color="transparent")
+                                   fg_color=COLORS["FRAME_COLOR"])
         stats_frame.grid(row=1, column=0, rowspan=2, padx=(5, 0), pady=(5, 5), sticky="nsew")
         stats_label = ctk.CTkLabel(stats_frame, text="Statistical Analysis", font=HEADER_FONT,
-                                   text_color=COLORS["FRAME_COLOR"])
+                                   text_color="black")
         stats_label.place(relx=0.5, rely=0.01, anchor="n")
 
     def _build_multispecies_comparator(self, parent):
@@ -931,8 +956,11 @@ class App(ctk.CTk):
         self.display_content_frame.grid_columnconfigure(1, weight=2)  # right (larger)
 
         # top histogram frame (full width)
-        self.hist_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=300)
+        self.hist_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=300,
+                                       fg_color=COLORS["LIGHT_FRAME_COLOR"], border_color=COLORS["BORDER_COLOR"])
         self.hist_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 5), )
+        self.hist_frame.grid_rowconfigure(0, weight=1)
+        self.hist_frame.grid_columnconfigure(0, weight=1)
         self.hist_frame.grid_propagate(False)
 
         # second frame (full width, below histogram)
@@ -956,9 +984,204 @@ class App(ctk.CTk):
         #  2) over representative and under representative analysis
         #  3) FCGR plot
         #  4) 3D FCGR plot
-        # 1) k-mer (k=3) frequency analysis
-        # self.kmer_freq = self._analyze_kmer_frequency(seq, k=3)
-        # self._draw_kmer_histogram()
+        # 3-mer frequency analysis histogram
+        k = 3
+        self._plot_kmer_histogram(self.hist_frame, seq, k)
+
+    def _plot_kmer_histogram(self, plot_frame, seq, k):
+        # Clear frame
+        for child in plot_frame.winfo_children():
+            child.destroy()
+
+        # Data
+        counts = self._count_kmers(seq, k)
+        labels = self._labels_kmers(k)
+        total = int(counts.sum())
+
+        subtitle = f"length: {len(seq):,}  |  valid 3-mers: {total:,}"
+
+        # Ensure frame has a real size
+        plot_frame.update_idletasks()
+        w = max(300, plot_frame.winfo_width())
+        h = max(200, plot_frame.winfo_height())
+
+        dpi = 120
+        fig = plt.Figure(figsize=(w / dpi, h / dpi), dpi=dpi)
+        bg = plot_frame.cget("fg_color")
+        fig.patch.set_facecolor(bg)
+        ax = fig.add_subplot(111)
+
+        # Plot
+        x = np.arange(64)
+        bars = ax.bar(x, counts, width=0.85)
+
+        fig.subplots_adjust(left=0.07, right=0.995, bottom=0.15, top=0.95)
+        fig.text(0.07, 1, subtitle, ha="left", va="top", fontsize=8)
+
+        # X-axis ticks (clean spacing, not glued to y-axis)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=60, ha="center", fontsize=7)
+        ax.tick_params(axis="x", pad=2)
+        ax.margins(x=0.01)
+        ax.set_xlim(-0.8, 63.8)
+
+        # Y-axis: plain numbers, correct formatting, smaller font
+        ax.ticklabel_format(axis="y", style="plain", useOffset=False)
+        ax.yaxis.get_offset_text().set_visible(False)
+
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{int(round(v)):,}"))
+
+        ax.tick_params(axis="y", labelsize=7)
+        ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.25)
+
+        # Embed into Tk frame
+        canvas = FigureCanvasTkAgg(fig, master=plot_frame)
+        widget = canvas.get_tk_widget()
+        plot_frame.grid_rowconfigure(0, weight=1)
+        plot_frame.grid_columnconfigure(0, weight=1)
+        widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+
+        # HOVER (my style)
+        if len(bars) > 0:
+            default_color = bars[0].get_facecolor()
+            hover_color = "#CC8899"
+            hovered = {"idx": None}
+
+            tooltip = ax.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points", ha="left",
+                                  va="bottom", fontsize=8, color="white",
+                                  bbox=dict(boxstyle="round,pad=0.35,rounding_size=0.15",
+                                            fc=(0.25, 0.25, 0.25, 0.90), ec=(1, 1, 1, 0.20), lw=0.8))
+            tooltip.set_visible(False)
+            tooltip.xyann = (12, 12)  # default offset
+
+            def on_motion(event):
+                if event.inaxes != ax:
+                    # leaving axes: restore and hide tooltip
+                    if hovered["idx"] is not None:
+                        bars[hovered["idx"]].set_facecolor(default_color)
+                        hovered["idx"] = None
+                        tooltip.set_visible(False)
+                        canvas.draw_idle()
+                    return
+
+                found_idx = None
+                for i, b in enumerate(bars):
+                    contains, _ = b.contains(event)
+                    if contains:
+                        found_idx = i
+                        break
+
+                # no change
+                if found_idx == hovered["idx"]:
+                    return
+
+                # restore previous hover color
+                if hovered["idx"] is not None:
+                    bars[hovered["idx"]].set_facecolor(default_color)
+
+                if found_idx is not None:
+                    # apply hover color
+                    bars[found_idx].set_facecolor(hover_color)
+                    # tooltip content + anchor near bar top
+                    tooltip.set_text(f"{labels[found_idx]}\n{int(counts[found_idx]):,}")
+                    tooltip.xy = (found_idx, counts[found_idx])
+                    tooltip.set_visible(True)
+
+                    # Keep tooltip inside axes bounds (robust, 2-pass)
+                    def _place_tooltip_inside_axes():
+                        tooltip.xyann = (12, 12)  # start default
+                        for _ in range(2):
+                            canvas.draw()  # force accurate bbox
+                            renderer = fig.canvas.get_renderer()
+
+                            bbox = tooltip.get_window_extent(renderer=renderer)
+                            ax_bbox = ax.get_window_extent(renderer=renderer)
+
+                            dx, dy = tooltip.xyann
+
+                            if bbox.x1 > ax_bbox.x1:
+                                dx = -bbox.width - 12
+                            if bbox.x0 < ax_bbox.x0:
+                                dx = 12
+
+                            if bbox.y1 > ax_bbox.y1:
+                                dy = -bbox.height - 12
+                            if bbox.y0 < ax_bbox.y0:
+                                dy = 12
+                            tooltip.xyann = (dx, dy)
+
+                    _place_tooltip_inside_axes()
+                else:
+                    tooltip.set_visible(False)
+
+                hovered["idx"] = found_idx
+                canvas.draw_idle()
+
+            canvas.mpl_connect("motion_notify_event", on_motion)
+
+        canvas.draw()
+
+    @staticmethod
+    def _count_kmers(seq, k):
+        seq = (seq or "").upper()
+        n = len(seq)
+        if k <= 0:
+            return np.array([], dtype=np.int64)
+
+        m = 4 ** k
+        if n < k:
+            return np.zeros(m, dtype=np.int64)
+
+        # ASCII -> 0..3 for A,C,G,T; invalid -> -1
+        table = np.full(256, -1, dtype=np.int8)
+        table[ord("A")] = 0
+        table[ord("C")] = 1
+        table[ord("G")] = 2
+        table[ord("T")] = 3
+
+        s = np.frombuffer(seq.encode("ascii", "ignore"), dtype=np.uint8)
+        x = table[s].astype(np.int16)  # -1 invalid
+        if x.size < k:
+            return np.zeros(m, dtype=np.int64)
+
+        # Valid windows: convolution over valid mask
+        valid = (x >= 0).astype(np.int8)
+        window_valid = np.convolve(valid, np.ones(k, dtype=np.int8), mode="valid") == k
+        if not np.any(window_valid):
+            return np.zeros(m, dtype=np.int64)
+
+        # Rolling base-4 code for each window, O(n*k)
+        # codes[i] = sum_{j=0..k-1} x[i+j] * 4^(k-1-j)
+        pow4 = (4 ** np.arange(k - 1, -1, -1, dtype=np.int64))  # [4^(k-1), ..., 1]
+        # Build windows via stride trick to avoid loops
+        shape = (x.size - k + 1, k)
+        strides = (x.strides[0], x.strides[0])
+        windows = np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
+
+        codes = (windows.astype(np.int64) * pow4).sum(axis=1)
+        codes = codes[window_valid]
+
+        counts = np.bincount(codes, minlength=m).astype(np.int64)
+        return counts
+
+    @staticmethod
+    def _labels_kmers(k):
+        if k <= 0:
+            return []
+
+        bases = np.array(list("ACGT"))
+        m = 4 ** k
+        labels = [""] * m
+
+        for code in range(m):
+            c = code
+            chars = []
+            for _ in range(k):
+                chars.append(bases[c % 4])
+                c //= 4
+            labels[code] = "".join(reversed(chars))
+        return labels
 
     # --------------------------------------------------
     # Helper functions for CGR comparator tab
@@ -1275,16 +1498,18 @@ class App(ctk.CTk):
         seq_len = len(sequence)
         if sender == "1":
             self.t3_ds['1'].seq = sequence
-            # Set the representative sequence as the sequence
+            # Set the Reference sequence as the sequence
             self.t3_ds['2'].seq = sequence
             self.t3_ds['2'].seq_name.set(value)
             # Set the sequence length
             self.t3_seq_len_label.configure(text=f"Sequence length={seq_len:,}")
+            self.t3_rep_len_label.configure(text=f"Reference length={seq_len:,}")
             self.t3_use_rep_algo.set(1)
             self.t3_use_rep_checkbox_event()
         elif sender == "2":
             self.t3_ds['2'].seq = sequence
             self.t3_ds['2'].seq_name.set(value)
+            self.t3_rep_len_label.configure(text=f"Reference length={seq_len:,}")
             self.t3_use_rep_algo.set(0)
             self.t3_use_rep_checkbox_event()
 
@@ -1383,7 +1608,7 @@ class App(ctk.CTk):
             end_str = self.t3_ds['2'].end_txt.get().strip()
             if start_str == "" or end_str == "":
                 return messagebox.showerror("Error", "Start and end values must be positive integers, "
-                                                     "within sequence length.")
+                                                     "within reference sequence length.")
             # Allow numbers with commas
             start = self._parse_int(start_str)
             end = self._parse_int(end_str)
@@ -1490,8 +1715,8 @@ class App(ctk.CTk):
             self.after(20, self.t3_check_thread)
         else:
             self.t3_progress_bar.set(1.0)
-            self.t3_pic_num.set(0)
             self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
+            self.t3_pic_num.set(0)
 
             # Display the 3d plot, image, and the chart
             with open(f"{self.temp_output_path}/t3_run/t3_distance_matrix.pkl", 'rb') as handle:
@@ -1635,7 +1860,9 @@ class App(ctk.CTk):
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
             ax1.set_title(f'Sequence 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
 
-            im2 = ax2.imshow(fcgrs['diff'], cmap='RdBu', norm=plt.Normalize(-100, 100), extent=extent)
+            import matplotlib.colors as mcolors
+            norm = mcolors.TwoSlopeNorm(vmin=-100, vcenter=0, vmax=100)
+            im2 = ax2.imshow(fcgrs['diff'], cmap='seismic', norm=norm, extent=extent)
             ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
             ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
 
@@ -1670,7 +1897,7 @@ class App(ctk.CTk):
             img1 = Image.fromarray(img1)
             ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax1.set_title(f'Representative \n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+            ax1.set_title(f'Reference\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
 
             img2 = CGR.array2img(fcgrs[index]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
             img2 = Image.fromarray(img2)
@@ -1892,6 +2119,8 @@ class App(ctk.CTk):
 
             if fig_attr == "t3_fcgr_fig" or fig_attr == "t3_plot_fig":
                 dpi = 80
+            elif fig_attr == "t3_3d_fig":
+                dpi = 150
             else:
                 dpi = 120
 
@@ -2021,7 +2250,7 @@ class App(ctk.CTk):
         index = max(0, min(int(index), n_seg - 1))
 
         # ---- Compute 3D MDS embedding once ----
-        mds = MDS(n_components=3, dissimilarity="precomputed", random_state=0)
+        mds = MDS(n_components=3, dissimilarity="precomputed", random_state=24)
         X = mds.fit_transform(D)  # shape (n_total, 3)
 
         X_ref = X[0]
@@ -2033,7 +2262,7 @@ class App(ctk.CTk):
 
         ax = fig.add_subplot(111, projection="3d")
         ax.set_facecolor(bg)
-        ax.set_position([0.02, 0.02, 0.96, 0.96])
+        ax.set_position([0.00, 0.05, 1.00, 0.95])
 
         # Subtle grid
         for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
@@ -2043,9 +2272,9 @@ class App(ctk.CTk):
 
         # Labels
         label_tick_color = "black"
-        ax.set_xlabel("X", labelpad=0, size=5, color=label_tick_color)
-        ax.set_ylabel("Y", labelpad=0, size=5, color=label_tick_color)
-        ax.set_zlabel("Z", labelpad=0, size=5, color=label_tick_color)
+        ax.set_xlabel("X", labelpad=-5, size=5, color=label_tick_color)
+        ax.set_ylabel("Y", labelpad=-5, size=5, color=label_tick_color)
+        ax.set_zlabel("Z", labelpad=-5, size=5, color=label_tick_color)
 
         # Tick params
         ax.tick_params(axis="x", pad=0, labelsize=5)
@@ -2065,20 +2294,13 @@ class App(ctk.CTk):
         hover_color = to_rgba("#CC8899")
         ref_color = to_rgba("purple")
 
-        # ---- Reference point: separate artist, NOT pickable ----
-        sc_ref = ax.scatter(
-            [X_ref[0]], [X_ref[1]], [X_ref[2]],
-            c=[ref_color], s=60, picker=False, zorder=5
-        )
-        sc_ref.set_gid("t3_mds_ref")
-
         # ---- Segment points: pickable ----
         xs, ys, zs = X_seg[:, 0], X_seg[:, 1], X_seg[:, 2]
 
         colors = np.tile(default_color, (n_seg, 1))
         colors[index] = selected_color
 
-        sc_seg = ax.scatter(xs, ys, zs, s=30, picker=True)
+        sc_seg = ax.scatter(xs, ys, zs, s=30, picker=True, depthshade=False)
         sc_seg.set_gid("t3_mds_segments")
         sc_seg.set_facecolors(colors)
 
@@ -2089,6 +2311,11 @@ class App(ctk.CTk):
         sc_seg._t3_hover = hover_color
         sc_seg._t3_selected_idx = index
         sc_seg._t3_hovered_idx = None
+
+        # ---- Reference point: separate artist ----
+        sc_ref = ax.scatter([X_ref[0]], [X_ref[1]], [X_ref[2]],
+                            c=[ref_color], s=60, picker=False, zorder=5, marker='*')
+        sc_ref.set_gid("t3_mds_ref")
 
         # ---- Prevent duplicate callbacks (store cids on canvas, not on self) ----
         if not hasattr(canvas, "_t3_mds_cids"):
@@ -2165,6 +2392,12 @@ class App(ctk.CTk):
 
         self._t3_mds_drawn = True
         canvas.draw_idle()
+
+        legend_elements = [Line2D([0], [0], marker='*', color='none', markerfacecolor=ref_color,
+                                  markeredgecolor=ref_color, markersize=6, label='Reference'), ]
+
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=6,
+                  frameon=False, bbox_to_anchor=(1.30, 1.0), handletextpad=0.3, handlelength=1.0)
 
     # --------------------------------------------------
     # Other functions
