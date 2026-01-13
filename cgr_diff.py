@@ -104,10 +104,18 @@ class App(ctk.CTk):
         self.file_names = []  # list of uploaded fasta file names (without paths)
         self.file_cards = []  # list of card widgets corresponding to uploaded files
         self.selected_file_index = None  # index of currently selected file in uploaded_files (or None)
-        self.display_content_frame = None  # frame in the right panel to hold analysis sub-frames
 
-        self.k_var = ctk.IntVar(value=6)  # k-mer selection variable
+        self.k_var = ctk.IntVar(value=9)  # k-mer selection variable
         self.dist_metric = tkinter.StringVar(value="DSSIM")  # distance metric selection variable
+
+        # Variables for page 1 (CGR Analysis)
+        self._t1_last_seq = None
+        self.t1_hist_frame = None
+        self.t1_placeholder_label = None
+        self.t1_hist_fig = None
+        self.t1_hist_canvas = None
+        self.t1_hist_save_btn = None
+        self._t1_hist_cids = []
 
         # Variables for page 2 (CGR Comparator)
         self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
@@ -130,7 +138,7 @@ class App(ctk.CTk):
 
         # Variables for page 3 (Common Reference)
         self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
-        self.t3_segment_size = tkinter.StringVar(value="500,000")  # 500,000 for test
+        self.t3_segment_size = tkinter.StringVar(value="")  # 500,000 for test
         self.t3_use_rep_algo = tkinter.IntVar(value=1)  # 0: use start and end, 1: use algo
         self.t3_rep_algo_type = tkinter.StringVar(value="RepSeg")  # Representation algorithm type
         self.t3_rep_number = tkinter.StringVar(value="1")  # Number of representations to generate
@@ -267,8 +275,13 @@ class App(ctk.CTk):
                                                border_color=COLORS["BORDER_COLOR"], label_text=" Display Area ")
         display_frame.grid(row=0, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
         display_frame.grid_columnconfigure(0, weight=1)
-        self.display_content_frame = display_frame
         # self._enable_display_scroll_wheel()
+        # grid configuration for display content:
+        display_frame.grid_rowconfigure(0, weight=1)
+        display_frame.grid_rowconfigure(1, weight=1)
+        display_frame.grid_rowconfigure(2, weight=1)
+        display_frame.grid_columnconfigure(0, weight=1)  # left
+        display_frame.grid_columnconfigure(1, weight=2)  # right (larger)
 
         # ---------- Designing the config frame (F1) ----------
         # top buttons
@@ -341,6 +354,38 @@ class App(ctk.CTk):
         run_btn = ctk.CTkButton(bottom_btn_frame, text="Run Analysis", corner_radius=8, height=35, font=HEADER_FONT,
                                 command=self._run_analysis_selected_file, )
         run_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
+
+        # ---------- Right panel design ----------
+        # top histogram frame (full width)
+        self.t1_hist_frame = ctk.CTkFrame(display_frame, height=300, fg_color="transparent")
+        self.t1_hist_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 5), )
+        self.t1_hist_frame.grid_rowconfigure(0, weight=1)
+        self.t1_hist_frame.grid_columnconfigure(0, weight=1)
+        self.t1_hist_frame.grid_propagate(False)
+
+        # If we have previous results, redraw using _draw_panel so hover gets reconnected
+        if getattr(self, "_t1_last_seq", None) is not None:
+            self.t1_hist_frame.configure(fg_color=COLORS["LIGHT_FRAME_COLOR"], corner_radius=8, border_width=1,
+                                         border_color=COLORS["BORDER_COLOR"])
+            self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
+                             save_btn_attr="t1_hist_save_btn", save_command=partial(self._save_figure, "t1_hist_fig"),
+                             placeholder_attr=None, fcgrs_dict={"seq": self._t1_last_seq, "k": 3},
+                             panel_type="kmer_hist", )
+
+        # second frame (full width, below histogram)
+        self.middle_frame = ctk.CTkFrame(display_frame, height=300)
+        self.middle_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=5, )
+        self.middle_frame.grid_propagate(False)
+
+        # bottom-left frame (smaller)
+        self.bottom_left_frame = ctk.CTkFrame(display_frame, height=400)
+        self.bottom_left_frame.grid(row=2, column=0, sticky="nsew", padx=(10, 5), pady=(5, 10), )
+        self.bottom_left_frame.grid_propagate(False)
+
+        # bottom-right frame (larger)
+        self.bottom_right_frame = ctk.CTkFrame(display_frame, height=400)
+        self.bottom_right_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 10), pady=(5, 10), )
+        self.bottom_right_frame.grid_propagate(False)
 
     def _build_cgr_comparator(self, parent):
         parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
@@ -603,8 +648,8 @@ class App(ctk.CTk):
         else:
             text_color = COLORS["TEXT_DISABLE_COLOR"]
             state = "disable"
-        self.t3_ds['2'].start_txt = tkinter.StringVar(value="200,000")
-        self.t3_ds['2'].end_txt = tkinter.StringVar(value="700,000")
+        # self.t3_ds['2'].start_txt = tkinter.StringVar(value="200,000")
+        # self.t3_ds['2'].end_txt = tkinter.StringVar(value="700,000")
         self.t3_start_label = ctk.CTkLabel(seq_frame, text="Start: ", font=HEADER_FONT, text_color=text_color)
         self.t3_start_label.grid(row=4, column=0, sticky="w", padx=(10, 0), pady=(10, 0))
         self.t3_start_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].start_txt)
@@ -939,45 +984,12 @@ class App(ctk.CTk):
             return
 
         name, seq = self._read_fasta(path)
+        self._t1_last_seq = seq
         if not seq:
             messagebox.showinfo("Error", "The selected FASTA file contains no sequence data.")
             return
 
         # ----- build / rebuild layout in the scrollable right panel -----
-        # clear old content
-        for child in self.display_content_frame.winfo_children():
-            child.destroy()
-
-        # grid configuration for display content:
-        self.display_content_frame.grid_rowconfigure(0, weight=1)
-        self.display_content_frame.grid_rowconfigure(1, weight=1)
-        self.display_content_frame.grid_rowconfigure(2, weight=1)
-        self.display_content_frame.grid_columnconfigure(0, weight=1)  # left
-        self.display_content_frame.grid_columnconfigure(1, weight=2)  # right (larger)
-
-        # top histogram frame (full width)
-        self.hist_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=300,
-                                       fg_color=COLORS["LIGHT_FRAME_COLOR"], border_color=COLORS["BORDER_COLOR"])
-        self.hist_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 5), )
-        self.hist_frame.grid_rowconfigure(0, weight=1)
-        self.hist_frame.grid_columnconfigure(0, weight=1)
-        self.hist_frame.grid_propagate(False)
-
-        # second frame (full width, below histogram)
-        self.middle_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=300)
-        self.middle_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=5, )
-        self.middle_frame.grid_propagate(False)
-
-        # bottom-left frame (smaller)
-        self.bottom_left_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=400)
-        self.bottom_left_frame.grid(row=2, column=0, sticky="nsew", padx=(10, 5), pady=(5, 10), )
-        self.bottom_left_frame.grid_propagate(False)
-
-        # bottom-right frame (larger)
-        self.bottom_right_frame = ctk.CTkFrame(self.display_content_frame, corner_radius=8, border_width=1, height=400)
-        self.bottom_right_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 10), pady=(5, 10), )
-        self.bottom_right_frame.grid_propagate(False)
-
         # ---- the analysis goes here ----
         # TODO: implement the analysis and plotting functions :
         #  1) k-mer analysis
@@ -985,34 +997,40 @@ class App(ctk.CTk):
         #  3) FCGR plot
         #  4) 3D FCGR plot
         # 3-mer frequency analysis histogram
-        k = 3
-        self._plot_kmer_histogram(self.hist_frame, seq, k)
+        # set t1_hist_frame color and border
+        self.t1_hist_frame.configure(corner_radius=8, border_width=1, height=300, fg_color=COLORS["LIGHT_FRAME_COLOR"],
+                                     border_color=COLORS["BORDER_COLOR"])
+        self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
+                         save_btn_attr="t1_hist_save_btn", save_command=lambda: self._save_figure("t1_hist_fig"),
+                         placeholder_attr=None, fcgrs_dict={"seq": seq, "k": 3}, panel_type="kmer_hist", )
 
-    def _plot_kmer_histogram(self, plot_frame, seq, k):
-        # Clear frame
-        for child in plot_frame.winfo_children():
-            child.destroy()
+    def _t1_disconnect_hist_events(self):
+        if getattr(self, "t1_hist_canvas", None) is not None:
+            for cid in getattr(self, "_t1_hist_cids", []):
+                try:
+                    self.t1_hist_canvas.mpl_disconnect(cid)
+                except Exception:
+                    pass
+        self._t1_hist_cids = []
+
+    def _plot_kmer_histogram(self, fig, bg, seq, k, canvas):
+        # avoid duplicate hover handlers
+        self._t1_disconnect_hist_events()
 
         # Data
         counts = self._count_kmers(seq, k)
         labels = self._labels_kmers(k)
         total = int(counts.sum())
+        subtitle = f"length: {len(seq):,}  |  valid {k}-mers: {total:,}"
 
-        subtitle = f"length: {len(seq):,}  |  valid 3-mers: {total:,}"
-
-        # Ensure frame has a real size
-        plot_frame.update_idletasks()
-        w = max(300, plot_frame.winfo_width())
-        h = max(200, plot_frame.winfo_height())
-
-        dpi = 120
-        fig = plt.Figure(figsize=(w / dpi, h / dpi), dpi=dpi)
-        bg = plot_frame.cget("fg_color")
+        # Clear and axes
+        fig.clf()
         fig.patch.set_facecolor(bg)
         ax = fig.add_subplot(111)
+        ax.set_facecolor(bg)
 
         # Plot
-        x = np.arange(64)
+        x = np.arange(len(counts))  # 64 for k=3
         bars = ax.bar(x, counts, width=0.85)
 
         fig.subplots_adjust(left=0.07, right=0.995, bottom=0.15, top=0.95)
@@ -1023,7 +1041,7 @@ class App(ctk.CTk):
         ax.set_xticklabels(labels, rotation=60, ha="center", fontsize=7)
         ax.tick_params(axis="x", pad=2)
         ax.margins(x=0.01)
-        ax.set_xlim(-0.8, 63.8)
+        ax.set_xlim(-0.8, len(counts) - 0.2)
 
         # Y-axis: plain numbers, correct formatting, smaller font
         ax.ticklabel_format(axis="y", style="plain", useOffset=False)
@@ -1035,14 +1053,7 @@ class App(ctk.CTk):
         ax.tick_params(axis="y", labelsize=7)
         ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.25)
 
-        # Embed into Tk frame
-        canvas = FigureCanvasTkAgg(fig, master=plot_frame)
-        widget = canvas.get_tk_widget()
-        plot_frame.grid_rowconfigure(0, weight=1)
-        plot_frame.grid_columnconfigure(0, weight=1)
-        widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-
-        # HOVER (my style)
+        # HOVER
         if len(bars) > 0:
             default_color = bars[0].get_facecolor()
             hover_color = "#CC8899"
@@ -1072,7 +1083,6 @@ class App(ctk.CTk):
                         found_idx = i
                         break
 
-                # no change
                 if found_idx == hovered["idx"]:
                     return
 
@@ -1118,9 +1128,10 @@ class App(ctk.CTk):
                 hovered["idx"] = found_idx
                 canvas.draw_idle()
 
-            canvas.mpl_connect("motion_notify_event", on_motion)
+            cid = canvas.mpl_connect("motion_notify_event", on_motion)
+            self._t1_hist_cids.append(cid)
 
-        canvas.draw()
+        canvas.draw_idle()
 
     @staticmethod
     def _count_kmers(seq, k):
@@ -2344,7 +2355,7 @@ class App(ctk.CTk):
             setattr(self, canvas_attr, canvas)
 
             # --- Save button setup ---
-            if panel_type == "fcgr" or panel_type == "chart":
+            if panel_type in ("fcgr", "chart", "kmer_hist"):
                 save_btn = getattr(self, save_btn_attr, None)
                 if (save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame):
                     save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30,
@@ -2387,14 +2398,19 @@ class App(ctk.CTk):
             self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
         elif panel_type == "mds":
             self._plot_mds(fig=fig, bg=bg, D=D, index=index, canvas=canvas)
+        elif panel_type == "kmer_hist":
+            seq = fcgrs_dict["seq"]
+            k = fcgrs_dict["k"]
+            self._plot_kmer_histogram(fig=fig, bg=bg, seq=seq, k=k, canvas=canvas)
 
         # --- 4) Hide placeholder if present ---
-        placeholder = getattr(self, placeholder_attr, None)
-        if placeholder is not None and placeholder.winfo_exists():
-            try:
-                placeholder.place_forget()
-            except Exception:
-                pass
+        if placeholder_attr:
+            placeholder = getattr(self, placeholder_attr, None)
+            if placeholder is not None and placeholder.winfo_exists():
+                try:
+                    placeholder.place_forget()
+                except Exception:
+                    pass
 
         # --- 5) Redraw canvas ---
         canvas.draw()
