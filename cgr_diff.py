@@ -1759,159 +1759,6 @@ class App(ctk.CTk):
             pic_num.set(pic_num.get() + 1)
             self.t3_change_images(pic_num.get(), None)
 
-    # --------------------------------------------------
-    # General helper functions
-    # --------------------------------------------------
-    @staticmethod
-    def _resource_path(relative_path):
-        """ Get absolute path to resource, works for dev and for PyInstaller """
-        if getattr(sys, 'frozen', False):  # If running as a bundled .app
-            base_path = sys._MEIPASS
-        else:
-            base_path = os.path.abspath(".")
-
-        return os.path.join(base_path, relative_path)
-
-    @staticmethod
-    def _read_fasta(file_path):
-        sequence = ""
-        record_count = 0
-        with open(file_path) as file:
-            for line in file:
-                line = line.strip()
-                if line.startswith(">"):
-                    record_count += 1
-                    if record_count > 1:
-                        raise ValueError("FASTA contains multiple records; expected exactly one.")
-                    file_name = (line[1:].split()[0] or "unknown")
-                else:
-                    sequence += line
-        return file_name, sequence
-
-    @staticmethod
-    def _reverse_complement(sequence):
-        complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
-        bases = [complement[base] for base in sequence]
-        bases = reversed(bases)
-        return ''.join(bases)
-
-    @staticmethod
-    def _scaling(chromosome_length):
-        scale = 1_000_000
-        while (chromosome_length / scale) < 2:
-            scale //= 1000
-        if scale == 1_000_000:
-            scaling = "Mbp"
-        elif scale == 1_000:
-            scaling = "Kbp"
-        else:
-            scaling = "bp"
-        return scale, scaling
-
-    @staticmethod
-    def _parse_int(text):
-        if text is None:
-            return None
-        cleaned = text.replace(",", "").strip()
-        return int(cleaned) if cleaned.isdigit() else None
-
-    @staticmethod
-    def _format_int(value):
-        return f"{value:,}"
-
-    def _save_figure(self, fig_attr):
-        fig = getattr(self, fig_attr, None)
-        if fig is None:
-            return messagebox.showerror("Error", "No figure to save. Please plot first.")
-
-        file_path = fd.asksaveasfilename(defaultextension=".png",
-                                         filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf"),
-                                                    ("SVG Image", "*.svg"), ("All Files", "*.*")],
-                                         title="Save figure")
-        if not file_path:
-            return  # user cancelled
-
-        try:
-            fig.savefig(file_path, dpi=300, bbox_inches="tight")
-        except Exception:
-            messagebox.showerror("Error", "Could not save figure.")
-
-    def _plot_fcgrs(self, fcgrs, bg=None, fig=None, index=0):
-        if fig is None:
-            fig = plt.Figure()
-        extent = (0, 1, 0, 1)
-        if bg is not None:
-            fig.patch.set_facecolor(bg)
-
-        if fig == self.t2_fig:
-            ax1, ax2, ax3 = fig.subplots(1, 3)
-
-            scale_1, scaling_1 = self._scaling(fcgrs["1"]["seq_len"])
-            b1 = fcgrs["1"]["b"]
-            e1 = fcgrs["1"]["e"]
-            scale_2, scaling_2 = self._scaling(fcgrs["2"]["seq_len"])
-            b2 = fcgrs["2"]["b"]
-            e2 = fcgrs["2"]["e"]
-
-            # plot the data on the subplots
-            img1 = CGR.array2img(fcgrs["1"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-            img1 = Image.fromarray(img1)
-            ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
-            ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax1.set_title(f'Sequence 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
-
-            import matplotlib.colors as mcolors
-            norm = mcolors.TwoSlopeNorm(vmin=-100, vcenter=0, vmax=100)
-            im2 = ax2.imshow(fcgrs['diff'], cmap='seismic', norm=norm, extent=extent)
-            ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
-
-            img2 = CGR.array2img(fcgrs["2"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-            img2 = Image.fromarray(img2)
-            ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
-            ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax3.set_title(f'Sequence 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
-
-            # --- add color panel ---
-            fig.subplots_adjust(bottom=0.2)  # Adjust the bottom margin
-            cbar_ax2 = fig.add_axes([0.36, 0.1, 0.3, 0.02])  # Adjust position as needed
-            cbar = fig.colorbar(im2, cax=cbar_ax2, orientation='horizontal')
-            cbar.set_label(f'Red: Greater k-mer value in Sequence 1 , Blue: Greater k-mer value in Sequence 2',
-                           fontsize=10)
-            cbar.ax.xaxis.set_label_position('top')  # Position label at top of colorbar
-            cbar.ax.xaxis.labelpad = 5
-            cbar.ax.tick_params(labelsize=8)
-
-        elif fig == self.t3_fcgr_fig:
-            ax1, ax3 = fig.subplots(1, 2)
-
-            scale_1, scaling_1 = self._scaling(fcgrs["ref"]["seq_len"])
-            b1 = fcgrs["ref"]["b"]
-            e1 = fcgrs["ref"]["e"]
-            scale_2, scaling_2 = self._scaling(fcgrs[index]["seq_len"])
-            b2 = fcgrs[index]["b"]
-            e2 = fcgrs[index]["e"]
-
-            # plot the data on the subplots
-            img1 = CGR.array2img(fcgrs["ref"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-            img1 = Image.fromarray(img1)
-            ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
-            ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax1.set_title(f'Reference\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
-
-            img2 = CGR.array2img(fcgrs[index]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-            img2 = Image.fromarray(img2)
-            ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
-            ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax3.set_title(f'Segment\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
-
-            # --- add distance text below both panels ---
-            fig.subplots_adjust(bottom=0.12)  # make room for the text
-            fig.text(0.5, 0.06, f"Distance = {round(fcgrs[index]['distance'], 4)}",
-                     ha="center", va="center", fontsize=14)
-
-        return fig
-
     def _t3_disconnect_plot_events(self):
         """Disconnect old mpl_connect callbacks for the Tab-3 distance plot."""
         if getattr(self, "_t3_plot_cids", None) and getattr(self, "t3_plot_canvas", None) is not None:
@@ -2107,93 +1954,6 @@ class App(ctk.CTk):
             self._t3_plot_cids.append(cid_motion)
 
             canvas.draw_idle()
-
-    def _draw_panel(self, frame, fig_attr, canvas_attr, save_btn_attr, save_command, placeholder_attr, fcgrs_dict,
-                    index=None, panel_type="fcgr", D=None):
-        # --- 1) Figure setup ---
-        bg = frame.cget("fg_color")
-
-        fig = getattr(self, fig_attr, None)
-        if fig is None:
-            frame.update_idletasks()
-
-            if fig_attr == "t3_fcgr_fig" or fig_attr == "t3_plot_fig":
-                dpi = 80
-            elif fig_attr == "t3_3d_fig":
-                dpi = 150
-            else:
-                dpi = 120
-
-            fig = plt.Figure(dpi=dpi)
-            fig.patch.set_facecolor(bg)
-            setattr(self, fig_attr, fig)
-
-        # --- 2) Canvas setup ---
-        canvas = getattr(self, canvas_attr, None)
-        needs_new_canvas = (canvas is None
-                            or not canvas.get_tk_widget().winfo_exists()
-                            or canvas.get_tk_widget().master is not frame)
-        if needs_new_canvas:
-            canvas = FigureCanvasTkAgg(fig, master=frame)
-            widget = canvas.get_tk_widget()
-            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-            setattr(self, canvas_attr, canvas)
-
-            # --- Save button setup ---
-            if panel_type == "fcgr" or panel_type == "chart":
-                save_btn = getattr(self, save_btn_attr, None)
-                if (save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame):
-                    save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30,
-                                             fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                             command=save_command, )
-                    save_btn.place(relx=0.01, rely=0.99, anchor="sw")
-                    setattr(self, save_btn_attr, save_btn)
-            else:
-                # TODO: need to add save, zoom, pan, reset buttons for 3d plot
-                pass
-                # if getattr(self, "t3_mds_toolbar", None) is None or not self.t3_mds_toolbar.winfo_exists():
-                #     bg = self._get_effective_bg_color(frame)  # MUST be hex after your converter
-                #
-                #     tb = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
-                #     tb.update()
-                #
-                #     self._configure_mds_toolbar(tb, frame_bg=bg, keep_buttons=("Home", "Pan", "Zoom", "Save"),
-                #                                 btn_bg=COLORS["BORDER_COLOR"], btn_active=COLORS["FRAME_HOVER_COLOR"])
-                #     # Put toolbar
-                #     frame.grid_columnconfigure(0, weight=1)
-                #     tb.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
-                #     tb.configure(background=bg, bd=0, relief="flat", highlightthickness=0)
-                #
-                #     self.t3_mds_toolbar = tb
-                # # tb = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
-                # # tb.update()
-                # # tb.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
-                # # self.mds_toolbar = tb
-
-        # --- 3) Clear figure and re-plot ---
-        fig.clear()
-        if panel_type == "fcgr":
-            # If we are in third tab and no fcgrs_dict provided, load from pickle
-            if fig_attr == "t3_fcgr_fig" and not fcgrs_dict:
-                with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as handle:
-                    fcgrs_dict = pickle.load(handle)
-            self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
-        elif panel_type == "chart":
-            dists = list(self.t3_cgr_distance_history)
-            self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
-        elif panel_type == "mds":
-            self._plot_mds(fig=fig, bg=bg, D=D, index=index, canvas=canvas)
-
-        # --- 4) Hide placeholder if present ---
-        placeholder = getattr(self, placeholder_attr, None)
-        if placeholder is not None and placeholder.winfo_exists():
-            try:
-                placeholder.place_forget()
-            except Exception:
-                pass
-
-        # --- 5) Redraw canvas ---
-        canvas.draw()
 
     def _t3_mds_set_selected(self, index):
         fig = getattr(self, "t3_3d_fig", None)
@@ -2398,6 +2158,246 @@ class App(ctk.CTk):
 
         ax.legend(handles=legend_elements, loc='upper right', fontsize=6,
                   frameon=False, bbox_to_anchor=(1.30, 1.0), handletextpad=0.3, handlelength=1.0)
+
+    # --------------------------------------------------
+    # General helper functions
+    # --------------------------------------------------
+    @staticmethod
+    def _resource_path(relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        if getattr(sys, 'frozen', False):  # If running as a bundled .app
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+
+    @staticmethod
+    def _read_fasta(file_path):
+        sequence = ""
+        record_count = 0
+        with open(file_path) as file:
+            for line in file:
+                line = line.strip()
+                if line.startswith(">"):
+                    record_count += 1
+                    if record_count > 1:
+                        raise ValueError("FASTA contains multiple records; expected exactly one.")
+                    file_name = (line[1:].split()[0] or "unknown")
+                else:
+                    sequence += line
+        return file_name, sequence
+
+    @staticmethod
+    def _reverse_complement(sequence):
+        complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
+        bases = [complement[base] for base in sequence]
+        bases = reversed(bases)
+        return ''.join(bases)
+
+    @staticmethod
+    def _scaling(chromosome_length):
+        scale = 1_000_000
+        while (chromosome_length / scale) < 2:
+            scale //= 1000
+        if scale == 1_000_000:
+            scaling = "Mbp"
+        elif scale == 1_000:
+            scaling = "Kbp"
+        else:
+            scaling = "bp"
+        return scale, scaling
+
+    @staticmethod
+    def _parse_int(text):
+        if text is None:
+            return None
+        cleaned = text.replace(",", "").strip()
+        return int(cleaned) if cleaned.isdigit() else None
+
+    @staticmethod
+    def _format_int(value):
+        return f"{value:,}"
+
+    def _save_figure(self, fig_attr):
+        fig = getattr(self, fig_attr, None)
+        if fig is None:
+            return messagebox.showerror("Error", "No figure to save. Please plot first.")
+
+        file_path = fd.asksaveasfilename(defaultextension=".png",
+                                         filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf"),
+                                                    ("SVG Image", "*.svg"), ("All Files", "*.*")],
+                                         title="Save figure")
+        if not file_path:
+            return  # user cancelled
+
+        try:
+            fig.savefig(file_path, dpi=300, bbox_inches="tight")
+        except Exception:
+            messagebox.showerror("Error", "Could not save figure.")
+
+    def _plot_fcgrs(self, fcgrs, bg=None, fig=None, index=0):
+        if fig is None:
+            fig = plt.Figure()
+        extent = (0, 1, 0, 1)
+        if bg is not None:
+            fig.patch.set_facecolor(bg)
+
+        if fig == self.t2_fig:
+            ax1, ax2, ax3 = fig.subplots(1, 3)
+
+            scale_1, scaling_1 = self._scaling(fcgrs["1"]["seq_len"])
+            b1 = fcgrs["1"]["b"]
+            e1 = fcgrs["1"]["e"]
+            scale_2, scaling_2 = self._scaling(fcgrs["2"]["seq_len"])
+            b2 = fcgrs["2"]["b"]
+            e2 = fcgrs["2"]["e"]
+
+            # plot the data on the subplots
+            img1 = CGR.array2img(fcgrs["1"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img1 = Image.fromarray(img1)
+            ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+            ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax1.set_title(f'Sequence 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+
+            import matplotlib.colors as mcolors
+            norm = mcolors.TwoSlopeNorm(vmin=-100, vcenter=0, vmax=100)
+            im2 = ax2.imshow(fcgrs['diff'], cmap='seismic', norm=norm, extent=extent)
+            ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
+
+            img2 = CGR.array2img(fcgrs["2"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img2 = Image.fromarray(img2)
+            ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+            ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax3.set_title(f'Sequence 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
+
+            # --- add color panel ---
+            fig.subplots_adjust(bottom=0.2)  # Adjust the bottom margin
+            cbar_ax2 = fig.add_axes([0.36, 0.1, 0.3, 0.02])  # Adjust position as needed
+            cbar = fig.colorbar(im2, cax=cbar_ax2, orientation='horizontal')
+            cbar.set_label(f'Red: Greater k-mer value in Sequence 1 , Blue: Greater k-mer value in Sequence 2',
+                           fontsize=10)
+            cbar.ax.xaxis.set_label_position('top')  # Position label at top of colorbar
+            cbar.ax.xaxis.labelpad = 5
+            cbar.ax.tick_params(labelsize=8)
+
+        elif fig == self.t3_fcgr_fig:
+            ax1, ax3 = fig.subplots(1, 2)
+
+            scale_1, scaling_1 = self._scaling(fcgrs["ref"]["seq_len"])
+            b1 = fcgrs["ref"]["b"]
+            e1 = fcgrs["ref"]["e"]
+            scale_2, scaling_2 = self._scaling(fcgrs[index]["seq_len"])
+            b2 = fcgrs[index]["b"]
+            e2 = fcgrs[index]["e"]
+
+            # plot the data on the subplots
+            img1 = CGR.array2img(fcgrs["ref"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img1 = Image.fromarray(img1)
+            ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+            ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax1.set_title(f'Reference\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+
+            img2 = CGR.array2img(fcgrs[index]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            img2 = Image.fromarray(img2)
+            ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+            ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax3.set_title(f'Segment\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
+
+            # --- add distance text below both panels ---
+            fig.subplots_adjust(bottom=0.12)  # make room for the text
+            fig.text(0.5, 0.06, f"Distance = {round(fcgrs[index]['distance'], 4)}",
+                     ha="center", va="center", fontsize=14)
+
+        return fig
+
+    def _draw_panel(self, frame, fig_attr, canvas_attr, save_btn_attr, save_command, placeholder_attr, fcgrs_dict,
+                    index=None, panel_type="fcgr", D=None):
+        # --- 1) Figure setup ---
+        bg = frame.cget("fg_color")
+
+        fig = getattr(self, fig_attr, None)
+        if fig is None:
+            frame.update_idletasks()
+
+            if fig_attr == "t3_fcgr_fig" or fig_attr == "t3_plot_fig":
+                dpi = 80
+            elif fig_attr == "t3_3d_fig":
+                dpi = 150
+            else:
+                dpi = 120
+
+            fig = plt.Figure(dpi=dpi)
+            fig.patch.set_facecolor(bg)
+            setattr(self, fig_attr, fig)
+
+        # --- 2) Canvas setup ---
+        canvas = getattr(self, canvas_attr, None)
+        needs_new_canvas = (canvas is None
+                            or not canvas.get_tk_widget().winfo_exists()
+                            or canvas.get_tk_widget().master is not frame)
+        if needs_new_canvas:
+            canvas = FigureCanvasTkAgg(fig, master=frame)
+            widget = canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            setattr(self, canvas_attr, canvas)
+
+            # --- Save button setup ---
+            if panel_type == "fcgr" or panel_type == "chart":
+                save_btn = getattr(self, save_btn_attr, None)
+                if (save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame):
+                    save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30,
+                                             fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                             command=save_command, )
+                    save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+                    setattr(self, save_btn_attr, save_btn)
+            else:
+                # TODO: need to add save, zoom, pan, reset buttons for 3d plot
+                pass
+                # if getattr(self, "t3_mds_toolbar", None) is None or not self.t3_mds_toolbar.winfo_exists():
+                #     bg = self._get_effective_bg_color(frame)  # MUST be hex after your converter
+                #
+                #     tb = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
+                #     tb.update()
+                #
+                #     self._configure_mds_toolbar(tb, frame_bg=bg, keep_buttons=("Home", "Pan", "Zoom", "Save"),
+                #                                 btn_bg=COLORS["BORDER_COLOR"], btn_active=COLORS["FRAME_HOVER_COLOR"])
+                #     # Put toolbar
+                #     frame.grid_columnconfigure(0, weight=1)
+                #     tb.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+                #     tb.configure(background=bg, bd=0, relief="flat", highlightthickness=0)
+                #
+                #     self.t3_mds_toolbar = tb
+                # # tb = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
+                # # tb.update()
+                # # tb.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+                # # self.mds_toolbar = tb
+
+        # --- 3) Clear figure and re-plot ---
+        fig.clear()
+        if panel_type == "fcgr":
+            # If we are in third tab and no fcgrs_dict provided, load from pickle
+            if fig_attr == "t3_fcgr_fig" and not fcgrs_dict:
+                with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as handle:
+                    fcgrs_dict = pickle.load(handle)
+            self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
+        elif panel_type == "chart":
+            dists = list(self.t3_cgr_distance_history)
+            self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
+        elif panel_type == "mds":
+            self._plot_mds(fig=fig, bg=bg, D=D, index=index, canvas=canvas)
+
+        # --- 4) Hide placeholder if present ---
+        placeholder = getattr(self, placeholder_attr, None)
+        if placeholder is not None and placeholder.winfo_exists():
+            try:
+                placeholder.place_forget()
+            except Exception:
+                pass
+
+        # --- 5) Redraw canvas ---
+        canvas.draw()
 
     # --------------------------------------------------
     # Other functions
