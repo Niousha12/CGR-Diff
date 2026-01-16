@@ -270,16 +270,12 @@ class App(ctk.CTk):
         config_frame.grid_rowconfigure(1, weight=1)  # row 1 is list_frame
         config_frame.grid_propagate(False)
         # ---------- Right panel (scrollable, only vertical) ----------
-        # TODO: not scrollable with mouse wheel
-        display_frame = ctk.CTkScrollableFrame(parent, border_width=1, corner_radius=8,
-                                               border_color=COLORS["BORDER_COLOR"], label_text=" Display Area ")
+        display_frame = ctk.CTkFrame(parent, border_width=1, corner_radius=8, border_color=COLORS["BORDER_COLOR"])
         display_frame.grid(row=0, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
         display_frame.grid_columnconfigure(0, weight=1)
-        # self._enable_display_scroll_wheel()
         # grid configuration for display content:
         display_frame.grid_rowconfigure(0, weight=1)
-        display_frame.grid_rowconfigure(1, weight=1)
-        display_frame.grid_rowconfigure(2, weight=1)
+        display_frame.grid_rowconfigure(1, weight=2)
         display_frame.grid_columnconfigure(0, weight=1)  # left
         display_frame.grid_columnconfigure(1, weight=2)  # right (larger)
 
@@ -357,11 +353,15 @@ class App(ctk.CTk):
 
         # ---------- Right panel design ----------
         # top histogram frame (full width)
-        self.t1_hist_frame = ctk.CTkFrame(display_frame, height=300, fg_color="transparent")
-        self.t1_hist_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 5), )
+        self.t1_hist_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
+        self.t1_hist_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=(5, 5), pady=(5, 0), )
         self.t1_hist_frame.grid_rowconfigure(0, weight=1)
         self.t1_hist_frame.grid_columnconfigure(0, weight=1)
         self.t1_hist_frame.grid_propagate(False)
+
+        self.t1_placeholder_label = ctk.CTkLabel(master=display_frame, text="Display Area",
+                                                 font=HEADER_FONT, text_color="white")
+        self.t1_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
         # If we have previous results, redraw using _draw_panel so hover gets reconnected
         if getattr(self, "_t1_last_seq", None) is not None:
@@ -369,22 +369,17 @@ class App(ctk.CTk):
                                          border_color=COLORS["BORDER_COLOR"])
             self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
                              save_btn_attr="t1_hist_save_btn", save_command=partial(self._save_figure, "t1_hist_fig"),
-                             placeholder_attr=None, fcgrs_dict={"seq": self._t1_last_seq, "k": 3},
+                             placeholder_attr="t1_placeholder_label", fcgrs_dict={"seq": self._t1_last_seq, "k": 3},
                              panel_type="kmer_hist", )
 
-        # second frame (full width, below histogram)
-        self.middle_frame = ctk.CTkFrame(display_frame, height=300)
-        self.middle_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=5, )
-        self.middle_frame.grid_propagate(False)
-
         # bottom-left frame (smaller)
-        self.bottom_left_frame = ctk.CTkFrame(display_frame, height=400)
-        self.bottom_left_frame.grid(row=2, column=0, sticky="nsew", padx=(10, 5), pady=(5, 10), )
+        self.bottom_left_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
+        self.bottom_left_frame.grid(row=1, column=0, sticky="nsew", padx=(5, 0), pady=(5, 10), )
         self.bottom_left_frame.grid_propagate(False)
 
         # bottom-right frame (larger)
-        self.bottom_right_frame = ctk.CTkFrame(display_frame, height=400)
-        self.bottom_right_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 10), pady=(5, 10), )
+        self.bottom_right_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
+        self.bottom_right_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 5), pady=(5, 10), )
         self.bottom_right_frame.grid_propagate(False)
 
     def _build_cgr_comparator(self, parent):
@@ -655,7 +650,7 @@ class App(ctk.CTk):
         self.t3_start_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].start_txt)
         self.t3_start_entry.bind('<FocusOut>', partial(self.t3_entry_change, "start"))
         self.t3_start_entry.bind('<Key-Return>', partial(self.t3_entry_change, "start"))
-        self.t3_start_entry.configure(state=state)
+        self.t3_start_entry.configure(state=state, text_color=text_color)
         self.t3_start_entry.grid(row=5, column=0, sticky="ew", padx=(10, 0), pady=(0, 10))
         if self.t3_end_label is not None and self.t3_end_label.winfo_exists():
             text_color = self.t3_end_label.cget("text_color")
@@ -668,7 +663,7 @@ class App(ctk.CTk):
         self.t3_end_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].end_txt)
         self.t3_end_entry.bind('<FocusOut>', partial(self.t3_entry_change, "end"))
         self.t3_end_entry.bind('<Key-Return>', partial(self.t3_entry_change, "end"))
-        self.t3_end_entry.configure(state=state)
+        self.t3_end_entry.configure(state=state, text_color=text_color)
         self.t3_end_entry.grid(row=5, column=1, sticky="ew", padx=(10, 10), pady=(0, 10))
 
         if self.t3_rep_len_label is not None and self.t3_rep_len_label.winfo_exists():
@@ -773,11 +768,15 @@ class App(ctk.CTk):
                                                     font=HEADER_FONT, text_color="black")
         self.t3_3d_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
         if getattr(self, "t3_3d_fig", None) is not None:
-            # Create a new canvas for the existing figure, attached to the new frame
-            self.t3_3d_canvas = FigureCanvasTkAgg(self.t3_3d_fig, master=self.t3_3d_display_frame)
-            widget = self.t3_3d_canvas.get_tk_widget()
-            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-            self.t3_3d_canvas.draw()
+            distance_path = f"{self.temp_output_path}/t3_run/t3_distance_matrix.pkl"
+            if os.path.exists(distance_path):
+                with open(distance_path, "rb") as handle:
+                    D = pickle.load(handle)
+            self._t3_mds_drawn = False  # force reconnect
+            self._draw_panel(frame=self.t3_3d_display_frame, fig_attr="t3_3d_fig", canvas_attr="t3_3d_canvas",
+                             save_btn_attr="t3_3d_save_btn", save_command=lambda: self._save_figure("t3_3d_fig"),
+                             placeholder_attr="t3_3d_placeholder_label", fcgrs_dict=None,
+                             index=int(self.t3_pic_num.get() or 0), panel_type="mds", D=D, )
 
         # FCGR frame
         self.t3_fcgr_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, fg_color=COLORS["FRAME_COLOR"],
@@ -878,8 +877,8 @@ class App(ctk.CTk):
     def _upload_files(self, hard_coded=False):
         if hard_coded:
             file_paths = [
-                "Data/Human/chromosomes/chr21.fna",
-                "Data/Escherichia coli/chromosomes/chrA.fna"
+                "Data/Human/chromosomes/Human-chr21.fna",
+                "Data/Escherichia coli/chromosomes/E coli-genome.fna"
             ]
         else:
             file_paths = filedialog.askopenfilenames(
@@ -911,6 +910,7 @@ class App(ctk.CTk):
 
         for i, path in enumerate(self.uploaded_files):
             fname = os.path.basename(path)
+            fname = fname.split(".")[0]
             self.file_names.append(fname)
 
             # card for each file
@@ -992,17 +992,16 @@ class App(ctk.CTk):
         # ----- build / rebuild layout in the scrollable right panel -----
         # ---- the analysis goes here ----
         # TODO: implement the analysis and plotting functions :
-        #  1) k-mer analysis
         #  2) over representative and under representative analysis
         #  3) FCGR plot
         #  4) 3D FCGR plot
         # 3-mer frequency analysis histogram
-        # set t1_hist_frame color and border
-        self.t1_hist_frame.configure(corner_radius=8, border_width=1, height=300, fg_color=COLORS["LIGHT_FRAME_COLOR"],
+        self.t1_hist_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["LIGHT_FRAME_COLOR"],
                                      border_color=COLORS["BORDER_COLOR"])
         self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
                          save_btn_attr="t1_hist_save_btn", save_command=lambda: self._save_figure("t1_hist_fig"),
-                         placeholder_attr=None, fcgrs_dict={"seq": seq, "k": 3}, panel_type="kmer_hist", )
+                         placeholder_attr="t1_placeholder_label", fcgrs_dict={"seq": seq, "k": 3},
+                         panel_type="kmer_hist", )
 
     def _t1_disconnect_hist_events(self):
         if getattr(self, "t1_hist_canvas", None) is not None:
@@ -1021,7 +1020,7 @@ class App(ctk.CTk):
         counts = self._count_kmers(seq, k)
         labels = self._labels_kmers(k)
         total = int(counts.sum())
-        subtitle = f"length: {len(seq):,}  |  valid {k}-mers: {total:,}"
+        subtitle = f"Length: {len(seq):,}  |  Valid {k}-mers: {total:,}  |  [Green: ≥ average frequency, Blue: < average frequency]"
 
         # Clear and axes
         fig.clf()
@@ -1031,7 +1030,15 @@ class App(ctk.CTk):
 
         # Plot
         x = np.arange(len(counts))  # 64 for k=3
-        bars = ax.bar(x, counts, width=0.85)
+
+        # avg + colors + avg line
+        avg = float(np.mean(counts)) if len(counts) else 0.0
+        colors = np.where(counts >= avg, "#2E8B57", "#3668A0")  # green / blue
+        bars = ax.bar(x, counts, width=0.85, color=colors)
+
+        ax.axhline(avg, linestyle="--", linewidth=1.0, alpha=0.8, color="#2B2B2B")
+        ax.text(0.99, avg, f"avg: {int(round(avg)):,}", ha="right", va="bottom",
+                fontsize=8, transform=ax.get_yaxis_transform())
 
         fig.subplots_adjust(left=0.07, right=0.995, bottom=0.15, top=0.95)
         fig.text(0.07, 1, subtitle, ha="left", va="top", fontsize=8)
@@ -1055,7 +1062,7 @@ class App(ctk.CTk):
 
         # HOVER
         if len(bars) > 0:
-            default_color = bars[0].get_facecolor()
+            base_colors = [b.get_facecolor() for b in bars]
             hover_color = "#CC8899"
             hovered = {"idx": None}
 
@@ -1070,7 +1077,7 @@ class App(ctk.CTk):
                 if event.inaxes != ax:
                     # leaving axes: restore and hide tooltip
                     if hovered["idx"] is not None:
-                        bars[hovered["idx"]].set_facecolor(default_color)
+                        bars[hovered["idx"]].set_facecolor(base_colors[hovered["idx"]])
                         hovered["idx"] = None
                         tooltip.set_visible(False)
                         canvas.draw_idle()
@@ -1088,7 +1095,7 @@ class App(ctk.CTk):
 
                 # restore previous hover color
                 if hovered["idx"] is not None:
-                    bars[hovered["idx"]].set_facecolor(default_color)
+                    bars[hovered["idx"]].set_facecolor(base_colors[hovered["idx"]])
 
                 if found_idx is not None:
                     # apply hover color
@@ -1531,18 +1538,18 @@ class App(ctk.CTk):
             if self.t3_rep_algo_type.get() == "aRepSeg":
                 self.t3_rep_n_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
             # Disable start and end
-            self.t3_start_label.configure(text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.t3_start_label.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
             self.t3_start_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
-            self.t3_end_label.configure(text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.t3_end_label.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
             self.t3_end_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
         else:
             # Disable the algo type combobox
             self.t3_rep_type_combobox.configure(state="disabled")
             self.t3_rep_n_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
             # Enable start and end
-            self.t3_start_label.configure(text_color=COLORS["TEXT_NORMAL_COLOR"])
+            self.t3_start_label.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
             self.t3_start_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
-            self.t3_end_label.configure(text_color=COLORS["TEXT_NORMAL_COLOR"])
+            self.t3_end_label.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
             self.t3_end_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
 
     def t3_rep_algo_change_event(self, value):
@@ -1692,7 +1699,7 @@ class App(ctk.CTk):
                 dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
                 self.t3_cgr_distance_history.append(dist)
 
-                fcgrs_dict[i] = {"fcgr": im2, "b": b2, "e": e2, "seq_len": len(self.t3_ds["2"].seq),
+                fcgrs_dict[i] = {"fcgr": im2, "b": b2, "e": e2, "seq_len": len(self.t3_ds["1"].seq),
                                  "diff": diff, "distance": dist}
 
                 # Calculate pairwise distance between this new image and all previous images
@@ -2064,6 +2071,7 @@ class App(ctk.CTk):
         selected_color = to_rgba("red")
         hover_color = to_rgba("#CC8899")
         ref_color = to_rgba("purple")
+        edge_color = to_rgba("#1E2A56")
 
         # ---- Segment points: pickable ----
         xs, ys, zs = X_seg[:, 0], X_seg[:, 1], X_seg[:, 2]
@@ -2071,7 +2079,7 @@ class App(ctk.CTk):
         colors = np.tile(default_color, (n_seg, 1))
         colors[index] = selected_color
 
-        sc_seg = ax.scatter(xs, ys, zs, s=30, picker=True, depthshade=False)
+        sc_seg = ax.scatter(xs, ys, zs, s=10, picker=True, depthshade=False, edgecolor=edge_color, linewidths=0.2)
         sc_seg.set_gid("t3_mds_segments")
         sc_seg.set_facecolors(colors)
 
@@ -2085,7 +2093,7 @@ class App(ctk.CTk):
 
         # ---- Reference point: separate artist ----
         sc_ref = ax.scatter([X_ref[0]], [X_ref[1]], [X_ref[2]],
-                            c=[ref_color], s=60, picker=False, zorder=5, marker='*')
+                            c=[ref_color], s=20, picker=False, zorder=5, marker='*')
         sc_ref.set_gid("t3_mds_ref")
 
         # ---- Prevent duplicate callbacks (store cids on canvas, not on self) ----
