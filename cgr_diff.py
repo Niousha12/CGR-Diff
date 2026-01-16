@@ -4,7 +4,6 @@ import sys
 import threading
 import tkinter
 import tkinter.messagebox
-from collections import Counter
 from functools import partial
 import random
 
@@ -17,14 +16,13 @@ from Bio import Entrez
 from PIL import Image
 from matplotlib.colors import to_rgba
 from matplotlib.lines import Line2D
-from matplotlib.ticker import ScalarFormatter, MaxNLocator, FuncFormatter
+from matplotlib.ticker import MaxNLocator, FuncFormatter
 from sklearn.manifold import MDS
 from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib import pyplot as plt, colors
 
-# Optional: adds hover tooltips for Matplotlib artists
 try:
     import mplcursors  # type: ignore
 except Exception:
@@ -162,6 +160,8 @@ class App(ctk.CTk):
         self.t3_3d_canvas = None
         self._t3_mds_drawn = False
         self.t3_mds_toolbar = None
+        self.t3_seg_info = None
+        self.t3_ref_info = None
 
         self.t3_fcgr_display_frame = None
         self.t3_fcgr_placeholder_label = None
@@ -1739,6 +1739,16 @@ class App(ctk.CTk):
             # Display the 3d plot, image, and the chart
             with open(f"{self.temp_output_path}/t3_run/t3_distance_matrix.pkl", 'rb') as handle:
                 D = pickle.load(handle)
+            with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", "rb") as f:
+                fcgrs_dict = pickle.load(f)
+
+            self.t3_seg_info = {k: {"b": v.get("b"), "e": v.get("e")}
+                                for k, v in fcgrs_dict.items() if isinstance(k, int) and isinstance(v, dict)}
+
+            ref = fcgrs_dict.get("ref")
+            self.t3_ref_info = {"b": ref.get("b"), "e": ref.get("e")} if isinstance(ref, dict) else None
+            del fcgrs_dict
+
             # MDS (3d)
             self._t3_mds_drawn = False
             self._draw_panel(frame=self.t3_3d_display_frame, fig_attr="t3_3d_fig",
@@ -2014,9 +2024,29 @@ class App(ctk.CTk):
         canvas.draw_idle()
 
     def _plot_mds(self, fig, bg, D, index, canvas):
+        def _t3_update_seg_legend(seg_index: int):
+            leg = getattr(canvas, "_t3_mds_legend", None)
+            if leg is None or not hasattr(leg, "_t3_seg_texts"):
+                return
+
+            sb = self.t3_seg_info[seg_index].get("b")
+            se = self.t3_seg_info[seg_index].get("e")
+            slen = se - sb
+
+            def _fmt(v):
+                return f"{v:,}" if isinstance(v, (int, np.integer)) else "—"
+
+            t_begin, t_end, t_len = leg._t3_seg_texts
+            t_begin.set_text(f"Start:    {_fmt(sb)}")
+            t_end.set_text(f"End:      {_fmt(se)}")
+            t_len.set_text(f"Length: {_fmt(slen)}")
+
+            canvas.draw_idle()
+
         # If already drawn, just update selection color and return
         if getattr(self, "_t3_mds_drawn", False):
             self._t3_mds_set_selected(index)
+            _t3_update_seg_legend(index)
             canvas.draw_idle()
             return
 
@@ -2040,7 +2070,7 @@ class App(ctk.CTk):
 
         ax = fig.add_subplot(111, projection="3d")
         ax.set_facecolor(bg)
-        ax.set_position([0.00, 0.05, 1.00, 0.95])
+        ax.set_position([0.05, 0.06, 1.0, 0.94])  # left bottom width height
 
         # Subtle grid
         for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
@@ -2116,6 +2146,7 @@ class App(ctk.CTk):
             new_idx = int(event.ind[0])  # 0..n_seg-1
             self.t3_pic_num.set(new_idx)
             self.t3_change_images(new_idx, None)
+            _t3_update_seg_legend(new_idx)
 
         canvas._t3_mds_cids.append(canvas.mpl_connect("pick_event", on_pick))
 
@@ -2170,13 +2201,52 @@ class App(ctk.CTk):
         canvas._t3_mds_cids.append(canvas.mpl_connect("motion_notify_event", on_motion))
 
         self._t3_mds_drawn = True
+
+        # Legend with segment and reference info
+        # Compute info
+        rb = self.t3_ref_info.get("b")
+        re = self.t3_ref_info.get("e")
+        rlen = re - rb
+
+        # Segment info (current selected index)
+        sb = self.t3_seg_info[index].get("b")
+        se = self.t3_seg_info[index].get("e")
+        slen = se - sb
+
+        def _fmt(v):
+            return f"{v:,}" if isinstance(v, (int, np.integer)) else "—"
+
+        legend_elements = [
+            Line2D([0], [0], marker='*', color='none',
+                   markerfacecolor=ref_color, markeredgecolor=ref_color,
+                   markersize=5, label="Reference"),
+            Line2D([], [], linestyle='none', label=f"Start:    {_fmt(rb)}"),
+            Line2D([], [], linestyle='none', label=f"End:      {_fmt(re)}"),
+            Line2D([], [], linestyle='none', label=f"Length: {_fmt(rlen)}"),
+
+            Line2D([0], [0], marker='o', color='none',
+                   markerfacecolor=selected_color, markeredgecolor=edge_color, markeredgewidth=0.4,
+                   markersize=4, label="Segment"),
+            Line2D([], [], linestyle='none', label=f"Start:    {_fmt(sb)}"),
+            Line2D([], [], linestyle='none', label=f"End:      {_fmt(se)}"),
+            Line2D([], [], linestyle='none', label=f"Length: {_fmt(slen)}"),
+        ]
+
+        leg = fig.legend(handles=legend_elements, fontsize=5, loc="upper left", bbox_to_anchor=(0.0, 1.00),
+                         frameon=True, labelspacing=0.25, borderpad=0.35, handlelength=0.8, handletextpad=0.4, )
+        # make legend background semi-transparent
+        frame = leg.get_frame()
+        frame.set_alpha(0.5)  # 0.0 = fully transparent, 1.0 = opaque
+        frame.set_facecolor("white")
+
+        # Text order matches the labels above.
+        texts = leg.get_texts()
+        # indices: 0="Reference", 1..3=ref lines, 4="Segment", 5..7=seg lines
+        leg._t3_ref_texts = texts[1:4]
+        leg._t3_seg_texts = texts[5:8]
+        canvas._t3_mds_legend = leg
+
         canvas.draw_idle()
-
-        legend_elements = [Line2D([0], [0], marker='*', color='none', markerfacecolor=ref_color,
-                                  markeredgecolor=ref_color, markersize=6, label='Reference'), ]
-
-        ax.legend(handles=legend_elements, loc='upper right', fontsize=6,
-                  frameon=False, bbox_to_anchor=(1.30, 1.0), handletextpad=0.3, handlelength=1.0)
 
     # --------------------------------------------------
     # General helper functions
