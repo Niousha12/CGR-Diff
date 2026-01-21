@@ -718,7 +718,8 @@ class App(ctk.CTk):
         # plot type selection
         (ctk.CTkLabel(kmer_frame, text="Plot type: ", font=HEADER_FONT_BOLD)
          .grid(row=3, column=0, sticky="w", padx=(5, 0), pady=(0, 10)))
-        (ctk.CTkComboBox(kmer_frame, values=PLOT_TYPES, state="readonly", variable=self.t3_plot_type)
+        (ctk.CTkComboBox(kmer_frame, values=PLOT_TYPES, state="readonly", variable=self.t3_plot_type,
+                         command=self.t3_plot_change_event)
          .grid(row=3, column=1, sticky="ew", padx=(0, 5), pady=(0, 10)))
 
         # Run button
@@ -1787,6 +1788,17 @@ class App(ctk.CTk):
         if pic_num.get() < dist_history_len - 1:
             pic_num.set(pic_num.get() + 1)
             self.t3_change_images(pic_num.get(), None)
+
+    def t3_plot_change_event(self, value):
+        # if the plot type is changed, check if there is data to plot
+        if not self.t3_cgr_distance_history or len(self.t3_cgr_distance_history) == 0:
+            return
+        # re-plot the chart with the new plot type
+        self._draw_panel(frame=self.t3_plot_display_frame, fig_attr="t3_plot_fig",
+                         canvas_attr="t3_plot_canvas", save_btn_attr="t3_plot_save_btn",
+                         save_command=lambda: self._save_figure("t3_plot_fig"),
+                         placeholder_attr="t3_plot_placeholder_label", fcgrs_dict=None,
+                         index=self.t3_pic_num.get(), panel_type="chart")
 
     def _t3_disconnect_plot_events(self):
         """Disconnect old mpl_connect callbacks for the Tab-3 distance plot."""
