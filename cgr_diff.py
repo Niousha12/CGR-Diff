@@ -1763,7 +1763,8 @@ class App(ctk.CTk):
     def t3_change_images(self, index, value):
         index = round(value) if value is not None else index
         # MDS change color
-        self._t3_mds_set_selected(index)
+        # self._t3_mds_set_selected(index)
+        self._plot_mds(fig=self.t3_3d_fig, bg=None, D=None, index=index, canvas=self.t3_3d_canvas)
         # FCGR image
         self._draw_panel(frame=self.t3_fcgr_display_frame, fig_attr="t3_fcgr_fig", canvas_attr="t3_fcgr_canvas",
                          save_btn_attr="t3_fcgr_save_btn", save_command=lambda: self._save_figure("t3_fcgr_fig"),
