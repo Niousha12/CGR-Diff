@@ -209,6 +209,11 @@ class App(ctk.CTk):
         self.dist_metric = tkinter.StringVar(value="DSSIM")  # distance metric selection variable
 
         # Variables for page 1 (CGR Analysis)
+        self._t1_progress_status = "Press 'Run Analysis' to start."
+        self.t1_status_label = None
+        self._t1_progress = 0.0
+        self.t1_progress_bar = None
+        self.t1_fcgrs_dict = None
         self.t1_start_entry = None
         self.t1_end_entry = None
         self.t1_len_label = None
@@ -262,6 +267,8 @@ class App(ctk.CTk):
         self.t3_end_label = None
 
         self.t3_cgr_distance_history = []
+        self._t3_progress_status = "Press 'Run' to start."
+        self.t3_status_label = None
         self._t3_progress = 0.0
         self.t3_progress_bar = None
 
@@ -372,23 +379,15 @@ class App(ctk.CTk):
     def _build_cgr_analysis(self, parent):
         parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
         parent.grid_columnconfigure(1, weight=1)  # right panel
-        parent.grid_rowconfigure(0, weight=1)
+        parent.grid_rowconfigure(0, weight=0, minsize=1)
+        parent.grid_rowconfigure(1, weight=1)
 
         # ---------- Left panel ----------
         config_frame = ctk.CTkFrame(parent, corner_radius=8, border_color=COLORS["BORDER_COLOR"], border_width=1)
-        config_frame.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        config_frame.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
         config_frame.grid_columnconfigure(0, weight=1)
         config_frame.grid_rowconfigure(1, weight=5)  # row 1 is list_frame
         config_frame.grid_propagate(False)
-        # ---------- Right panel (scrollable, only vertical) ----------
-        display_frame = ctk.CTkFrame(parent, border_width=1, corner_radius=8, border_color=COLORS["BORDER_COLOR"])
-        display_frame.grid(row=0, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
-        display_frame.grid_columnconfigure(0, weight=1)
-        # grid configuration for display content:
-        display_frame.grid_rowconfigure(0, weight=1)
-        display_frame.grid_rowconfigure(1, weight=2)
-        display_frame.grid_columnconfigure(0, weight=1)  # left
-        display_frame.grid_columnconfigure(1, weight=2)  # right (larger)
 
         # ---------- Designing the config frame (F1) ----------
         # top buttons
@@ -500,10 +499,40 @@ class App(ctk.CTk):
         remove_btn.grid(row=1, column=0, sticky="ew")
 
         run_btn = ctk.CTkButton(bottom_btn_frame, text="Run Analysis", corner_radius=8, height=35, font=HEADER_FONT,
-                                command=self.t1_run_analysis_selected_file, )
+                                command=partial(self.t1_run_manager, None), )
         run_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
 
-        # ---------- Right panel design ----------
+        # ---------- Right panel ----------
+        # Progress frame
+        progress_frame = ctk.CTkFrame(parent, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                      fg_color="transparent", height=40)
+        progress_frame.grid(row=0, column=1, padx=(0, 5), pady=(5, 0), sticky="nsew")
+        progress_frame.grid_columnconfigure(0, weight=1)
+        progress_frame.grid_rowconfigure(0, weight=1)
+        progress_frame.grid_rowconfigure(1, weight=5)
+        progress_frame.grid_propagate(False)
+        self.t1_progress_bar = ctk.CTkProgressBar(master=progress_frame, orientation="horizontal", )
+        if getattr(self, "_t1_progress", None) is not None:
+            self.t1_progress_bar.set(self._t1_progress)
+        else:
+            self.t1_progress_bar.set(0)
+        self.t1_progress_bar.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
+
+        # Status label under the bar
+        self._t1_progress_status = getattr(self, "_t1_progress_status", "Idle")
+        self.t1_status_label = ctk.CTkLabel(master=progress_frame, text=self._t1_progress_status, anchor="w",
+                                            font=ctk.CTkFont(size=11))
+        self.t1_status_label.grid(row=1, column=0, padx=5, pady=(0, 6), sticky="ew")
+
+        display_frame = ctk.CTkFrame(parent, border_width=1, corner_radius=8, border_color=COLORS["BORDER_COLOR"])
+        display_frame.grid(row=1, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
+        display_frame.grid_columnconfigure(0, weight=1)
+        # grid configuration for display content:
+        display_frame.grid_rowconfigure(0, weight=1)
+        display_frame.grid_rowconfigure(1, weight=2)
+        display_frame.grid_columnconfigure(0, weight=1)  # left
+        display_frame.grid_columnconfigure(1, weight=2)  # right (larger)
+
         # top histogram frame (full width)
         self.t1_hist_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
         self.t1_hist_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=(5, 5), pady=(5, 0), )
@@ -514,6 +543,15 @@ class App(ctk.CTk):
         self.t1_placeholder_label = ctk.CTkLabel(master=display_frame, text="Display Area",
                                                  font=HEADER_FONT, text_color="white")
         self.t1_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
+        if getattr(self, "t1_fcgrs_dict", None) is not None:
+            # Histogram
+            self.t1_hist_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["LIGHT_FRAME_COLOR"],
+                                         border_color=COLORS["BORDER_COLOR"])
+
+            self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
+                             save_btn_attr="t1_hist_save_btn", save_command=lambda: self._save_figure("t1_hist_fig"),
+                             placeholder_attr="t1_placeholder_label", fcgrs_dict=self.t1_fcgrs_dict,
+                             panel_type="kmer_hist", )
 
         # bottom-left frame (smaller)
         self.t1_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
@@ -521,6 +559,26 @@ class App(ctk.CTk):
         self.t1_fcgr_frame.grid_rowconfigure(0, weight=1)
         self.t1_fcgr_frame.grid_columnconfigure(0, weight=1)
         self.t1_fcgr_frame.grid_propagate(False)
+        if getattr(self, "t1_fcgr_fig", None) is not None:
+            self.t1_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+                                         border_color=COLORS["BORDER_COLOR"])
+            # Create a new canvas for the existing figure, attached to the new frame
+            self.t1_fcgr_canvas = FigureCanvasTkAgg(self.t1_fcgr_fig, master=self.t1_fcgr_frame)
+            widget = self.t1_fcgr_canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t1_fcgr_canvas.draw()
+
+            if getattr(self, "t1_fcgr_save_btn", None) is not None and self.t1_fcgr_save_btn.winfo_exists():
+                try:
+                    self.t1_fcgr_save_btn.destroy()
+                except Exception:
+                    pass
+
+            self.t1_fcgr_save_btn = ctk.CTkButton(master=self.t1_fcgr_frame, text="💾", width=30, height=30,
+                                                  fg_color=COLORS["BORDER_COLOR"],
+                                                  hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                                  command=partial(self._save_figure, "t3_fcgr_fig"))
+            self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
 
         # bottom-right frame (larger)
         self.t1_3d_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
@@ -898,7 +956,11 @@ class App(ctk.CTk):
         else:
             self.t3_progress_bar.set(0)
         self.t3_progress_bar.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        # TODO: add a label to show progress percentage or status
+        # Status label under the bar
+        self._t3_progress_status = getattr(self, "_t3_progress_status", "Idle")
+        self.t3_status_label = ctk.CTkLabel(master=progress_frame, text=self._t3_progress_status, anchor="w",
+                                            font=ctk.CTkFont(size=11))
+        self.t3_status_label.grid(row=1, column=0, padx=5, pady=(0, 6), sticky="ew")
 
         # Display frame
         # 3D frame
@@ -1107,6 +1169,7 @@ class App(ctk.CTk):
                 self._t1_last_seq = self._read_fasta(selected_path)[1]
                 seq_len = len(self._t1_last_seq)
                 self.t1_ds.seq = self._t1_last_seq
+                # TODO: I want to keep start and end from resetting after changing the tab
                 self.t1_start_entry.configure(state="normal")
                 self.t1_end_entry.configure(state="normal")
                 self.t1_ds.start_txt.set("0")
@@ -1138,7 +1201,7 @@ class App(ctk.CTk):
         self.t1_len_label.configure(text="Length=0")
         self._t1_last_seq = None
 
-    def t1_run_analysis_selected_file(self):
+    def t1_run_manager(self, event):
         if self.selected_file_index is None:
             messagebox.showinfo("No selection", "Please select a file to analyze.")
             return
@@ -1155,34 +1218,69 @@ class App(ctk.CTk):
         start = self._parse_int(self.t1_ds.start_txt.get())
         end = self._parse_int(self.t1_ds.end_txt.get())
         seq = self._t1_last_seq[start:end]
+        k = self.k_var.get()
 
-        # ----- build / rebuild layout in the scrollable right panel -----
-        # ---- the analysis goes here ----
-        # TODO: implement the analysis and plotting functions :
-        #  1) 3D FCGR plot
-        # 3-mer frequency analysis histogram
-        self.t1_hist_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["LIGHT_FRAME_COLOR"],
-                                     border_color=COLORS["BORDER_COLOR"])
-        self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
-                         save_btn_attr="t1_hist_save_btn", save_command=lambda: self._save_figure("t1_hist_fig"),
-                         placeholder_attr="t1_placeholder_label", fcgrs_dict={"seq": seq, "k": 3},
-                         panel_type="kmer_hist", )
-        # FCGR plot
-        self.t1_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
-                                     border_color=COLORS["BORDER_COLOR"])
-        # fcgr of sequence
-        seq_fcgr = CGR(seq, self.k_var.get()).get_fcgr_fast()
-        seq_len = len(self.t1_ds.seq)
-        start = self._parse_int(self.t1_ds.start_txt.get())
-        end = self._parse_int(self.t1_ds.end_txt.get())
-        self._draw_panel(frame=self.t1_fcgr_frame, fig_attr="t1_fcgr_fig", canvas_attr="t1_fcgr_canvas",
-                         save_btn_attr="t1_fcgr_save_btn", save_command=lambda: self._save_figure("t1_fcgr_fig"),
-                         placeholder_attr=None, fcgrs_dict={"seq_len": seq_len, "fcgr": seq_fcgr, "b": start, "e": end},
-                         panel_type="fcgr", )
+        global foo_thread_1
+        foo_thread_1 = threading.Thread(target=self.t1_run, args=(seq, start, end, k))
+        foo_thread_1.daemon = True
+        foo_thread_1.start()
+        self.after(20, self.t1_check_thread)
 
-        # 3D FCGR plot
-        self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
-                                        border_color=COLORS["BORDER_COLOR"])
+    def t1_run(self, seq, start, end, k):
+        self._t1_progress_status = "Counting 3-mers..."
+        self._t1_progress = 0.0
+
+        # Count kmers (map internal 0..1 to 0..0.55)
+        counts = self._count_kmers(seq, 3, progress_cb=lambda p: setattr(self, "_t1_progress", 0.00 + 0.55 * p))
+        # Labels (map internal 0..1 to 0.55..0.65)
+        self._t1_progress_status = "Building 3-mer labels..."
+        labels = self._labels_kmers(3, progress_cb=lambda p: setattr(self, "_t1_progress", 0.55 + 0.10 * p))
+
+        # FCGR
+        self._t1_progress_status = "Computing FCGR... Hang tight, this may take a while for long sequences... :)"
+        self._t1_progress = 0.65
+        fcgr = CGR(seq, k).get_fcgr_fast(progress_cb=lambda p: setattr(self, "_t1_progress", 0.65 + 0.35 * p),
+                                         step=200_000)
+        self._t1_progress_status = "Done."
+        self._t1_progress = 1.0
+
+        self.t1_fcgrs_dict = {"fcgr": fcgr, "b": start, "e": end, "seq_len": len(self.t1_ds.seq),
+                              "seq": seq, "k": k, "counts": counts, "labels": labels}
+
+    def t1_check_thread(self):
+        # update UI from main thread
+        if self.t1_progress_bar is not None:
+            self.t1_progress_bar.set(getattr(self, "_t1_progress", 0.0) or 0.0)
+
+        if self.t1_status_label is not None:
+            self.t1_status_label.configure(text=getattr(self, "_t1_progress_status", ""))
+
+        if foo_thread_1.is_alive():
+            self.after(20, self.t1_check_thread)
+        else:
+            self.t1_progress_bar.set(1.0)
+            if self.t1_status_label is not None:
+                self.t1_status_label.configure(text=getattr(self, "_t1_progress_status", "Done"))
+
+            # 3-mer frequency analysis histogram
+            self.t1_hist_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["LIGHT_FRAME_COLOR"],
+                                         border_color=COLORS["BORDER_COLOR"])
+            self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
+                             save_btn_attr="t1_hist_save_btn", save_command=lambda: self._save_figure("t1_hist_fig"),
+                             placeholder_attr="t1_placeholder_label", fcgrs_dict=self.t1_fcgrs_dict,
+                             panel_type="kmer_hist", )
+            # FCGR plot
+            self.t1_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+                                         border_color=COLORS["BORDER_COLOR"])
+            self._draw_panel(frame=self.t1_fcgr_frame, fig_attr="t1_fcgr_fig", canvas_attr="t1_fcgr_canvas",
+                             save_btn_attr="t1_fcgr_save_btn", save_command=lambda: self._save_figure("t1_fcgr_fig"),
+                             placeholder_attr=None, fcgrs_dict=self.t1_fcgrs_dict,
+                             panel_type="fcgr", )
+
+            # 3D FCGR plot
+            self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+                                            border_color=COLORS["BORDER_COLOR"])
+            # TODO: implement 3D FCGR plot
 
     def _t1_disconnect_hist_events(self):
         if getattr(self, "t1_hist_canvas", None) is not None:
@@ -1193,15 +1291,13 @@ class App(ctk.CTk):
                     pass
         self._t1_hist_cids = []
 
-    def _plot_kmer_histogram(self, fig, bg, seq, k, canvas):
+    def _plot_kmer_histogram(self, fig, bg, seq_len, k, counts, labels, canvas):
         # avoid duplicate hover handlers
         self._t1_disconnect_hist_events()
 
         # Data
-        counts = self._count_kmers(seq, k)
-        labels = self._labels_kmers(k)
         total = int(counts.sum())
-        subtitle = f"Length: {len(seq):,}  |  Valid {k}-mers: {total:,}  |  [Green: ≥ average frequency, Blue: < average frequency]"
+        subtitle = f"Length: {seq_len:,}  |  Valid {k}-mers: {total:,}  |  [Green: ≥ average frequency, Blue: < average frequency]"
 
         # Clear and axes
         fig.clf()
@@ -1322,14 +1418,22 @@ class App(ctk.CTk):
         canvas.draw_idle()
 
     @staticmethod
-    def _count_kmers(seq, k):
+    def _count_kmers(seq, k, progress_cb=None):
+        def prog(x):
+            if progress_cb:
+                progress_cb(float(x))
+
+        prog(0.00)
+
         seq = (seq or "").upper()
         n = len(seq)
         if k <= 0:
+            prog(1.00)
             return np.array([], dtype=np.int64)
 
         m = 4 ** k
         if n < k:
+            prog(1.00)
             return np.zeros(m, dtype=np.int64)
 
         # ASCII -> 0..3 for A,C,G,T; invalid -> -1
@@ -1339,39 +1443,69 @@ class App(ctk.CTk):
         table[ord("G")] = 2
         table[ord("T")] = 3
 
+        prog(0.10)
+
         s = np.frombuffer(seq.encode("ascii", "ignore"), dtype=np.uint8)
-        x = table[s].astype(np.int16)  # -1 invalid
+        x = table[s].astype(np.int16)
         if x.size < k:
+            prog(1.00)
             return np.zeros(m, dtype=np.int64)
 
-        # Valid windows: convolution over valid mask
+        prog(0.20)
+
         valid = (x >= 0).astype(np.int8)
         window_valid = np.convolve(valid, np.ones(k, dtype=np.int8), mode="valid") == k
         if not np.any(window_valid):
+            prog(1.00)
             return np.zeros(m, dtype=np.int64)
 
-        # Rolling base-4 code for each window, O(n*k)
-        # codes[i] = sum_{j=0..k-1} x[i+j] * 4^(k-1-j)
-        pow4 = (4 ** np.arange(k - 1, -1, -1, dtype=np.int64))  # [4^(k-1), ..., 1]
-        # Build windows via stride trick to avoid loops
+        prog(0.35)
+
+        pow4 = (4 ** np.arange(k - 1, -1, -1, dtype=np.int64))
         shape = (x.size - k + 1, k)
         strides = (x.strides[0], x.strides[0])
         windows = np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
 
-        codes = (windows.astype(np.int64) * pow4).sum(axis=1)
+        prog(0.45)
+
+        # Heavy part
+        W = windows.astype(np.int64)
+        total = W.shape[0]
+        chunk = max(50_000, total // 20)  # ~20 updates, min chunk size
+
+        codes_parts = []
+        for i in range(0, total, chunk):
+            j = min(i + chunk, total)
+            codes_parts.append((W[i:j] * pow4).sum(axis=1))
+            # progress from 0.45 -> 0.85 during chunking
+            prog(0.45 + 0.40 * (j / total))
+
+        codes = np.concatenate(codes_parts, axis=0)
         codes = codes[window_valid]
 
+        prog(0.90)
+
         counts = np.bincount(codes, minlength=m).astype(np.int64)
+
+        prog(1.00)
         return counts
 
     @staticmethod
-    def _labels_kmers(k):
+    def _labels_kmers(k, progress_cb=None):
+        def prog(x):
+            if progress_cb:
+                progress_cb(float(x))
+
         if k <= 0:
+            prog(1.0)
             return []
 
         bases = np.array(list("ACGT"))
         m = 4 ** k
         labels = [""] * m
+
+        # update ~50 times
+        step = max(1, m // 50)
 
         for code in range(m):
             c = code
@@ -1380,6 +1514,11 @@ class App(ctk.CTk):
                 chars.append(bases[c % 4])
                 c //= 4
             labels[code] = "".join(reversed(chars))
+
+            if (code % step) == 0:
+                prog(code / m)
+
+        prog(1.0)
         return labels
 
     # --------------------------------------------------
@@ -1807,6 +1946,7 @@ class App(ctk.CTk):
         if self.t3_use_rep_algo.get() == 0:
             t3_step_length = np.floor(len(self.t3_ds["1"].seq) / seg_size)
             t3_step_length = int(t3_step_length)
+            self._t3_progress_status = "Computing FCGR for the Reference sequence... Hang tight, this may take a while for a long sequence..."
             self._t3_progress = 0.0
 
             ref_b = self._parse_int(self.t3_ds['2'].start_txt.get().strip())
@@ -1823,6 +1963,7 @@ class App(ctk.CTk):
 
             # the sliding sequence
             for i in range(t3_step_length):
+                self._t3_progress_status = f"Processing segment {i + 1} of {t3_step_length}..."
                 self._t3_progress = (i + 3) / (t3_step_length + 2)
                 b2 = i * seg_size
                 e2 = (i + 1) * seg_size
@@ -1862,11 +2003,18 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Unknown representative algorithm option.")
 
     def t3_check_thread(self):
-        self.t3_progress_bar.set(self._t3_progress)
+        if self.t3_progress_bar is not None:
+            self.t3_progress_bar.set(getattr(self, "_t3_progress", 0.0) or 0.0)
+
+        if self.t3_status_label is not None:
+            self.t3_status_label.configure(text=getattr(self, "_t3_progress_status", ""))
+
         if foo_thread_2.is_alive():
             self.after(20, self.t3_check_thread)
         else:
             self.t3_progress_bar.set(1.0)
+            if self.t3_status_label is not None:
+                self.t3_status_label.configure(text=getattr(self, "_t3_progress_status", "Done"))
             self.t3_scale.configure(to=int(len(self.t3_cgr_distance_history) - 1))  # Update the scale range
             self.t3_pic_num.set(0)
 
@@ -2519,7 +2667,7 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Could not save figure.")
 
     def _plot_fcgrs(self, fcgrs, bg=None, fig=None, index=0):
-        # TODO: change normalization
+        # TODO: change normalization for everyone maybe!
         if fig is None:
             fig = plt.Figure()
         extent = (0, 1, 0, 1)
@@ -2715,9 +2863,11 @@ class App(ctk.CTk):
         elif panel_type == "mds":
             self._plot_mds(fig=fig, bg=bg, D=D, index=index, canvas=canvas)
         elif panel_type == "kmer_hist":
-            seq = fcgrs_dict["seq"]
-            k = fcgrs_dict["k"]
-            self._plot_kmer_histogram(fig=fig, bg=bg, seq=seq, k=k, canvas=canvas)
+            seq_len = fcgrs_dict["seq_len"]
+            # k = fcgrs_dict["k"]
+            counts = fcgrs_dict["counts"]
+            labels = fcgrs_dict["labels"]
+            self._plot_kmer_histogram(fig=fig, bg=bg, seq_len=seq_len, k=3, counts=counts, labels=labels, canvas=canvas)
 
         # --- 4) Hide placeholder if present ---
         if placeholder_attr:

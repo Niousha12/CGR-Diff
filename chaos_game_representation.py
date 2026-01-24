@@ -61,39 +61,54 @@ class CGR:
         c = np.array(chaos)
         return c
 
-    def get_fcgr_fast(self, dtype=np.uint32):
+    def get_fcgr_fast(self, dtype=np.uint32, progress_cb=None, step=200_000):
         k = self.k_mer
-        n = len(self.data)
-        size = 1 << k  # 2**k (since sqrt(4**k) = 2**k)
+        data_bytes = self.data.upper().encode("ascii", "ignore")
+        n = len(data_bytes)
+        size = 1 << k
 
         fcgr = np.zeros((size, size), dtype=dtype)
 
-        # Your quadrant logic implies:
-        # x-bit = 1 for {G,T}, y-bit = 1 for {A,T}
-        bx_map = {'C': 0, 'A': 0, 'G': 1, 'T': 1}
-        by_map = {'C': 0, 'G': 0, 'A': 1, 'T': 1}
+        # 256-table: 0/1 for valid bases, -1 for invalid
+        bx = np.full(256, -1, dtype=np.int8)
+        by = np.full(256, -1, dtype=np.int8)
+
+        bx[ord("A")] = 0;
+        by[ord("A")] = 1
+        bx[ord("C")] = 0;
+        by[ord("C")] = 0
+        bx[ord("G")] = 1;
+        by[ord("G")] = 0
+        bx[ord("T")] = 1;
+        by[ord("T")] = 1
 
         maskbit = 1 << (k - 1)
         x = y = 0
-        valid = 0  # how many consecutive A/C/G/T since last N
+        valid = 0
 
-        for ch in self.data.upper():
-            if ch in bx_map:
-                bx = bx_map[ch]
-                by = by_map[ch]
+        if progress_cb:
+            progress_cb(0.0)
 
-                # Right shift because your code uses reversed(kmer):
-                # newest char becomes the MSB each step
-                x = (x >> 1) | (bx * maskbit)
-                y = (y >> 1) | (by * maskbit)
+        step = max(10_000, int(step))
+
+        for i, ch in enumerate(data_bytes, 1):
+            bxi = bx[ch]
+            if bxi >= 0:
+                byi = by[ch]
+                x = (x >> 1) | (int(bxi) * maskbit)
+                y = (y >> 1) | (int(byi) * maskbit)
                 valid += 1
-
                 if valid >= k:
                     fcgr[y, x] += 1
             else:
-                # N (or anything else) breaks the window
                 x = y = 0
                 valid = 0
+
+            if progress_cb and (i % step == 0):
+                progress_cb(i / n)
+
+        if progress_cb:
+            progress_cb(1.0)
 
         return fcgr
 
