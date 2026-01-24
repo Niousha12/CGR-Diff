@@ -61,6 +61,42 @@ class CGR:
         c = np.array(chaos)
         return c
 
+    def get_fcgr_fast(self, dtype=np.uint32):
+        k = self.k_mer
+        n = len(self.data)
+        size = 1 << k  # 2**k (since sqrt(4**k) = 2**k)
+
+        fcgr = np.zeros((size, size), dtype=dtype)
+
+        # Your quadrant logic implies:
+        # x-bit = 1 for {G,T}, y-bit = 1 for {A,T}
+        bx_map = {'C': 0, 'A': 0, 'G': 1, 'T': 1}
+        by_map = {'C': 0, 'G': 0, 'A': 1, 'T': 1}
+
+        maskbit = 1 << (k - 1)
+        x = y = 0
+        valid = 0  # how many consecutive A/C/G/T since last N
+
+        for ch in self.data.upper():
+            if ch in bx_map:
+                bx = bx_map[ch]
+                by = by_map[ch]
+
+                # Right shift because your code uses reversed(kmer):
+                # newest char becomes the MSB each step
+                x = (x >> 1) | (bx * maskbit)
+                y = (y >> 1) | (by * maskbit)
+                valid += 1
+
+                if valid >= k:
+                    fcgr[y, x] += 1
+            else:
+                # N (or anything else) breaks the window
+                x = y = 0
+                valid = 0
+
+        return fcgr
+
     def get_kmer_matrix(self):
         array_size = int(math.sqrt(4 ** self.k_mer))
         kmer_matrix = [[""] * array_size for _ in range(array_size)]

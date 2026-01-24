@@ -71,6 +71,108 @@ class GUIDataStructure:
         self.end_seq.set(0)
 
 
+class FCGRNormalizer:
+    def __init__(self, method="asinh", scale="median_nz",
+                 clip_low=1.0, clip_high=99.0, c=1e4, eps=1e-12,
+                 k_compensate=True,
+                 length_mode=None,  # NEW: None | 'linear' | 'sqrt'
+                 ref_length=500_000):  # NEW: reference segment length for scaling
+        self.method = method
+        self.scale = scale
+        self.clip_low = float(clip_low)
+        self.clip_high = float(clip_high)
+        self.c = float(c)
+        self.eps = float(eps)
+        self.k_compensate = bool(k_compensate)
+
+        # NEW:
+        self.length_mode = length_mode
+        self.ref_length = int(ref_length)
+
+        self.fitted = False
+        self.s = None
+        self.low = None
+        self.high = None
+
+    def _choose_scale(self, f):
+        if isinstance(self.scale, (int, float)):
+            return float(self.scale)
+        nz = f[f > 0]
+        return float(np.median(nz)) if nz.size else 1.0
+
+    def fit(self, freq_mats, ks=None):
+        """
+        freq_mats: list of 2D freq arrays in [0,1]
+        ks:        optional list of k for each matrix (same length as freq_mats)
+        """
+        vals = []
+        s_list = []
+        for i, f in enumerate(freq_mats):
+            f = np.asarray(f, dtype=float)
+            if self.k_compensate:
+                k_i = ks[i] if ks is not None else None
+                if k_i is None:
+                    # if you don't pass ks, we assume you want pooled fitting across a *single* k
+                    pass
+                else:
+                    f = f * (4.0 ** k_i)  # <<< k compensation here
+            if self.method == "asinh":
+                s_list.append(self._choose_scale(f))
+                # defer arcsinh until s is decided
+                vals.append(f.ravel())
+            elif self.method == "log":
+                vals.append(np.log1p(f * self.c).ravel())
+            else:
+                raise ValueError("Unsupported method.")
+
+        if self.method == "asinh":
+            self.s = float(np.median(s_list)) if s_list else 1.0
+            pooled = np.arcsinh(np.concatenate(vals) / (self.s if self.s > 0 else 1.0))
+        else:
+            pooled = np.concatenate(vals) if vals else np.array([0.0])
+
+        self.low = float(np.percentile(pooled, self.clip_low))
+        self.high = float(np.percentile(pooled, self.clip_high))
+        if not np.isfinite(self.low) or not np.isfinite(self.high) or self.high <= self.low:
+            self.low, self.high = float(np.min(pooled)), float(np.max(pooled) + 1e-9)
+        self.fitted = True
+
+    def transform01(self, f, k=None, L=None):
+        """
+        Map one frequency matrix f to [0,1].
+        k:  k-mer (for 4^k compensation if enabled)
+        L:  sequence length (for brightness fading)
+        """
+        if not self.fitted:
+            raise RuntimeError("FCGRNormalizer not fitted. Call .fit([...]) first.")
+        f = np.asarray(f, dtype=float)
+
+        # --- compensate for k so different k’s have similar scale ---
+        if self.k_compensate and (k is not None):
+            f = f * (4.0 ** k)
+
+        # --- fade brightness based on sequence length ---
+        if self.length_mode and (L is not None) and (k is not None):
+            N = max(1, L - k + 1)
+            if self.length_mode == "linear":
+                length_scale = min(N / max(1, self.ref_length - k + 1), 1.0)
+            elif self.length_mode == "sqrt":
+                length_scale = min((N / max(1, self.ref_length - k + 1)) ** 0.5, 1.0)
+            else:
+                length_scale = 1.0
+            f = f * length_scale
+
+        # --- apply nonlinearity + global window ---
+        if self.method == "asinh":
+            x = np.arcsinh(f / (self.s if self.s > 0 else 1.0))
+        else:
+            x = np.log1p(f * self.c)
+
+        x = np.clip(x, self.low, self.high)
+        V = (x - self.low) / (self.high - self.low + self.eps)
+        return V
+
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -107,6 +209,10 @@ class App(ctk.CTk):
         self.dist_metric = tkinter.StringVar(value="DSSIM")  # distance metric selection variable
 
         # Variables for page 1 (CGR Analysis)
+        self.t1_start_entry = None
+        self.t1_end_entry = None
+        self.t1_len_label = None
+        self.t1_ds = GUIDataStructure()
         self._t1_last_seq = None
         self.t1_hist_frame = None
         self.t1_placeholder_label = None
@@ -114,6 +220,11 @@ class App(ctk.CTk):
         self.t1_hist_canvas = None
         self.t1_hist_save_btn = None
         self._t1_hist_cids = []
+        self.t1_fcgr_frame = None
+        self.t1_3d_fcgr_frame = None
+        self.t1_fcgr_fig = None
+        self.t1_fcgr_canvas = None
+        self.t1_fcgr_save_btn = None
 
         # Variables for page 2 (CGR Comparator)
         self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
@@ -183,7 +294,7 @@ class App(ctk.CTk):
         self._create_top_navbar()
         self._build_main_content()
 
-        self._upload_files(hard_coded=True)
+        self.t1_upload_files(hard_coded=True)
 
     def _toggle_theme(self):
         new_mode = "Light" if self.appearance.get() == "Dark" else "Dark"
@@ -267,7 +378,7 @@ class App(ctk.CTk):
         config_frame = ctk.CTkFrame(parent, corner_radius=8, border_color=COLORS["BORDER_COLOR"], border_width=1)
         config_frame.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
         config_frame.grid_columnconfigure(0, weight=1)
-        config_frame.grid_rowconfigure(1, weight=1)  # row 1 is list_frame
+        config_frame.grid_rowconfigure(1, weight=5)  # row 1 is list_frame
         config_frame.grid_propagate(False)
         # ---------- Right panel (scrollable, only vertical) ----------
         display_frame = ctk.CTkFrame(parent, border_width=1, corner_radius=8, border_color=COLORS["BORDER_COLOR"])
@@ -290,7 +401,7 @@ class App(ctk.CTk):
         search_btn.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
 
         upload_btn = ctk.CTkButton(top_btn_frame, text="Upload", corner_radius=8, height=35, font=HEADER_FONT,
-                                   text_color="white", command=self._upload_files)
+                                   text_color="white", command=self.t1_upload_files)
         upload_btn.grid(row=1, column=0, sticky="ew")
 
         generate_btn = ctk.CTkButton(top_btn_frame, text="Generate", corner_radius=8, height=35, font=HEADER_FONT,
@@ -336,7 +447,48 @@ class App(ctk.CTk):
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         self.uploaded_seq_lists_frame.bind("<Configure>", _on_inner_configure)
-        self._refresh_uploaded_file_list()
+        self.t1_refresh_uploaded_file_list()
+
+        # k-mer, start-end frame
+        kmer_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        kmer_frame.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="ew")
+        kmer_frame.grid_columnconfigure((0, 1), weight=1)
+
+        # k-mer for visualization
+        (ctk.CTkLabel(kmer_frame, text="k-mer: ", font=HEADER_FONT_BOLD)
+         .grid(row=1, column=0, sticky="w", padx=(10, 0), pady=(0, 5)))
+        (ctk.CTkComboBox(kmer_frame, values=KMERS, state="readonly", variable=self.k_var)
+         .grid(row=1, column=1, sticky="ew", padx=(5, 10), pady=(0, 5)))
+
+        # Set start and end of the sequence and total length of it
+        t1_start_label = ctk.CTkLabel(kmer_frame, text="Start: ", font=HEADER_FONT)
+        t1_start_label.grid(row=2, column=0, sticky="w", padx=(10, 0), pady=(10, 0))
+        if self.t1_start_entry is not None and self.t1_start_entry.winfo_exists():
+            state = self.t1_start_entry.cget("state")
+        else:
+            state = "disabled"
+        self.t1_start_entry = ctk.CTkEntry(kmer_frame, textvariable=self.t1_ds.start_txt)
+        self.t1_start_entry.bind('<FocusOut>', partial(self._entry_change, self.t1_ds, "start"))
+        self.t1_start_entry.bind('<Key-Return>', partial(self._entry_change, self.t1_ds, "start"))
+        self.t1_start_entry.configure(state=state)
+        self.t1_start_entry.grid(row=3, column=0, sticky="ew", padx=(10, 0), pady=(0, 0))
+
+        t1_end_label = ctk.CTkLabel(kmer_frame, text="End: ", font=HEADER_FONT)
+        t1_end_label.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.t1_end_entry = ctk.CTkEntry(kmer_frame, textvariable=self.t1_ds.end_txt)
+        self.t1_end_entry.bind('<FocusOut>', partial(self._entry_change, self.t1_ds, "end"))
+        self.t1_end_entry.bind('<Key-Return>', partial(self._entry_change, self.t1_ds, "end"))
+        self.t1_end_entry.configure(state=state)
+        self.t1_end_entry.grid(row=3, column=1, sticky="ew", padx=(5, 10), pady=(0, 0))
+
+        if self.t1_len_label is not None and self.t1_len_label.winfo_exists():
+            text = self.t1_len_label.cget("text")
+        else:
+            text = "Length=0"
+        self.t1_len_label = ctk.CTkLabel(kmer_frame, text=text, font=('Cambria', 10),
+                                         text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
+        self.t1_len_label.grid(row=4, column=0, columnspan=2, sticky="ew", padx=(15, 10), pady=(0, 10))
+        self.t1_len_label.grid_propagate(False)
 
         # bottom buttons
         bottom_btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
@@ -344,11 +496,11 @@ class App(ctk.CTk):
         bottom_btn_frame.grid_columnconfigure((0, 1), weight=1)
 
         remove_btn = ctk.CTkButton(bottom_btn_frame, text="Remove", corner_radius=8, height=35, font=HEADER_FONT,
-                                   command=self._remove_selected_file, )
+                                   command=self.t1_remove_selected_file, )
         remove_btn.grid(row=1, column=0, sticky="ew")
 
         run_btn = ctk.CTkButton(bottom_btn_frame, text="Run Analysis", corner_radius=8, height=35, font=HEADER_FONT,
-                                command=self._run_analysis_selected_file, )
+                                command=self.t1_run_analysis_selected_file, )
         run_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
 
         # ---------- Right panel design ----------
@@ -363,24 +515,17 @@ class App(ctk.CTk):
                                                  font=HEADER_FONT, text_color="white")
         self.t1_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
-        # If we have previous results, redraw using _draw_panel so hover gets reconnected
-        if getattr(self, "_t1_last_seq", None) is not None:
-            self.t1_hist_frame.configure(fg_color=COLORS["LIGHT_FRAME_COLOR"], corner_radius=8, border_width=1,
-                                         border_color=COLORS["BORDER_COLOR"])
-            self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
-                             save_btn_attr="t1_hist_save_btn", save_command=partial(self._save_figure, "t1_hist_fig"),
-                             placeholder_attr="t1_placeholder_label", fcgrs_dict={"seq": self._t1_last_seq, "k": 3},
-                             panel_type="kmer_hist", )
-
         # bottom-left frame (smaller)
-        self.bottom_left_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
-        self.bottom_left_frame.grid(row=1, column=0, sticky="nsew", padx=(5, 0), pady=(5, 10), )
-        self.bottom_left_frame.grid_propagate(False)
+        self.t1_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
+        self.t1_fcgr_frame.grid(row=1, column=0, sticky="nsew", padx=(5, 0), pady=(5, 5), )
+        self.t1_fcgr_frame.grid_rowconfigure(0, weight=1)
+        self.t1_fcgr_frame.grid_columnconfigure(0, weight=1)
+        self.t1_fcgr_frame.grid_propagate(False)
 
         # bottom-right frame (larger)
-        self.bottom_right_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
-        self.bottom_right_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 5), pady=(5, 10), )
-        self.bottom_right_frame.grid_propagate(False)
+        self.t1_3d_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
+        self.t1_3d_fcgr_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 5), pady=(5, 5), )
+        self.t1_3d_fcgr_frame.grid_propagate(False)
 
     def _build_cgr_comparator(self, parent):
         parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
@@ -648,10 +793,10 @@ class App(ctk.CTk):
         self.t3_start_label = ctk.CTkLabel(seq_frame, text="Start: ", font=HEADER_FONT, text_color=text_color)
         self.t3_start_label.grid(row=4, column=0, sticky="w", padx=(10, 0), pady=(10, 0))
         self.t3_start_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].start_txt)
-        self.t3_start_entry.bind('<FocusOut>', partial(self.t3_entry_change, "start"))
-        self.t3_start_entry.bind('<Key-Return>', partial(self.t3_entry_change, "start"))
+        self.t3_start_entry.bind('<FocusOut>', partial(self._entry_change, self.t3_ds['2'], "start"))
+        self.t3_start_entry.bind('<Key-Return>', partial(self._entry_change, self.t3_ds['2'], "start"))
         self.t3_start_entry.configure(state=state, text_color=text_color)
-        self.t3_start_entry.grid(row=5, column=0, sticky="ew", padx=(10, 0), pady=(0, 10))
+        self.t3_start_entry.grid(row=5, column=0, sticky="ew", padx=(10, 0), pady=(0, 0))
         if self.t3_end_label is not None and self.t3_end_label.winfo_exists():
             text_color = self.t3_end_label.cget("text_color")
             state = self.t3_end_label.cget("state")
@@ -661,10 +806,10 @@ class App(ctk.CTk):
         self.t3_end_label = ctk.CTkLabel(seq_frame, text="End: ", font=HEADER_FONT, text_color=text_color)
         self.t3_end_label.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
         self.t3_end_entry = ctk.CTkEntry(seq_frame, textvariable=self.t3_ds['2'].end_txt)
-        self.t3_end_entry.bind('<FocusOut>', partial(self.t3_entry_change, "end"))
-        self.t3_end_entry.bind('<Key-Return>', partial(self.t3_entry_change, "end"))
+        self.t3_end_entry.bind('<FocusOut>', partial(self._entry_change, self.t3_ds['2'], "end"))
+        self.t3_end_entry.bind('<Key-Return>', partial(self._entry_change, self.t3_ds['2'], "end"))
         self.t3_end_entry.configure(state=state, text_color=text_color)
-        self.t3_end_entry.grid(row=5, column=1, sticky="ew", padx=(10, 10), pady=(0, 10))
+        self.t3_end_entry.grid(row=5, column=1, sticky="ew", padx=(10, 10), pady=(0, 0))
 
         if self.t3_rep_len_label is not None and self.t3_rep_len_label.winfo_exists():
             text = self.t3_rep_len_label.cget("text")
@@ -875,7 +1020,7 @@ class App(ctk.CTk):
     # --------------------------------------------------
     # Helper functions for CGR analysis tab
     # --------------------------------------------------
-    def _upload_files(self, hard_coded=False):
+    def t1_upload_files(self, hard_coded=False):
         if hard_coded:
             file_paths = [
                 "Data/Human/chromosomes/Human-chr21.fna",
@@ -893,9 +1038,9 @@ class App(ctk.CTk):
             if p not in self.uploaded_files:
                 self.uploaded_files.append(p)
 
-        self._refresh_uploaded_file_list()
+        self.t1_refresh_uploaded_file_list()
 
-    def _refresh_uploaded_file_list(self):
+    def t1_refresh_uploaded_file_list(self):
         for widget in self.uploaded_seq_lists_frame.winfo_children():
             widget.destroy()
 
@@ -921,7 +1066,7 @@ class App(ctk.CTk):
             # make everything inside the card clickable
             def _make_on_click(index):
                 def _on_click(event=None):
-                    return self._set_selected_uploaded(index)
+                    return self.t1_set_selected_uploaded(index)
 
                 return _on_click
 
@@ -941,11 +1086,11 @@ class App(ctk.CTk):
         # if we had a selection, re-apply highlight (in case the list was redrawn)
         if self.selected_file_index is not None:
             if 0 <= self.selected_file_index < len(self.file_cards):
-                self._set_selected_uploaded(self.selected_file_index)
+                self.t1_set_selected_uploaded(self.selected_file_index)
             else:
                 self.selected_file_index = None
 
-    def _set_selected_uploaded(self, index: int):
+    def t1_set_selected_uploaded(self, index: int):
         self.selected_file_index = index
 
         for i, card in enumerate(self.file_cards):
@@ -957,6 +1102,17 @@ class App(ctk.CTk):
                         child.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
                     else:
                         child.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
+                # read it and set the start end entries
+                selected_path = self.uploaded_files[index]
+                self._t1_last_seq = self._read_fasta(selected_path)[1]
+                seq_len = len(self._t1_last_seq)
+                self.t1_ds.seq = self._t1_last_seq
+                self.t1_start_entry.configure(state="normal")
+                self.t1_end_entry.configure(state="normal")
+                self.t1_ds.start_txt.set("0")
+                self.t1_ds.end_txt.set(f"{seq_len:,}")
+                # Set the sequence length
+                self.t1_len_label.configure(text=f"Length={seq_len:,}")
             else:
                 card.configure(fg_color="transparent")
                 for child in card.winfo_children():
@@ -965,16 +1121,24 @@ class App(ctk.CTk):
                     else:
                         child.configure(fg_color="transparent", text_color=COLORS["TEXT_DISABLE_COLOR"])
 
-    def _remove_selected_file(self):
+    def t1_remove_selected_file(self):
         if self.selected_file_index is None:
             messagebox.showinfo("No selection", "Please select a file to remove.")
             return
 
         removed_path = self.uploaded_files.pop(self.selected_file_index)  # remove from list
         self.selected_file_index = None  # reset selection
-        self._refresh_uploaded_file_list()  # refresh GUI
+        self.t1_refresh_uploaded_file_list()  # refresh GUI
 
-    def _run_analysis_selected_file(self):
+        # Empty the start and end and sequence length and make start and end disable
+        self.t1_start_entry.configure(state="disabled")
+        self.t1_end_entry.configure(state="disabled")
+        self.t1_ds.start_txt.set("")
+        self.t1_ds.end_txt.set("")
+        self.t1_len_label.configure(text="Length=0")
+        self._t1_last_seq = None
+
+    def t1_run_analysis_selected_file(self):
         if self.selected_file_index is None:
             messagebox.showinfo("No selection", "Please select a file to analyze.")
             return
@@ -984,18 +1148,18 @@ class App(ctk.CTk):
             messagebox.showinfo("Error", "The selected file does not exist.")
             return
 
-        name, seq = self._read_fasta(path)
-        self._t1_last_seq = seq
-        if not seq:
+        if not self._t1_last_seq:
             messagebox.showinfo("Error", "The selected FASTA file contains no sequence data.")
             return
+
+        start = self._parse_int(self.t1_ds.start_txt.get())
+        end = self._parse_int(self.t1_ds.end_txt.get())
+        seq = self._t1_last_seq[start:end]
 
         # ----- build / rebuild layout in the scrollable right panel -----
         # ---- the analysis goes here ----
         # TODO: implement the analysis and plotting functions :
-        #  2) over representative and under representative analysis
-        #  3) FCGR plot
-        #  4) 3D FCGR plot
+        #  1) 3D FCGR plot
         # 3-mer frequency analysis histogram
         self.t1_hist_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["LIGHT_FRAME_COLOR"],
                                      border_color=COLORS["BORDER_COLOR"])
@@ -1003,6 +1167,22 @@ class App(ctk.CTk):
                          save_btn_attr="t1_hist_save_btn", save_command=lambda: self._save_figure("t1_hist_fig"),
                          placeholder_attr="t1_placeholder_label", fcgrs_dict={"seq": seq, "k": 3},
                          panel_type="kmer_hist", )
+        # FCGR plot
+        self.t1_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+                                     border_color=COLORS["BORDER_COLOR"])
+        # fcgr of sequence
+        seq_fcgr = CGR(seq, self.k_var.get()).get_fcgr_fast()
+        seq_len = len(self.t1_ds.seq)
+        start = self._parse_int(self.t1_ds.start_txt.get())
+        end = self._parse_int(self.t1_ds.end_txt.get())
+        self._draw_panel(frame=self.t1_fcgr_frame, fig_attr="t1_fcgr_fig", canvas_attr="t1_fcgr_canvas",
+                         save_btn_attr="t1_fcgr_save_btn", save_command=lambda: self._save_figure("t1_fcgr_fig"),
+                         placeholder_attr=None, fcgrs_dict={"seq_len": seq_len, "fcgr": seq_fcgr, "b": start, "e": end},
+                         panel_type="fcgr", )
+
+        # 3D FCGR plot
+        self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+                                        border_color=COLORS["BORDER_COLOR"])
 
     def _t1_disconnect_hist_events(self):
         if getattr(self, "t1_hist_canvas", None) is not None:
@@ -1560,53 +1740,6 @@ class App(ctk.CTk):
         elif value == "RepSeg":
             self.t3_rep_number.set("1")
             self.t3_rep_n_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
-
-    def t3_entry_change(self, which, event=None):
-        start_raw = self.t3_ds['2'].start_txt.get().strip()
-        end_raw = self.t3_ds['2'].end_txt.get().strip()
-
-        # No sequence selected
-        if self.t3_ds['2'].seq == '':
-            if which == "start":
-                self.t3_ds['2'].start_txt.set("")
-            else:
-                self.t3_ds['2'].end_txt.set("")
-            return messagebox.showerror("Error", "No sequence selected.")
-
-        # If the other field is empty, don't validate yet
-        if start_raw == "" or end_raw == "":
-            return
-
-        # Parse comma-friendly integer values
-        start = self._parse_int(start_raw)
-        end = self._parse_int(end_raw)
-
-        # Parse-int check failed
-        if start is None or end is None:
-            if which == "start":
-                self.t3_ds['2'].start_txt.set("")
-            else:
-                self.t3_ds['2'].end_txt.set("")
-            return messagebox.showerror("Error", "Start and end values must be positive integers, "
-                                                 "within sequence length.")
-
-        seq_len = len(self.t3_ds['2'].seq)
-        # Range validation
-        if start < 0 or start > seq_len or end < 0 or end > seq_len or start >= end:
-            if which == "start":
-                self.t3_ds['2'].start_txt.set("")
-            else:
-                self.t3_ds['2'].end_txt.set("")
-            return messagebox.showerror("Error", "Start and end values must be positive integers, "
-                                                 "within sequence length, and start < end.")
-
-        # All good so update stored values
-        self.t3_ds['2'].start_seq.set(start)
-        self.t3_ds['2'].end_seq.set(end)
-
-        # Normalize formatting with commas so display is consistent
-        self.t3_ds['2'].start_txt.set(self._format_int(start))
-        self.t3_ds['2'].end_txt.set(self._format_int(end))
 
     def t3_run_manager(self, event):
         if self.t3_ds["1"].seq == "" or self.t3_ds["2"].seq == "":
@@ -2321,6 +2454,53 @@ class App(ctk.CTk):
     def _format_int(value):
         return f"{value:,}"
 
+    def _entry_change(self, ds, which, event=None):
+        start_raw = ds.start_txt.get().strip()
+        end_raw = ds.end_txt.get().strip()
+
+        # No sequence selected
+        if ds.seq == '':
+            if which == "start":
+                ds.start_txt.set("")
+            else:
+                ds.end_txt.set("")
+            return messagebox.showerror("Error", "No sequence selected.")
+
+        # If the other field is empty, don't validate yet
+        if start_raw == "" or end_raw == "":
+            return
+
+        # Parse comma-friendly integer values
+        start = self._parse_int(start_raw)
+        end = self._parse_int(end_raw)
+
+        # Parse-int check failed
+        if start is None or end is None:
+            if which == "start":
+                ds.start_txt.set("")
+            else:
+                ds.end_txt.set("")
+            return messagebox.showerror("Error", "Start and end values must be positive integers, "
+                                                 "within sequence length.")
+
+        seq_len = len(ds.seq)
+        # Range validation
+        if start < 0 or start > seq_len or end < 0 or end > seq_len or start >= end:
+            if which == "start":
+                ds.start_txt.set("")
+            else:
+                ds.end_txt.set("")
+            return messagebox.showerror("Error", "Start and end values must be positive integers, "
+                                                 "within sequence length, and start < end.")
+
+        # All good so update stored values
+        ds.start_seq.set(start)
+        ds.end_seq.set(end)
+
+        # Normalize formatting with commas so display is consistent
+        ds.start_txt.set(self._format_int(start))
+        ds.end_txt.set(self._format_int(end))
+
     def _save_figure(self, fig_attr):
         fig = getattr(self, fig_attr, None)
         if fig is None:
@@ -2339,11 +2519,56 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Could not save figure.")
 
     def _plot_fcgrs(self, fcgrs, bg=None, fig=None, index=0):
+        # TODO: change normalization
         if fig is None:
             fig = plt.Figure()
         extent = (0, 1, 0, 1)
         if bg is not None:
             fig.patch.set_facecolor(bg)
+
+        fcgr_normalizer = FCGRNormalizer(method='asinh', scale="median_nz",
+                                         clip_low=float(1.0), clip_high=float(99.0), c=float(1e4))
+
+        def _fcgr_to_freq(mat):
+            total = float(np.sum(mat))
+            return mat / total if total > 0 else mat
+
+        def _to_uint8_from_01(V, white_is_high=True):
+            if white_is_high:
+                V = 1.0 - V
+            V = np.clip(V, 0.0, 1.0)
+            return np.round(V * 255.0).astype(np.uint8)
+
+        if fig == self.t1_fcgr_fig:
+            ax = fig.add_subplot(111)
+
+            scale, scaling = self._scaling(fcgrs["seq_len"])
+            b = fcgrs["b"]
+            e = fcgrs["e"]
+
+            # plot the data
+            # img = CGR.array2img(fcgrs["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            # img = Image.fromarray(img)
+            # ax.imshow(img, cmap='gray', extent=extent)  # Greys_r
+            f = _fcgr_to_freq(np.asarray(fcgrs["fcgr"], dtype=float))
+            L_eff = fcgrs["e"] - fcgrs["b"]  # the actual segment length
+
+            fcgr_normalizer.fit([f], ks=[self.k_var.get()])
+
+            V = fcgr_normalizer.transform01(f, k=self.k_var.get(), L=L_eff)
+            img_uint8 = _to_uint8_from_01(V, white_is_high=True)
+            fcgr_pil = Image.fromarray(img_uint8)
+
+            ax.imshow(fcgr_pil, cmap="gray", origin="upper")
+            ax.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+            ax.set_title(f'{round(b / scale, 2)} - {round(e / scale, 2)} {scaling}')
+            corner_labels = [("A", (0.00, -0.01), (-0.05, -0.05), "right", "top"),  # bottom-left
+                             ("C", (0.00, 0.99), (-0.05, +0.05), "right", "bottom"),  # top-left
+                             ("T", (1.00, -0.01), (+0.05, -0.05), "left", "top"),  # bottom-right
+                             ("G", (1.00, 0.99), (+0.05, +0.05), "left", "bottom")]  # top-right
+            for text, xy, offset, ha, va in corner_labels:
+                ax.annotate(text, xy=xy, xycoords="axes fraction", xytext=offset, textcoords="offset points",
+                            ha=ha, va=va, fontsize=10, color="black", clip_on=False)
 
         if fig == self.t2_fig:
             ax1, ax2, ax3 = fig.subplots(1, 3)
