@@ -17,6 +17,7 @@ from PIL import Image
 from matplotlib.colors import to_rgba
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator, FuncFormatter
+from skimage.metrics import structural_similarity
 from sklearn.manifold import MDS
 from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 
@@ -74,9 +75,7 @@ class GUIDataStructure:
 class FCGRNormalizer:
     def __init__(self, method="asinh", scale="median_nz",
                  clip_low=1.0, clip_high=99.0, c=1e4, eps=1e-12,
-                 k_compensate=True,
-                 length_mode=None,  # NEW: None | 'linear' | 'sqrt'
-                 ref_length=500_000):  # NEW: reference segment length for scaling
+                 k_compensate=True, length_mode=None, ref_length=500_000):
         self.method = method
         self.scale = scale
         self.clip_low = float(clip_low)
@@ -100,7 +99,7 @@ class FCGRNormalizer:
         nz = f[f > 0]
         return float(np.median(nz)) if nz.size else 1.0
 
-    def fit(self, freq_mats, ks=None):
+    def fit(self, freq_mats, ks):
         """
         freq_mats: list of 2D freq arrays in [0,1]
         ks:        optional list of k for each matrix (same length as freq_mats)
@@ -111,14 +110,9 @@ class FCGRNormalizer:
             f = np.asarray(f, dtype=float)
             if self.k_compensate:
                 k_i = ks[i] if ks is not None else None
-                if k_i is None:
-                    # if you don't pass ks, we assume you want pooled fitting across a *single* k
-                    pass
-                else:
-                    f = f * (4.0 ** k_i)  # <<< k compensation here
+                f = f * (4.0 ** k_i)  # compensate for k
             if self.method == "asinh":
                 s_list.append(self._choose_scale(f))
-                # defer arcsinh until s is decided
                 vals.append(f.ravel())
             elif self.method == "log":
                 vals.append(np.log1p(f * self.c).ravel())
@@ -171,6 +165,18 @@ class FCGRNormalizer:
         x = np.clip(x, self.low, self.high)
         V = (x - self.low) / (self.high - self.low + self.eps)
         return V
+
+    @staticmethod
+    def _fcgr_to_freq(mat):
+        total = float(np.sum(mat))
+        return mat / total if total > 0 else mat
+
+    @staticmethod
+    def _to_uint8_from_01(V, white_is_high=True):
+        if white_is_high:
+            V = 1.0 - V
+        V = np.clip(V, 0.0, 1.0)
+        return np.round(V * 255.0).astype(np.uint8)
 
 
 class App(ctk.CTk):
@@ -298,6 +304,9 @@ class App(ctk.CTk):
         self.t3_pic_num = ctk.IntVar(value=0)
 
         # ------------------------- Build UI -------------------------
+        self.fcgr_normalizer = FCGRNormalizer(method='asinh', scale="median_nz",
+                                              clip_low=float(1.0), clip_high=float(99.0), c=float(1e4))
+
         self._create_top_navbar()
         self._build_main_content()
 
@@ -2667,25 +2676,11 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Could not save figure.")
 
     def _plot_fcgrs(self, fcgrs, bg=None, fig=None, index=0):
-        # TODO: change normalization for everyone maybe!
         if fig is None:
             fig = plt.Figure()
         extent = (0, 1, 0, 1)
         if bg is not None:
             fig.patch.set_facecolor(bg)
-
-        fcgr_normalizer = FCGRNormalizer(method='asinh', scale="median_nz",
-                                         clip_low=float(1.0), clip_high=float(99.0), c=float(1e4))
-
-        def _fcgr_to_freq(mat):
-            total = float(np.sum(mat))
-            return mat / total if total > 0 else mat
-
-        def _to_uint8_from_01(V, white_is_high=True):
-            if white_is_high:
-                V = 1.0 - V
-            V = np.clip(V, 0.0, 1.0)
-            return np.round(V * 255.0).astype(np.uint8)
 
         if fig == self.t1_fcgr_fig:
             ax = fig.add_subplot(111)
@@ -2693,21 +2688,19 @@ class App(ctk.CTk):
             scale, scaling = self._scaling(fcgrs["seq_len"])
             b = fcgrs["b"]
             e = fcgrs["e"]
+            length = fcgrs["e"] - fcgrs["b"]
 
             # plot the data
             # img = CGR.array2img(fcgrs["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
             # img = Image.fromarray(img)
             # ax.imshow(img, cmap='gray', extent=extent)  # Greys_r
-            f = _fcgr_to_freq(np.asarray(fcgrs["fcgr"], dtype=float))
-            L_eff = fcgrs["e"] - fcgrs["b"]  # the actual segment length
-
-            fcgr_normalizer.fit([f], ks=[self.k_var.get()])
-
-            V = fcgr_normalizer.transform01(f, k=self.k_var.get(), L=L_eff)
-            img_uint8 = _to_uint8_from_01(V, white_is_high=True)
-            fcgr_pil = Image.fromarray(img_uint8)
-
-            ax.imshow(fcgr_pil, cmap="gray", origin="upper")
+            f = CGR.normalize(fcgrs["fcgr"])
+            # f = FCGRNormalizer._fcgr_to_freq(np.asarray(fcgrs["fcgr"], dtype=float))
+            self.fcgr_normalizer.fit([f], ks=[self.k_var.get()])
+            V = self.fcgr_normalizer.transform01(f, k=self.k_var.get(), L=length)
+            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img = Image.fromarray(img_uint8)
+            ax.imshow(img, cmap="gray", origin="upper")
             ax.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
             ax.set_title(f'{round(b / scale, 2)} - {round(e / scale, 2)} {scaling}')
             corner_labels = [("A", (0.00, -0.01), (-0.05, -0.05), "right", "top"),  # bottom-left
@@ -2724,14 +2717,23 @@ class App(ctk.CTk):
             scale_1, scaling_1 = self._scaling(fcgrs["1"]["seq_len"])
             b1 = fcgrs["1"]["b"]
             e1 = fcgrs["1"]["e"]
+            length1 = e1 - b1
             scale_2, scaling_2 = self._scaling(fcgrs["2"]["seq_len"])
             b2 = fcgrs["2"]["b"]
             e2 = fcgrs["2"]["e"]
+            length2 = e2 - b2
 
             # plot the data on the subplots
-            img1 = CGR.array2img(fcgrs["1"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-            img1 = Image.fromarray(img1)
-            ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+            # # img1 = CGR.array2img(fcgrs["1"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            # # img1 = Image.fromarray(img1)
+            # # ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+            f1 = CGR.normalize(fcgrs["1"]["fcgr"])
+            # f = FCGRNormalizer._fcgr_to_freq(np.asarray(fcgrs["1"]["fcgr"], dtype=float))
+            self.fcgr_normalizer.fit([f1], ks=[self.k_var.get()])
+            V = self.fcgr_normalizer.transform01(f1, k=self.k_var.get(), L=length1)
+            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img1 = Image.fromarray(img_uint8)
+            ax1.imshow(img1, cmap="gray", origin="upper")
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
             ax1.set_title(f'Sequence 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
 
@@ -2741,9 +2743,16 @@ class App(ctk.CTk):
             ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
             ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
 
-            img2 = CGR.array2img(fcgrs["2"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-            img2 = Image.fromarray(img2)
-            ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+            # # img2 = CGR.array2img(fcgrs["2"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            # # img2 = Image.fromarray(img2)
+            # # ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+            f2 = CGR.normalize(fcgrs["2"]["fcgr"])
+            # f = FCGRNormalizer._fcgr_to_freq(np.asarray(fcgrs["2"]["fcgr"], dtype=float))
+            self.fcgr_normalizer.fit([f2], ks=[self.k_var.get()])
+            V = self.fcgr_normalizer.transform01(f2, k=self.k_var.get(), L=length2)
+            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img2 = Image.fromarray(img_uint8)
+            ax3.imshow(img2, cmap="gray", origin="upper")
             ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
             ax3.set_title(f'Sequence 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
 
@@ -2763,20 +2772,34 @@ class App(ctk.CTk):
             scale_1, scaling_1 = self._scaling(fcgrs["ref"]["seq_len"])
             b1 = fcgrs["ref"]["b"]
             e1 = fcgrs["ref"]["e"]
+            length1 = e1 - b1
             scale_2, scaling_2 = self._scaling(fcgrs[index]["seq_len"])
             b2 = fcgrs[index]["b"]
             e2 = fcgrs[index]["e"]
+            length2 = e2 - b2
 
             # plot the data on the subplots
-            img1 = CGR.array2img(fcgrs["ref"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-            img1 = Image.fromarray(img1)
-            ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+            # img1 = CGR.array2img(fcgrs["ref"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            # img1 = Image.fromarray(img1)
+            # ax1.imshow(img1, cmap='gray', extent=extent)  # Reds_r
+            f1 = CGR.normalize(fcgrs["ref"]["fcgr"])
+            self.fcgr_normalizer.fit([f1], ks=[self.k_var.get()])
+            V = self.fcgr_normalizer.transform01(f1, k=self.k_var.get(), L=length1)
+            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img1 = Image.fromarray(img_uint8)
+            ax1.imshow(img1, cmap="gray", origin="upper")
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
             ax1.set_title(f'Reference\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
 
-            img2 = CGR.array2img(fcgrs[index]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
-            img2 = Image.fromarray(img2)
-            ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+            # img2 = CGR.array2img(fcgrs[index]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
+            # img2 = Image.fromarray(img2)
+            # ax3.imshow(img2, cmap='gray', extent=extent)  # Blues_r
+            f2 = CGR.normalize(fcgrs[index]["fcgr"])
+            self.fcgr_normalizer.fit([f2], ks=[self.k_var.get()])
+            V = self.fcgr_normalizer.transform01(f2, k=self.k_var.get(), L=length2)
+            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img2 = Image.fromarray(img_uint8)
+            ax3.imshow(img2, cmap="gray", origin="upper")
             ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
             ax3.set_title(f'Segment\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
 
