@@ -65,12 +65,6 @@ class GUIDataStructure:
         self.end_seq = ctk.IntVar()
         self.end_txt = ctk.StringVar()
 
-    def invalidate(self):
-        self.seq_name.set("")
-        self.seq = ""
-        self.start_seq.set(0)
-        self.end_seq.set(0)
-
 
 class FCGRNormalizer:
     def __init__(self, method="asinh", scale="median_nz",
@@ -167,12 +161,12 @@ class FCGRNormalizer:
         return V
 
     @staticmethod
-    def _fcgr_to_freq(mat):
+    def fcgr_to_freq(mat):
         total = float(np.sum(mat))
         return mat / total if total > 0 else mat
 
     @staticmethod
-    def _to_uint8_from_01(V, white_is_high=True):
+    def to_uint8_from_01(V, white_is_high=True):
         if white_is_high:
             V = 1.0 - V
         V = np.clip(V, 0.0, 1.0)
@@ -232,10 +226,10 @@ class App(ctk.CTk):
         self.t1_hist_save_btn = None
         self._t1_hist_cids = []
         self.t1_fcgr_frame = None
-        self.t1_3d_fcgr_frame = None
         self.t1_fcgr_fig = None
         self.t1_fcgr_canvas = None
         self.t1_fcgr_save_btn = None
+        self.t1_fcgr_3d_btn = None
 
         # Variables for page 2 (CGR Comparator)
         self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
@@ -317,10 +311,7 @@ class App(ctk.CTk):
         self.appearance.set(new_mode)
         ctk.set_appearance_mode(new_mode)
         # update icon
-        if new_mode == "Dark":
-            self.theme_button.configure(text="☀️")
-        else:
-            self.theme_button.configure(text="🌙")
+        self.theme_button.configure(text="☀️" if new_mode == "Dark" else "🌙")
 
     def _create_top_navbar(self):
         nav = ctk.CTkFrame(self, corner_radius=100, border_color=COLORS["BORDER_COLOR"], border_width=1)
@@ -434,25 +425,24 @@ class App(ctk.CTk):
         # plain Tk Canvas for scrolling
         # TODO: not scrollable with mouse wheel
         # TODO: change the color background of the canvas when toggle theme
-        canvas = tkinter.Canvas(scroll_container, highlightthickness=0)
-        canvas.grid(row=0, column=0, sticky="nsew")
+        self.seq_list_canvas = tkinter.Canvas(scroll_container, highlightthickness=0)
+        self.seq_list_canvas.grid(row=0, column=0, sticky="nsew")
 
-        # vertical scrollbar
-        v_scroll = ctk.CTkScrollbar(scroll_container, orientation="vertical", command=canvas.yview, )
+        # scrollbars use this canvas
+        v_scroll = ctk.CTkScrollbar(scroll_container, orientation="vertical", command=self.seq_list_canvas.yview)
         v_scroll.grid(row=0, column=1, sticky="ns", padx=(4, 0))
-        # horizontal scrollbar
-        h_scroll = ctk.CTkScrollbar(scroll_container, orientation="horizontal", command=canvas.xview, )
-        h_scroll.grid(row=1, column=0, sticky="ew", pady=(4, 0))
-        canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
 
-        # inner frame that actually holds the file entries
-        self.uploaded_seq_lists_frame = ctk.CTkFrame(canvas, fg_color="transparent", )
-        # TODO: change the color background of the canvas
-        canvas.create_window((0, 0), window=self.uploaded_seq_lists_frame, anchor="nw")
+        h_scroll = ctk.CTkScrollbar(scroll_container, orientation="horizontal", command=self.seq_list_canvas.xview)
+        h_scroll.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+
+        self.seq_list_canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
+
+        self.uploaded_seq_lists_frame = ctk.CTkFrame(self.seq_list_canvas, fg_color="transparent")
+        self.seq_list_canvas.create_window((0, 0), window=self.uploaded_seq_lists_frame, anchor="nw")
 
         def _on_inner_configure(event):
             # update scroll region to fit inner frame (both width and height)
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            self.seq_list_canvas.configure(scrollregion=self.seq_list_canvas.bbox("all"))
 
         self.uploaded_seq_lists_frame.bind("<Configure>", _on_inner_configure)
         self.t1_refresh_uploaded_file_list()
@@ -550,7 +540,7 @@ class App(ctk.CTk):
         self.t1_hist_frame.grid_propagate(False)
 
         self.t1_placeholder_label = ctk.CTkLabel(master=display_frame, text="Display Area",
-                                                 font=HEADER_FONT, text_color="white")
+                                                 font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t1_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
         if getattr(self, "t1_fcgrs_dict", None) is not None:
             # Histogram
@@ -586,12 +576,26 @@ class App(ctk.CTk):
             self.t1_fcgr_save_btn = ctk.CTkButton(master=self.t1_fcgr_frame, text="💾", width=30, height=30,
                                                   fg_color=COLORS["BORDER_COLOR"],
                                                   hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                                  command=partial(self._save_figure, "t3_fcgr_fig"))
+                                                  command=partial(self._save_figure, "t1_fcgr_fig"))
             self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+
+            if getattr(self, "t1_fcgr_3d_btn", None) is not None and self.t1_fcgr_3d_btn.winfo_exists():
+                try:
+                    self.t1_fcgr_3d_btn.destroy()
+                except Exception:
+                    pass
+
+            self.t1_fcgr_3d_btn = ctk.CTkButton(master=self.t1_fcgr_frame, text="3D", width=30, height=30,
+                                                fg_color=COLORS["BORDER_COLOR"],
+                                                hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                                command=self._open_t1_fcgr_3d)
+            self.t1_fcgr_3d_btn.place(relx=0.085, rely=0.99, anchor="sw")
 
         # bottom-right frame (larger)
         self.t1_3d_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
         self.t1_3d_fcgr_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 5), pady=(5, 5), )
+        self.t1_3d_fcgr_frame.grid_rowconfigure(0, weight=1)
+        self.t1_3d_fcgr_frame.grid_columnconfigure(0, weight=1)
         self.t1_3d_fcgr_frame.grid_propagate(False)
 
     def _build_cgr_comparator(self, parent):
@@ -1284,12 +1288,12 @@ class App(ctk.CTk):
             self._draw_panel(frame=self.t1_fcgr_frame, fig_attr="t1_fcgr_fig", canvas_attr="t1_fcgr_canvas",
                              save_btn_attr="t1_fcgr_save_btn", save_command=lambda: self._save_figure("t1_fcgr_fig"),
                              placeholder_attr=None, fcgrs_dict=self.t1_fcgrs_dict,
-                             panel_type="fcgr", )
+                             panel_type="fcgr_3d", )
 
-            # 3D FCGR plot
-            self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
-                                            border_color=COLORS["BORDER_COLOR"])
-            # TODO: implement 3D FCGR plot
+            # # 3D FCGR plot
+            # self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+            #                                 border_color=COLORS["BORDER_COLOR"])
+            # TODO: Extra space for a plot
 
     def _t1_disconnect_hist_events(self):
         if getattr(self, "t1_hist_canvas", None) is not None:
@@ -1425,6 +1429,49 @@ class App(ctk.CTk):
             self._t1_hist_cids.append(cid)
 
         canvas.draw_idle()
+
+    def _open_t1_fcgr_3d(self):
+        import numpy as np
+        import plotly.graph_objects as go
+        import plotly.io as pio
+        import tempfile
+        import webbrowser
+        from pathlib import Path
+
+        fcgr = self.t1_fcgrs_dict["fcgr"]
+        k = self.k_var.get()
+
+        Z = np.asarray(fcgr, dtype=float)
+        h, w = Z.shape
+
+        bits_to_base = {(0, 0): "C", (1, 0): "G", (0, 1): "A", (1, 1): "T"}
+
+        kmers = np.empty((h, w), dtype=object)
+        for y in range(h):
+            for x in range(w):
+                out = []
+                for i in range(k):
+                    bitpos = (k - 1 - i)
+                    xb = (x >> bitpos) & 1
+                    yb = (y >> bitpos) & 1
+                    out.append(bits_to_base[(xb, yb)])
+                kmers[y, x] = "".join(out)
+
+        fig = go.Figure(go.Surface(
+            z=Z, customdata=kmers, colorscale="Greys", showscale=True,
+            hovertemplate="k-mer: %{customdata}<br>x=%{x}<br>y=%{y}<br>value=%{z}<extra></extra>"))
+
+        fig.update_layout(title=f"FCGR 3D Surface (k={k})",
+                          scene=dict(xaxis_title="FCGR x", yaxis_title="FCGR y", zaxis_title="count"))
+
+        html = pio.to_html(fig, full_html=True, include_plotlyjs="cdn")
+
+        # Write to a temp HTML file and open in browser
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
+        tmp.write(html.encode("utf-8"))
+        tmp.close()
+
+        webbrowser.open(Path(tmp.name).as_uri())
 
     @staticmethod
     def _count_kmers(seq, k, progress_cb=None):
@@ -2698,7 +2745,7 @@ class App(ctk.CTk):
             # f = FCGRNormalizer._fcgr_to_freq(np.asarray(fcgrs["fcgr"], dtype=float))
             self.fcgr_normalizer.fit([f], ks=[self.k_var.get()])
             V = self.fcgr_normalizer.transform01(f, k=self.k_var.get(), L=length)
-            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img_uint8 = FCGRNormalizer.to_uint8_from_01(V, white_is_high=True)
             img = Image.fromarray(img_uint8)
             ax.imshow(img, cmap="gray", origin="upper")
             ax.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
@@ -2731,7 +2778,7 @@ class App(ctk.CTk):
             # f = FCGRNormalizer._fcgr_to_freq(np.asarray(fcgrs["1"]["fcgr"], dtype=float))
             self.fcgr_normalizer.fit([f1], ks=[self.k_var.get()])
             V = self.fcgr_normalizer.transform01(f1, k=self.k_var.get(), L=length1)
-            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img_uint8 = FCGRNormalizer.to_uint8_from_01(V, white_is_high=True)
             img1 = Image.fromarray(img_uint8)
             ax1.imshow(img1, cmap="gray", origin="upper")
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
@@ -2750,7 +2797,7 @@ class App(ctk.CTk):
             # f = FCGRNormalizer._fcgr_to_freq(np.asarray(fcgrs["2"]["fcgr"], dtype=float))
             self.fcgr_normalizer.fit([f2], ks=[self.k_var.get()])
             V = self.fcgr_normalizer.transform01(f2, k=self.k_var.get(), L=length2)
-            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img_uint8 = FCGRNormalizer.to_uint8_from_01(V, white_is_high=True)
             img2 = Image.fromarray(img_uint8)
             ax3.imshow(img2, cmap="gray", origin="upper")
             ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
@@ -2785,7 +2832,7 @@ class App(ctk.CTk):
             f1 = CGR.normalize(fcgrs["ref"]["fcgr"])
             self.fcgr_normalizer.fit([f1], ks=[self.k_var.get()])
             V = self.fcgr_normalizer.transform01(f1, k=self.k_var.get(), L=length1)
-            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img_uint8 = FCGRNormalizer.to_uint8_from_01(V, white_is_high=True)
             img1 = Image.fromarray(img_uint8)
             ax1.imshow(img1, cmap="gray", origin="upper")
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
@@ -2797,7 +2844,7 @@ class App(ctk.CTk):
             f2 = CGR.normalize(fcgrs[index]["fcgr"])
             self.fcgr_normalizer.fit([f2], ks=[self.k_var.get()])
             V = self.fcgr_normalizer.transform01(f2, k=self.k_var.get(), L=length2)
-            img_uint8 = FCGRNormalizer._to_uint8_from_01(V, white_is_high=True)
+            img_uint8 = FCGRNormalizer.to_uint8_from_01(V, white_is_high=True)
             img2 = Image.fromarray(img_uint8)
             ax3.imshow(img2, cmap="gray", origin="upper")
             ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
@@ -2842,14 +2889,22 @@ class App(ctk.CTk):
             setattr(self, canvas_attr, canvas)
 
             # --- Save button setup ---
-            if panel_type in ("fcgr", "chart", "kmer_hist"):
+            if panel_type in ("fcgr", "chart", "kmer_hist", "fcgr_3d"):
                 save_btn = getattr(self, save_btn_attr, None)
-                if (save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame):
+                if save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame:
                     save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30,
                                              fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
                                              command=save_command, )
                     save_btn.place(relx=0.01, rely=0.99, anchor="sw")
                     setattr(self, save_btn_attr, save_btn)
+            if panel_type == "fcgr_3d":
+                btn_3d = getattr(self, "t1_fcgr_3d_btn", None)
+                if btn_3d is None or not btn_3d.winfo_exists() or btn_3d.master is not frame:
+                    btn_3d = ctk.CTkButton(master=frame, text="3D", width=30, height=30,
+                                           fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                           command=self._open_t1_fcgr_3d)
+                    btn_3d.place(relx=0.085, rely=0.99, anchor="sw")
+                    setattr(self, "t1_fcgr_3d_btn", btn_3d)
             else:
                 # TODO: need to add save, zoom, pan, reset buttons for 3d plot
                 pass
@@ -2874,7 +2929,7 @@ class App(ctk.CTk):
 
         # --- 3) Clear figure and re-plot ---
         fig.clear()
-        if panel_type == "fcgr":
+        if panel_type in ("fcgr", "fcgr_3d"):
             # If we are in third tab and no fcgrs_dict provided, load from pickle
             if fig_attr == "t3_fcgr_fig" and not fcgrs_dict:
                 with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as handle:
