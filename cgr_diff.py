@@ -42,6 +42,7 @@ HEADER_FONT_BOLD = ('Cambria', 15, 'bold')
 # main colors in the theme
 COLORS = dict(
     BTN_COLOR=ctk.ThemeManager.theme["CTkButton"]["fg_color"],
+    CTK_FRAME_COLORS = ctk.ThemeManager.theme["CTkFrame"]["fg_color"],
     DISABLED_BTN_COLOR="#888888",
     TEXT_NORMAL_COLOR=ctk.ThemeManager.theme["CTkButton"]["text_color"],
     TEXT_DISABLE_COLOR="#707370",  # BTN_THEME.get("text_color_disabled", TEXT_NORMAL_COLOR)
@@ -306,12 +307,53 @@ class App(ctk.CTk):
 
         self.t1_upload_files(hard_coded=True)
 
+    @staticmethod
+    def _resolve_ctk_color(c):
+        if isinstance(c, (tuple, list)) and len(c) >= 2:
+            return c[0] if ctk.get_appearance_mode() == "Light" else c[1]
+        return c
+
+    def _update_tk_canvas_theme(self):
+        if not hasattr(self, "seq_list_canvas") or self.seq_list_canvas is None:
+            return
+        frame_bg = self._resolve_ctk_color(COLORS["CTK_FRAME_COLORS"])
+        self.seq_list_canvas.configure(bg=frame_bg, highlightbackground=frame_bg)
+        self.uploaded_seq_lists_frame.configure(fg_color=frame_bg, bg_color=frame_bg)
+
+    def _restyle_uploaded_cards(self):
+        if not self.file_cards:
+            return
+
+        btn_bg = self._resolve_ctk_color(ctk.ThemeManager.theme["CTkButton"]["fg_color"])
+        btn_text = self._resolve_ctk_color(ctk.ThemeManager.theme["CTkButton"]["text_color"])
+
+        # normal label colors for unselected cards
+        normal_text = "black" if ctk.get_appearance_mode() == "Light" else "white"
+        disabled_text = "#707370"
+
+        for i, card in enumerate(self.file_cards):
+            is_selected = (self.selected_file_index == i)
+
+            if is_selected:
+                card.configure(fg_color=btn_bg, corner_radius=0)
+            else:
+                card.configure(fg_color="transparent", corner_radius=0)
+
+            for child in card.winfo_children():
+                row = child.grid_info().get("row", None)
+                if is_selected:
+                    child.configure(fg_color=btn_bg, text_color=btn_text)
+                else:
+                    child.configure(fg_color="transparent", text_color=normal_text if row == 0 else disabled_text)
+
     def _toggle_theme(self):
         new_mode = "Light" if self.appearance.get() == "Dark" else "Dark"
         self.appearance.set(new_mode)
         ctk.set_appearance_mode(new_mode)
         # update icon
         self.theme_button.configure(text="☀️" if new_mode == "Dark" else "🌙")
+        self._update_tk_canvas_theme()
+        self._restyle_uploaded_cards()
 
     def _create_top_navbar(self):
         nav = ctk.CTkFrame(self, corner_radius=100, border_color=COLORS["BORDER_COLOR"], border_width=1)
@@ -408,7 +450,8 @@ class App(ctk.CTk):
         generate_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
 
         # list of genomes
-        list_frame = ctk.CTkFrame(config_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        list_frame = ctk.CTkFrame(config_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                  fg_color="transparent")
         list_frame.grid(row=1, column=0, padx=(10, 10), pady=10, sticky="nsew")
         list_frame.grid_columnconfigure(0, weight=1)
         list_frame.grid_rowconfigure(1, weight=1)
@@ -424,7 +467,6 @@ class App(ctk.CTk):
 
         # plain Tk Canvas for scrolling
         # TODO: not scrollable with mouse wheel
-        # TODO: change the color background of the canvas when toggle theme
         self.seq_list_canvas = tkinter.Canvas(scroll_container, highlightthickness=0)
         self.seq_list_canvas.grid(row=0, column=0, sticky="nsew")
 
@@ -437,8 +479,11 @@ class App(ctk.CTk):
 
         self.seq_list_canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
 
-        self.uploaded_seq_lists_frame = ctk.CTkFrame(self.seq_list_canvas, fg_color="transparent")
+        self.uploaded_seq_lists_frame = ctk.CTkFrame(self.seq_list_canvas)
         self.seq_list_canvas.create_window((0, 0), window=self.uploaded_seq_lists_frame, anchor="nw")
+
+        # apply correct background immediately
+        self._update_tk_canvas_theme()
 
         def _on_inner_configure(event):
             # update scroll region to fit inner frame (both width and height)
@@ -3295,17 +3340,6 @@ class App(ctk.CTk):
             return self._resolve_ctk_color(self.cget("fg_color")) or "#FFFFFF"
         except Exception:
             return "#FFFFFF"
-
-    def _resolve_ctk_color(self, color):
-        if color in (None, "transparent"):
-            return None
-
-        if isinstance(color, (list, tuple)) and len(color) == 2:
-            mode = ctk.get_appearance_mode()  # "Light" or "Dark"
-            color = color[0] if mode == "Light" else color[1]
-
-        # Convert Tk/CTk color name -> hex for Matplotlib
-        return self._tk_color_to_hex(color)
 
     def _tk_color_to_hex(self, color):
         if color is None:
