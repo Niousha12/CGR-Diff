@@ -215,6 +215,7 @@ class App(ctk.CTk):
         self._t1_progress = 0.0
         self.t1_progress_bar = None
         self.t1_fcgrs_dict = None
+        self._t1_selected_path = None
         self.t1_start_entry = None
         self.t1_end_entry = None
         self.t1_len_label = None
@@ -1186,7 +1187,7 @@ class App(ctk.CTk):
             # make everything inside the card clickable
             def _make_on_click(index):
                 def _on_click(event=None):
-                    return self.t1_set_selected_uploaded(index)
+                    return self.t1_set_selected_uploaded(index, reset_range=True)
 
                 return _on_click
 
@@ -1210,7 +1211,7 @@ class App(ctk.CTk):
             else:
                 self.selected_file_index = None
 
-    def t1_set_selected_uploaded(self, index: int):
+    def t1_set_selected_uploaded(self, index, reset_range=False):
         self.selected_file_index = index
 
         for i, card in enumerate(self.file_cards):
@@ -1218,20 +1219,32 @@ class App(ctk.CTk):
                 # SELECTED STYLE
                 card.configure(fg_color=COLORS["BTN_COLOR"], corner_radius=0)
                 for child in card.winfo_children():
-                    if child.grid_info().get("row") == 0:
-                        child.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
-                    else:
-                        child.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
-                # read it and set the start end entries
+                    child.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
+
                 selected_path = self.uploaded_files[index]
                 self._t1_last_seq = self._read_fasta(selected_path)[1]
                 seq_len = len(self._t1_last_seq)
                 self.t1_ds.seq = self._t1_last_seq
-                # TODO: I want to keep start and end from resetting after changing the tab
+
                 self.t1_start_entry.configure(state="normal")
                 self.t1_end_entry.configure(state="normal")
-                self.t1_ds.start_txt.set("0")
-                self.t1_ds.end_txt.set(f"{seq_len:,}")
+
+                if reset_range:
+                    start, end = 0, seq_len
+                else:
+                    start = self._parse_int(self.t1_ds.start_txt.get())
+                    end = self._parse_int(self.t1_ds.end_txt.get())
+
+                    if start is None or end is None or start < 0 or end > seq_len or start >= end:
+                        start, end = 0, seq_len
+
+                self.t1_ds.start_seq.set(start)
+                self.t1_ds.end_seq.set(end)
+                self.t1_ds.start_txt.set(self._format_int(start))
+                self.t1_ds.end_txt.set(self._format_int(end))
+
+                self.t1_len_label.configure(text=f"Length={seq_len:,}")
+
                 # Set the sequence length
                 self.t1_len_label.configure(text=f"Length={seq_len:,}")
             else:
