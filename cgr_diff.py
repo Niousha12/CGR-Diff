@@ -2966,6 +2966,15 @@ class App(ctk.CTk):
             if panel_type == "mds":
                 toolbar_attr = f"{canvas_attr}_toolbar"
                 toolbar = getattr(self, toolbar_attr, None)
+
+                # If canvas changed, drop old toolbar
+                if toolbar is not None and getattr(toolbar, "canvas", None) is not canvas:
+                    try:
+                        toolbar.destroy()
+                    except Exception:
+                        pass
+                    toolbar = None
+
                 if toolbar is None or not getattr(toolbar, "winfo_exists", lambda: False)():
                     toolbar = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
                     toolbar.update()
@@ -2975,6 +2984,7 @@ class App(ctk.CTk):
                 if not hasattr(self, nav_state_attr):
                     setattr(self, nav_state_attr, {"pan_on": False})
                 nav_state = getattr(self, nav_state_attr)
+                nav_state["pan_on"] = False
 
                 BTN_ON = COLORS["BTN_COLOR"]
                 BTN_OFF = COLORS["BORDER_COLOR"]
