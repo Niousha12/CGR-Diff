@@ -42,7 +42,7 @@ HEADER_FONT_BOLD = ('Cambria', 15, 'bold')
 # main colors in the theme
 COLORS = dict(
     BTN_COLOR=ctk.ThemeManager.theme["CTkButton"]["fg_color"],
-    CTK_FRAME_COLORS = ctk.ThemeManager.theme["CTkFrame"]["fg_color"],
+    CTK_FRAME_COLORS=ctk.ThemeManager.theme["CTkFrame"]["fg_color"],
     DISABLED_BTN_COLOR="#888888",
     TEXT_NORMAL_COLOR=ctk.ThemeManager.theme["CTkButton"]["text_color"],
     TEXT_DISABLE_COLOR="#707370",  # BTN_THEME.get("text_color_disabled", TEXT_NORMAL_COLOR)
@@ -623,7 +623,7 @@ class App(ctk.CTk):
                                                   fg_color=COLORS["BORDER_COLOR"],
                                                   hover_color=COLORS["FRAME_HOVER_COLOR"],
                                                   command=partial(self._save_figure, "t1_fcgr_fig"))
-            self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+            self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
             if getattr(self, "t1_fcgr_3d_btn", None) is not None and self.t1_fcgr_3d_btn.winfo_exists():
                 try:
@@ -635,7 +635,7 @@ class App(ctk.CTk):
                                                 fg_color=COLORS["BORDER_COLOR"],
                                                 hover_color=COLORS["FRAME_HOVER_COLOR"],
                                                 command=self._open_t1_fcgr_3d)
-            self.t1_fcgr_3d_btn.place(relx=0.085, rely=0.99, anchor="sw")
+            self.t1_fcgr_3d_btn.place(relx=0.01, rely=0.99, anchor="sw", x=33)
 
         # bottom-right frame (larger)
         self.t1_3d_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
@@ -828,7 +828,7 @@ class App(ctk.CTk):
                                              fg_color=COLORS["BORDER_COLOR"],
                                              hover_color=COLORS["FRAME_HOVER_COLOR"],
                                              command=partial(self._save_figure, "t2_fig"), )
-            self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+            self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
     def _build_common_reference(self, parent):
         parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
@@ -1073,7 +1073,7 @@ class App(ctk.CTk):
                                                   fg_color=COLORS["BORDER_COLOR"],
                                                   hover_color=COLORS["FRAME_HOVER_COLOR"],
                                                   command=partial(self._save_figure, "t3_fcgr_fig"))
-            self.t3_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+            self.t3_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
         # Plot frame
         self.t3_plot_display_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1,
@@ -1104,7 +1104,7 @@ class App(ctk.CTk):
                                                   fg_color=COLORS["BORDER_COLOR"],
                                                   hover_color=COLORS["FRAME_HOVER_COLOR"],
                                                   command=partial(self._save_figure, "t3_plot_fig"))
-            self.t3_plot_save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+            self.t3_plot_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
         # Changing the picture with slider frame
         changing_frame = ctk.CTkFrame(display_frame, fg_color="transparent", height=20)
@@ -2953,7 +2953,7 @@ class App(ctk.CTk):
                     save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30,
                                              fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
                                              command=save_command, )
-                    save_btn.place(relx=0.01, rely=0.99, anchor="sw")
+                    save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
                     setattr(self, save_btn_attr, save_btn)
             if panel_type == "fcgr_3d":
                 btn_3d = getattr(self, "t1_fcgr_3d_btn", None)
@@ -2961,29 +2961,164 @@ class App(ctk.CTk):
                     btn_3d = ctk.CTkButton(master=frame, text="3D", width=30, height=30,
                                            fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
                                            command=self._open_t1_fcgr_3d)
-                    btn_3d.place(relx=0.085, rely=0.99, anchor="sw")
+                    btn_3d.place(relx=0.01, rely=0.99, anchor="sw", x=33)
                     setattr(self, "t1_fcgr_3d_btn", btn_3d)
-            else:
-                # TODO: need to add save, zoom, pan, reset buttons for 3d plot
-                pass
-                # if getattr(self, "t3_mds_toolbar", None) is None or not self.t3_mds_toolbar.winfo_exists():
-                #     bg = self._get_effective_bg_color(frame)  # MUST be hex after your converter
-                #
-                #     tb = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
-                #     tb.update()
-                #
-                #     self._configure_mds_toolbar(tb, frame_bg=bg, keep_buttons=("Home", "Pan", "Zoom", "Save"),
-                #                                 btn_bg=COLORS["BORDER_COLOR"], btn_active=COLORS["FRAME_HOVER_COLOR"])
-                #     # Put toolbar
-                #     frame.grid_columnconfigure(0, weight=1)
-                #     tb.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
-                #     tb.configure(background=bg, bd=0, relief="flat", highlightthickness=0)
-                #
-                #     self.t3_mds_toolbar = tb
-                # # tb = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
-                # # tb.update()
-                # # tb.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
-                # # self.mds_toolbar = tb
+            if panel_type == "mds":
+                toolbar_attr = f"{canvas_attr}_toolbar"
+                toolbar = getattr(self, toolbar_attr, None)
+                if toolbar is None or not getattr(toolbar, "winfo_exists", lambda: False)():
+                    toolbar = NavigationToolbar2Tk(canvas, frame, pack_toolbar=False)
+                    toolbar.update()
+                    setattr(self, toolbar_attr, toolbar)
+
+                nav_state_attr = f"{canvas_attr}_nav_state"
+                if not hasattr(self, nav_state_attr):
+                    setattr(self, nav_state_attr, {"pan_on": False})
+                nav_state = getattr(self, nav_state_attr)
+
+                BTN_ON = COLORS["BTN_COLOR"]
+                BTN_OFF = COLORS["BORDER_COLOR"]
+                BTN_HOVER = COLORS["FRAME_HOVER_COLOR"]
+
+                # Helper to place buttons in a row (bottom-left)
+                def _mk_btn(name_attr, text, cmd, x):
+                    btn = getattr(self, name_attr, None)
+                    if btn is None or not btn.winfo_exists() or btn.master is not frame:
+                        btn = ctk.CTkButton(master=frame, text=text, width=30, height=30,
+                                            fg_color=BTN_OFF, hover_color=BTN_HOVER, command=cmd)
+                        setattr(self, name_attr, btn)
+                    btn.place(relx=0.01, rely=0.99, anchor="sw", x=x)
+                    return btn
+
+                def _set_btn_active(btn, active: bool):
+                    btn.configure(fg_color=BTN_ON if active else BTN_OFF, hover_color=BTN_ON if active else BTN_HOVER)
+
+                def _get_ax():
+                    return fig.axes[0] if fig.axes else None
+
+                def _ensure_base_view():
+                    if nav_state.get("base_set", False):
+                        return
+                    ax0 = _get_ax()
+                    if ax0 is None:
+                        return
+
+                    nav_state["base_xlim"] = ax0.get_xlim()
+                    nav_state["base_ylim"] = ax0.get_ylim()
+                    if hasattr(ax0, "get_zlim"):
+                        nav_state["base_zlim"] = ax0.get_zlim()
+
+                    # 3D camera (so reset also restores rotation)
+                    if hasattr(ax0, "elev") and hasattr(ax0, "azim"):
+                        nav_state["base_elev"] = ax0.elev
+                        nav_state["base_azim"] = ax0.azim
+                    if hasattr(ax0, "roll"):
+                        nav_state["base_roll"] = ax0.roll
+
+                    nav_state["base_set"] = True
+
+                def _zoom_out(step=1.25):
+                    _ensure_base_view()
+
+                    ax = _get_ax()
+                    if ax is None:
+                        return
+
+                    x0, x1 = ax.get_xlim()
+                    y0, y1 = ax.get_ylim()
+
+                    cx = (x0 + x1) / 2.0
+                    cy = (y0 + y1) / 2.0
+                    hx = (x1 - x0) / 2.0 * step
+                    hy = (y1 - y0) / 2.0 * step
+
+                    ax.set_xlim(cx - hx, cx + hx)
+                    ax.set_ylim(cy - hy, cy + hy)
+
+                    if hasattr(ax, "get_zlim"):
+                        z0, z1 = ax.get_zlim()
+                        cz = (z0 + z1) / 2.0
+                        hz = (z1 - z0) / 2.0 * step
+                        ax.set_zlim(cz - hz, cz + hz)
+
+                    canvas.draw_idle()
+
+                def _zoom_in(step=1.25):
+                    _ensure_base_view()
+
+                    ax = _get_ax()
+                    if ax is None:
+                        return
+
+                    x0, x1 = ax.get_xlim()
+                    y0, y1 = ax.get_ylim()
+
+                    cx = (x0 + x1) / 2.0
+                    cy = (y0 + y1) / 2.0
+                    hx = (x1 - x0) / 2.0 / step
+                    hy = (y1 - y0) / 2.0 / step
+
+                    ax.set_xlim(cx - hx, cx + hx)
+                    ax.set_ylim(cy - hy, cy + hy)
+
+                    if hasattr(ax, "get_zlim"):
+                        z0, z1 = ax.get_zlim()
+                        cz = (z0 + z1) / 2.0
+                        hz = (z1 - z0) / 2.0 / step
+                        ax.set_zlim(cz - hz, cz + hz)
+
+                    canvas.draw_idle()
+
+                # Create buttons
+                reset_btn = _mk_btn(f"{canvas_attr}_reset_btn", "🏠", None, x=0)
+                save_btn = _mk_btn(f"{canvas_attr}_save_btn", "💾", toolbar.save_figure, x=33)
+                zoomin_btn = _mk_btn(f"{canvas_attr}_zoomin_btn", "➕", _zoom_in, x=66)
+                zoomout_btn = _mk_btn(f"{canvas_attr}_zoomout_btn", "➖", _zoom_out, x=99)
+                pan_btn = _mk_btn(f"{canvas_attr}_pan_btn", "✋", None, x=132)
+
+                def _toggle_pan():
+                    _ensure_base_view()
+                    toolbar.pan()
+                    nav_state["pan_on"] = not nav_state["pan_on"]
+                    _set_btn_active(pan_btn, nav_state["pan_on"])
+
+                def _reset():
+                    _ensure_base_view()
+
+                    if nav_state["pan_on"]:
+                        toolbar.pan()
+                        nav_state["pan_on"] = False
+                        _set_btn_active(pan_btn, False)
+
+                    ax = _get_ax()
+                    if ax is None:
+                        return
+
+                    if "base_xlim" in nav_state:
+                        ax.set_xlim(nav_state["base_xlim"])
+                    if "base_ylim" in nav_state:
+                        ax.set_ylim(nav_state["base_ylim"])
+                    if hasattr(ax, "set_zlim") and "base_zlim" in nav_state:
+                        ax.set_zlim(nav_state["base_zlim"])
+
+                    # restore 3D camera
+                    if hasattr(ax, "view_init") and "base_elev" in nav_state and "base_azim" in nav_state:
+                        try:
+                            if "base_roll" in nav_state:
+                                ax.view_init(elev=nav_state["base_elev"], azim=nav_state["base_azim"],
+                                             roll=nav_state["base_roll"])
+                            else:
+                                ax.view_init(elev=nav_state["base_elev"], azim=nav_state["base_azim"])
+                        except TypeError:
+                            ax.view_init(elev=nav_state["base_elev"], azim=nav_state["base_azim"])
+                    canvas.draw_idle()
+
+                # Now assign commands (after functions exist)
+                pan_btn.configure(command=_toggle_pan)
+                reset_btn.configure(command=_reset)
+
+                _set_btn_active(pan_btn, nav_state["pan_on"])
+                frame.after(0, _ensure_base_view)
 
         # --- 3) Clear figure and re-plot ---
         fig.clear()
