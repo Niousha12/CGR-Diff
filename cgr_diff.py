@@ -52,6 +52,7 @@ COLORS = dict(
     BORDER_COLOR="#333333",
     LIGHT_FRAME_COLOR="#DBDBDB", )
 KMERS = [str(i) for i in range(1, 10)]
+KMERS_SYNTH = [str(i) for i in range(2, 7)]
 DISTANCES = ["Normalized Euclidean", "Cosine", "Manhattan", "Descriptor", "DSSIM", "K-S", "Wasserstein"]
 RESOLUTION_DICT = {2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 4, 9: 4, 10: 4, 11: 4, 12: 4}
 PLOT_TYPES = ["Bar plot", "Line plot", "Histogram plot"]
@@ -214,6 +215,7 @@ class App(ctk.CTk):
         self.t1_status_label = None
         self._t1_progress = 0.0
         self.t1_progress_bar = None
+        self.t1_synth_dialog = None
         self.t1_fcgrs_dict = None
         self._t1_selected_path = None
         self.t1_start_entry = None
@@ -447,7 +449,7 @@ class App(ctk.CTk):
         upload_btn.grid(row=1, column=0, sticky="ew")
 
         generate_btn = ctk.CTkButton(top_btn_frame, text="Generate", corner_radius=8, height=35, font=HEADER_FONT,
-                                     text_color="white", )
+                                     text_color="white", command=self.t1_gen_synth_seq_event)
         generate_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
 
         # list of genomes
@@ -1272,6 +1274,24 @@ class App(ctk.CTk):
         self.t1_len_label.configure(text="Length=0")
         self._t1_last_seq = None
 
+    def t1_gen_synth_seq_event(self):
+        def _accept_sequence(seq):
+            # TODO: add the generated sequence to the list.
+            # TODO: might need to ask for a name for it.
+            if len(seq) <= 0:
+                messagebox.showerror("Error", "No sequence generated.")
+                return
+
+        # create once, reuse forever
+        if (not hasattr(self, "t1_synth_dialog") or self.t1_synth_dialog is None or
+                not self.t1_synth_dialog.winfo_exists()):
+            self.t1_synth_dialog = GenerateSyntheticSequence(self, on_save=_accept_sequence)
+        else:
+            self.t1_synth_dialog.on_save = _accept_sequence  # update callback if needed
+            self.t1_synth_dialog.show()  # bring back & focus
+
+        self.wait_window(self.t1_synth_dialog)
+
     def t1_run_manager(self, event):
         if self.selected_file_index is None:
             messagebox.showinfo("No selection", "Please select a file to analyze.")
@@ -1351,7 +1371,6 @@ class App(ctk.CTk):
             # # 3D FCGR plot
             # self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
             #                                 border_color=COLORS["BORDER_COLOR"])
-            # TODO: Extra space for a plot
 
     def _t1_disconnect_hist_events(self):
         if getattr(self, "t1_hist_canvas", None) is not None:
@@ -3162,433 +3181,25 @@ class App(ctk.CTk):
         # --- 5) Redraw canvas ---
         canvas.draw()
 
-    # --------------------------------------------------
-    # Other functions
-    # --------------------------------------------------
-    def t3_gen_synth_seq_event(self):
-        def _accept_sequence(seq):
-            if len(seq) > 0:
-                self.t3_ds["1"].specie.set("Synthetic")
-                self.t3_ds["1"].invalidate_based_specie()
-                self.t3_ds["1"].seq = seq
-                self.t3_ds["1"].end_seq.set(len(self.t3_ds["1"].seq))
-                self.t3_species_combobox_1.set("Synthetic")
-                self.t3_chr_combobox_1.configure(values=[])
-                self.t3_parts_name_combobox.configure(values=[])
-                self.t3_start_seq_entry.configure(state="normal")
-                self.t3_end_seq_entry.configure(state="normal")
-                self.sync_text_vars(self.t3_ds, "1")
-            else:
-                messagebox.showerror("Error", "No sequence generated.")
-
-        dialog = GenerateSyntheticSequence(self, on_save=_accept_sequence)
-        self.wait_window(dialog)  # blocks until pop-up calls save_sequence() or is closed
-
-    def open_popup(self):
-        # Slightly larger than half size (e.g., 60%)
-        popup_width = int(self.winfo_width() * 0.6)
-        popup_height = int(self.winfo_height() * 0.6)
-
-        # Center position
-        x = self.winfo_x() + (self.winfo_width() - popup_width) // 2
-        y = self.winfo_y() + (self.winfo_height() - popup_height) // 2
-
-        # Create popup window
-        popup = ctk.CTkToplevel(self)
-        popup.title("Search and Download genomes from NCBI")
-        popup.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
-
-        # Centered content in popup is in two frames
-        popup.grid_columnconfigure(0, weight=1)
-        popup.grid_columnconfigure(1, weight=5)
-        popup.grid_rowconfigure(0, weight=1)
-        # Frames
-        popup_f1 = ctk.CTkFrame(popup, corner_radius=10, border_color="#333333", border_width=2)
-        popup_f1.grid(row=0, column=0, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        popup_f1.grid_columnconfigure(0, weight=1)
-        popup_f1.grid_rowconfigure(0, weight=1)
-        popup_f1.grid_rowconfigure(1, weight=10)
-        popup_f2 = ctk.CTkFrame(popup, corner_radius=10, border_color="#333333", border_width=2)
-        popup_f2.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        popup_f2.grid_columnconfigure(0, weight=1)
-        popup_f2.grid_rowconfigure(0, weight=1)
-        popup_f2.grid_rowconfigure(1, weight=1)
-        popup_f2.grid_rowconfigure(2, weight=10)
-        popup_f2.grid_rowconfigure(3, weight=1)
-
-        # Designing the first frame
-        # Download path and Browse button in a frame
-        download_frame = ctk.CTkFrame(popup_f1, fg_color=popup_f1.cget("fg_color"))
-        download_frame.grid(row=0, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
-        download_frame.grid_columnconfigure(0, weight=5)
-        download_frame.grid_columnconfigure(1, weight=1)
-
-        # Bring a list of species available (downloaded) in the folder selected
-        file_scrollable_frame = ctk.CTkScrollableFrame(popup_f1)
-        file_scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=(10, 10), pady=(5, 5))
-        # download path label and entry
-        ctk.CTkLabel(download_frame, text="Enter download path:") \
-            .grid(row=0, column=0, sticky="w", padx=(5, 0), pady=(5, 0))
-        download_entry = ctk.CTkEntry(download_frame, textvariable=self.download_path)
-        self.display_downloaded_files(file_scrollable_frame, self.download_path.get())
-        download_entry.bind('<FocusOut>', partial(self.display_downloaded_files, file_scrollable_frame))
-        download_entry.bind('<Key-Return>', partial(self.display_downloaded_files, file_scrollable_frame))
-        download_entry.grid(row=1, column=0, sticky="we", padx=(5, 0), pady=(5, 0))
-        # Browse button
-        browse_button = ctk.CTkButton(download_frame, text="Browse...", width=80,
-                                      command=lambda: self.browse_folder(file_scrollable_frame))
-        browse_button.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=(5, 0))
-
-        # Designing the second frame
-        # Enter email in a frame
-        email_frame = ctk.CTkFrame(popup_f2, fg_color=popup_f2.cget("fg_color"))
-        email_frame.grid(row=0, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
-        email_frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(email_frame, text="Enter your email (required by NCBI):") \
-            .grid(row=0, column=0, sticky="w", padx=(5, 0), pady=(5, 0))
-        email_entry = ctk.CTkEntry(email_frame, textvariable=self.email_var)
-        email_entry.grid(row=1, column=0, sticky="we", padx=(5, 5), pady=(5, 0))
-
-        # Search label and entry in a frame
-        search_frame = ctk.CTkFrame(popup_f2, fg_color=popup_f2.cget("fg_color"))
-        search_frame.grid(row=1, column=0, sticky="ew", padx=(5, 5), pady=(5, 5))
-        search_frame.grid_columnconfigure(0, weight=10)
-        search_frame.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(search_frame, text="Enter organism name:") \
-            .grid(row=0, column=0, sticky="w", padx=(5, 0), pady=(5, 0))
-        search_organism = ctk.StringVar(value="")
-        search_entry = ctk.CTkEntry(search_frame, textvariable=search_organism)
-        search_entry.grid(row=1, column=0, sticky="we", padx=(5, 0), pady=(5, 0))
-        # # Show the search results
-        # scrollable_frame = ctk.CTkScrollableFrame(popup_f2)
-        # scrollable_frame.grid(row=2, column=0, sticky="nsew", padx=(10, 10), pady=(5, 5))
-        scrollable_container = ctk.CTkFrame(popup_f2, fg_color=popup_f2.cget("fg_color"))
-        scrollable_container.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
-        scrollable_container.grid_rowconfigure(0, weight=1)
-        scrollable_container.grid_columnconfigure(0, weight=1)
-        # Create a Canvas with custom background
-        canvas = tkinter.Canvas(scrollable_container, bg="#2b2b2b", highlightthickness=0)
-        canvas.grid(row=0, column=0, sticky="nsew")
-        # Add scrollbars
-        v_scrollbar = ctk.CTkScrollbar(scrollable_container, orientation="vertical", command=canvas.yview)
-        v_scrollbar.grid(row=0, column=1, sticky="ns")
-        h_scrollbar = ctk.CTkScrollbar(scrollable_container, orientation="horizontal", command=canvas.xview)
-        h_scrollbar.grid(row=1, column=0, sticky="ew")
-        canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-
-        # Frame inside canvas to hold widgets
-        self.checkbox_frame = ctk.CTkFrame(canvas, fg_color=popup_f2.cget("fg_color"))
-        canvas.create_window((0, 0), window=self.checkbox_frame, anchor="nw")
-
-        def configure_scroll_region(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        self.checkbox_frame.bind("<Configure>", configure_scroll_region)
-
-        # search button
-        search_button = ctk.CTkButton(search_frame, text="Search", width=50,
-                                      command=lambda: self.search_ncbi(email_entry, search_organism))
-        search_button.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=(5, 0))
-
-        # download button
-        download_button = ctk.CTkButton(popup_f2, text="Download selected fasta",
-                                        command=lambda: self.download_genomes(email_entry, search_organism,
-                                                                              file_scrollable_frame))
-        download_button.grid(row=3, column=0, sticky="ew", padx=(10, 10), pady=(5, 5))
-
-    def browse_folder(self, scrollable_frame):
-        default_start_path = self.download_path.get()
-        folder = filedialog.askdirectory(title="Choose Folder", initialdir=default_start_path)
-        if folder:
-            self.download_path.set(folder)
-        self.display_downloaded_files(scrollable_frame, self.download_path.get())
-
-    def display_downloaded_files(self, frame, value):
-        # Clear old widgets
-        for widget in frame.winfo_children():
-            widget.destroy()
-
-        path = self.download_path.get()
-
-        if not os.path.exists(path):
-            ctk.CTkLabel(frame, text="Path does not exist", text_color="red").pack(anchor="w", padx=5, pady=2)
-            return
-
-        # Filter only FASTA files
-        all_files = os.listdir(path)
-        fasta_files = [f for f in all_files if f.lower().endswith(('.fasta', '.fa', '.fna'))]
-
-        if not fasta_files:
-            ctk.CTkLabel(frame, text="No FASTA files found", text_color="red").pack(anchor="w", padx=5,
-                                                                                    pady=2)
-            return
-
-        for file in sorted(fasta_files):
-            entry = ctk.CTkEntry(frame, width=500)
-            entry.insert(0, file)
-            entry.configure(state="readonly")
-            entry.pack(fill="x", padx=5, pady=2)
-
-            # Bind left-click to enable editing
-            entry.bind("<Button-1>", lambda e, ent=entry: ent.configure(state="normal"))
-
-            # Bind Enter key to rename file
-            entry.bind("<Return>",
-                       lambda e, ent=entry, old_name=file, folder=path: self.rename_file(ent, old_name, folder))
-
-    @staticmethod
-    def rename_file(entry_widget, old_name, folder):
-        new_name = entry_widget.get().strip()
-        old_path = os.path.join(folder, old_name)
-        new_path = os.path.join(folder, new_name)
-
-        if not new_name:
-            messagebox.showerror("Invalid Name", "Filename cannot be empty.")
-            entry_widget.delete(0, "end")
-            entry_widget.insert(0, old_name)
-            entry_widget.configure(state="readonly")
-            return
-
-        if new_name == old_name:
-            entry_widget.configure(state="readonly")
-            return
-
-        if os.path.exists(new_path):
-            messagebox.showerror("File Exists", "A file with this name already exists.")
-            entry_widget.delete(0, "end")
-            entry_widget.insert(0, old_name)
-        else:
-            try:
-                os.rename(old_path, new_path)
-                messagebox.showinfo("Success", f"Renamed to: {new_name}")
-            except Exception as e:
-                messagebox.showerror("Rename Failed", str(e))
-                entry_widget.delete(0, "end")
-                entry_widget.insert(0, old_name)
-
-        entry_widget.configure(state="readonly")
-
-    def search_ncbi(self, email_entry, query, *_):
-        email = email_entry.get().strip()
-        if not email:
-            messagebox.showwarning("Missing Email", "Please enter your email address.")
-            return
-        Entrez.email = email
-
-        query = query.get().strip()
-        if not query:
-            messagebox.showwarning("Input Error", "Please enter an organism name.")
-            return
-
-        try:
-            handle = Entrez.esearch(db="nuccore", term=f"{query}[Organism] AND chromosome[Title] AND complete genome",
-                                    retmax=20)
-            record = Entrez.read(handle)
-            ids = record["IdList"]
-            handle.close()
-
-            if not ids:
-                messagebox.showinfo("No Results", "No matching entries found.")
-                return
-
-            handle = Entrez.esummary(db="nuccore", id=",".join(ids))
-            summary = Entrez.read(handle)
-            handle.close()
-
-            # Clear existing checkboxes
-            for widget in self.checkbox_frame.winfo_children():
-                widget.destroy()
-
-            self.checkbox_vars = {}
-            self.id_map = {}
-
-            for item in summary:
-                title = item["Title"]
-                gi = item["Id"]
-
-                var = ctk.BooleanVar()
-                cb = ctk.CTkCheckBox(self.checkbox_frame, text=title, variable=var)
-                cb.pack(fill="x", padx=5, pady=2)
-
-                self.checkbox_vars[title] = var
-                self.id_map[title] = gi
-
-        except Exception as e:
-            messagebox.showerror("Search Error", str(e))
-
-    def download_genomes(self, email_entry, query, file_scrollable_frame, *_):
-        email = email_entry.get().strip()
-        if not email:
-            messagebox.showwarning("Missing Email", "Please enter your email address.")
-            return
-        Entrez.email = email
-
-        query = query.get().strip()
-        if not query:
-            messagebox.showwarning("Input Error", "Please enter an organism name.")
-            return
-
-        selected_titles = [title for title, var in self.checkbox_vars.items() if var.get()]
-        if not selected_titles:
-            messagebox.showwarning("No Selection", "Please select at least one entry.")
-            return
-
-        folder = self.download_path.get()
-        if not os.path.exists(folder):
-            messagebox.showerror("Invalid Path", "The specified download path does not exist.")
-            return
-
-        errors = []
-        for title in selected_titles:
-            try:
-                seq_id = self.id_map.get(title)
-                if not seq_id:
-                    continue  # Skip if ID is missing
-
-                handle = Entrez.efetch(db="nuccore", id=seq_id, rettype="fasta", retmode="text")
-                fasta_data = handle.read()
-                handle.close()
-
-                # Sanitize filename
-                filename = "".join(c if c.isalnum() or c in " ._-" else "_" for c in title)
-                file_path = os.path.join(folder, filename + ".fasta")
-
-                with open(file_path, "w") as f:
-                    f.write(fasta_data)
-
-            except Exception as e:
-                errors.append(f"{title}: {str(e)}")
-
-        if errors:
-            messagebox.showerror("Partial Download", f"Some files failed to download:\n\n" + "\n".join(errors))
-        else:
-            messagebox.showinfo("Download Complete", f"All selected FASTA files were saved to:\n{folder}")
-
-        # update the downloaded files display
-        self.display_downloaded_files(file_scrollable_frame, self.download_path.get())
-
-        # update available species in the combobox
-        # get all the folders name in DATA path
-        folders = [str(f) for f in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, f))]
-        # update the combobox values
-        self.t2_species_combobox["1"].configure(values=folders)
-        self.t2_species_combobox["2"].configure(values=folders)
-        self.t2_species_combobox.configure(values=folders)
-        self.t3_species_combobox_1.configure(values=folders)
-        self.t3_species_combobox_2.configure(values=folders)
-        self.t4_species_combobox.configure(values=folders)
-        # add a value of 8 to BITS_DICT for this species
-        # BITS_DICT.update({folder: 8 for folder in folders})
-
-    def _get_effective_bg_color(self, widget):
-        w = widget
-        while w is not None:
-            try:
-                raw = w.cget("fg_color")
-                color = self._resolve_ctk_color(raw)
-                if color is not None:
-                    return color
-            except Exception:
-                pass
-            w = w.master
-
-        # fallback
-        try:
-            return self._resolve_ctk_color(self.cget("fg_color")) or "#FFFFFF"
-        except Exception:
-            return "#FFFFFF"
-
-    def _tk_color_to_hex(self, color):
-        if color is None:
-            return None
-
-        # already hex
-        if isinstance(color, str) and color.startswith("#") and len(color) in (7, 9):
-            return color[:7]  # ignore alpha if present
-
-        try:
-            r, g, b = self.winfo_rgb(color)  # 0..65535
-            return f"#{r // 256:02x}{g // 256:02x}{b // 256:02x}"
-        except Exception:
-            # fallback: return as-is (might still work for some names)
-            return color
-
-    def _configure_mds_toolbar(self, tb, frame_bg, keep_buttons=("Home", "Pan", "Zoom", "Save"),
-                               btn_bg="#E6E6E6", btn_active="#F2F2F2"):
-        try:
-            tb.configure(background=frame_bg, bd=0, relief="flat", highlightthickness=0)
-        except Exception:
-            pass
-
-        # Remove the status message area
-        if hasattr(tb, "_message_label") and tb._message_label is not None:
-            try:
-                tb._message_label.configure(background=frame_bg)
-                tb._message_label.pack_forget()
-            except Exception:
-                pass
-
-        # Walk children once: filter + style
-        for w in tb.winfo_children():
-            cls = w.winfo_class()
-
-            # Filter toolbar buttons
-            if cls == "Button":
-                txt = (w.cget("text") or "").strip()
-
-                # Hide unwanted buttons
-                if txt not in set(keep_buttons):
-                    try:
-                        w.pack_forget()
-                    except Exception:
-                        try:
-                            w.grid_forget()
-                        except Exception:
-                            pass
-                    continue
-
-                # Style kept buttons (make icons visible)
-                try:
-                    w.configure(background=btn_bg, activebackground=btn_active, relief="flat",
-                                borderwidth=0, highlightthickness=0, padx=4, pady=2)
-                except Exception:
-                    pass
-
-            # Internal frames/spacers: flatten & match bg
-            elif cls in ("Frame", "Labelframe"):
-                try:
-                    w.configure(background=frame_bg, bd=0, relief="flat", highlightthickness=0)
-                except Exception:
-                    pass
-
-            # Everything else: match bg
-            else:
-                try:
-                    w.configure(background=frame_bg)
-                except Exception:
-                    pass
-
 
 class GenerateSyntheticSequence(ctk.CTkToplevel):
     def __init__(self, parent, on_save):
-        super().__init__(parent)  # <-- IMPORTANT: Toplevel (not CTk)
+        super().__init__(parent)
         self.parent = parent
-        self.on_save = on_save  # callback to send sequence back
+        self.on_save = on_save
         self.generated_sequence = ""
-        self.title("Generate Synthetic Sequence")
 
+        self.title("Generate Synthetic Sequence")
         # make it modal & on top of parent
-        self.transient(parent)
+        self.transient(self.parent)
         self.grab_set()
         self.focus_set()
-
         # size/center relative to parent (not the screen)
-        parent.update_idletasks()
-        w = int(parent.winfo_width() * 0.5)
-        h = int(parent.winfo_height() * 0.6)
-        x = parent.winfo_rootx() + (parent.winfo_width() - w) // 2
-        y = parent.winfo_rooty() + (parent.winfo_height() - h) // 2
+        self.parent.update_idletasks()
+        w = int(self.parent.winfo_width() * 0.5)
+        h = int(self.parent.winfo_height() * 0.6)
+        x = self.parent.winfo_rootx() + (self.parent.winfo_width() - w) // 2
+        y = self.parent.winfo_rooty() + (self.parent.winfo_height() - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
 
         # We have different tabviews
@@ -3598,100 +3209,161 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         for name in tab_names:
             tabview.add(name)
 
-        '''
-        Designing the first tab (Entropy method)
-        '''
-        # Content in two frames
-        tabview.tab(tab_names[0]).grid_columnconfigure(0, weight=1)
-        tabview.tab(tab_names[0]).grid_columnconfigure(1, weight=5)
-        tabview.tab(tab_names[0]).grid_rowconfigure(0, weight=50)
-        tabview.tab(tab_names[0]).grid_rowconfigure(1, weight=1)
-        # Frames
-        t1_config = ctk.CTkFrame(tabview.tab(tab_names[0]), corner_radius=10, border_color="#333333",
-                                 border_width=2)
-        t1_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        t1_config.grid_columnconfigure(0, weight=1)
-        t1_config.grid_columnconfigure(1, weight=1)
-        t1_config.grid_columnconfigure(2, weight=1)
+        # ------------------------- state variables -------------------------
+        self.seq_len = ctk.StringVar(value="500,000")  # shared variable
 
-        self.t1_frame = ctk.CTkFrame(tabview.tab(tab_names[0]), corner_radius=10, border_color="#333333",
-                                     border_width=2, fg_color="white")
-        self.t1_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        self.t1_frame.grid_columnconfigure(0, weight=1)
-        self.t1_frame.grid_rowconfigure(0, weight=1)
+        # Entropy tab variables
+        self.t1_frame = None
+        self.t1_fig = None
+        self.t1_canvas = None
+        self.t1_save_btn = None
+        self.t1_placeholder_label = None
+        self.t1_k_var = ctk.IntVar(value=6)
+        self.t1_r_var = ctk.DoubleVar(value=1.0)
+        self.t1_r_value_label = None
+        self.t1_last_valid_seq_len = None
 
-        # Design the configuration frame
-        # k-mer size
-        ctk.CTkLabel(t1_config, text="k-mer: ").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
-        values_list = ["2", "3", "4", "5", "6"]
-        self.t1_k_var = ctk.IntVar()
-        k_mer_combobox = ctk.CTkComboBox(t1_config, values=values_list, width=80, variable=self.t1_k_var)
-        k_mer_combobox.set("6")  # Default value
-        k_mer_combobox.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(10, 0))
-
-        # sequence length
-        ctk.CTkLabel(t1_config, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10,
-                                                               pady=(10, 0))
-        self.seq_len = tkinter.StringVar(value="10000")  # Default value
-        (ctk.CTkEntry(t1_config, textvariable=self.seq_len)
-         .grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
-
-        # entropy scaling factor
-        ctk.CTkLabel(t1_config, text="Entropy scaling factor: ").grid(row=2, column=0, sticky="w", padx=10,
-                                                                      pady=(10, 0))
-        self.t1_r_var = ctk.DoubleVar(value=1.0)  # Default value
-        (ctk.CTkSlider(t1_config, from_=0.25, to=1.0, variable=self.t1_r_var, width=150)
-         .grid(row=2, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
-        self.t1_r_value_label = ctk.CTkLabel(t1_config, text=f"{self.t1_r_var.get():.2f}")
-        self.t1_r_value_label.grid(row=2, column=2, padx=(0, 10), pady=(10, 0), sticky="w")
-        self.t1_r_var.trace_add("write", self.update_r_label)
-        # Generate button
-        (ctk.CTkButton(t1_config, text="Generate", command=lambda: self.generate_sequence("t1"))
-         .grid(row=3, column=0, columnspan=3, padx=10, pady=(10, 10)))
-
-        # Save button
-        (ctk.CTkButton(tabview.tab(tab_names[0]), text="Save Sequence", command=self.save_sequence)
-         .grid(row=1, column=1, padx=(5, 5), pady=(5, 5)))
-
-        '''
-            Designing the second tab (2-mer method)
-        '''
-        tabview.tab(tab_names[1]).grid_columnconfigure(0, weight=1)
-        tabview.tab(tab_names[1]).grid_columnconfigure(1, weight=5)
-        tabview.tab(tab_names[1]).grid_rowconfigure(0, weight=50)
-        tabview.tab(tab_names[1]).grid_rowconfigure(1, weight=1)
-        # Frames
-        t2_config = ctk.CTkFrame(tabview.tab(tab_names[1]), corner_radius=10, border_color="#333333",
-                                 border_width=2)
-        t2_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        t2_config.grid_columnconfigure(0, weight=0)
-        t2_config.grid_columnconfigure(1, weight=1)
-        t2_config.grid_columnconfigure(2, weight=0)
-
-        self.t2_frame = ctk.CTkFrame(tabview.tab(tab_names[1]), corner_radius=10, border_color="#333333",
-                                     border_width=2, fg_color="white")
-        self.t2_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        self.t2_frame.grid_columnconfigure(0, weight=1)
-        self.t2_frame.grid_rowconfigure(0, weight=1)
-
-        # Design the configuration frame
-        last_row = 0
+        # 2mer tab variables
+        self.t2_frame = None
+        self.t2_fig = None
+        self.t2_canvas = None
+        self.t2_save_btn = None
+        self.t2_placeholder_label = None
         self.k_var_dict = {}
         self.k_value_label_dict = {}
         self.t2_kmers = generate_kmers(2)
+
+        # kmer tab variables
+        self.t3_frame = None
+        self.t3_fig = None
+        self.t3_canvas = None
+        self.t3_save_btn = None
+        self.t3_placeholder_label = None
+        self.t3_k_var = ctk.IntVar(value=3)
+        self.t3_kmers = generate_kmers(self.t3_k_var.get())
+        self.kmer_to_idx = {kmer: i for i, kmer in enumerate(self.t3_kmers)}
+        self.logits = np.zeros(len(self.t3_kmers), dtype=float)
+        self.t3_current_kmer = None
+        self.t3_kmer_entry = None
+        self.t3_slider_var = ctk.DoubleVar(value=0.0)
+        self.t3_kmer_slider = None
+        self.t3_kmer_label = None
+        self.t3_summary_box = None
+
+        # ------------------------- Build each tab once (state persists when switching tabs) -------------------------
+        self._build_entropy_tab(tabview.tab(tab_names[0]))
+        self._build_2mer_tab(tabview.tab(tab_names[1]))
+        self._build_kmer_tab(tabview.tab(tab_names[2]))
+
+    # ------------------------------------------------------------------
+    # Tab 1: Entropy
+    # ------------------------------------------------------------------
+    def _build_entropy_tab(self, tab):
+        tab.grid_rowconfigure(0, weight=50)
+        tab.grid_rowconfigure(1, weight=1)
+        tab.grid_columnconfigure(0, weight=2)
+        tab.grid_columnconfigure(1, weight=1)
+        tab.grid_propagate(False)
+
+        config_frame = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        config_frame.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        config_frame.grid_columnconfigure(0, weight=1)
+        config_frame.grid_columnconfigure(1, weight=1)
+        config_frame.grid_columnconfigure(2, weight=1)
+        config_frame.grid_propagate(False)
+
+        # k-mer size
+        ctk.CTkLabel(config_frame, text="k-mer: ").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
+        (ctk.CTkComboBox(config_frame, values=KMERS_SYNTH, state="readonly", variable=self.t1_k_var, width=80)
+         .grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(10, 0)))
+
+        # sequence length
+        ctk.CTkLabel(config_frame, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10, pady=(10, 0))
+        segment_entry = ctk.CTkEntry(config_frame, textvariable=self.seq_len)
+        segment_entry.grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew")
+        segment_entry.bind('<FocusOut>', self._sequence_length_change)
+        segment_entry.bind('<Key-Return>', self._sequence_length_change)
+
+        # entropy scaling factor
+        (ctk.CTkLabel(config_frame, text="Entropy scaling factor: ")
+         .grid(row=2, column=0, sticky="w", padx=10, pady=(10, 0)))
+        (ctk.CTkSlider(config_frame, from_=0.25, to=1.0, variable=self.t1_r_var, width=150)
+         .grid(row=2, column=1, padx=(0, 5), pady=(10, 0), sticky="ew"))
+        self.t1_r_value_label = ctk.CTkLabel(config_frame, text=f"{self.t1_r_var.get():.2f}", width=60)
+        self.t1_r_value_label.grid(row=2, column=2, padx=(0, 10), pady=(10, 0), sticky="w")
+        self.t1_r_var.trace_add("write", self.t1_update_r_label)
+
+        # Generate button
+        (ctk.CTkButton(config_frame, text="Generate", command=lambda: self.generate_sequence("t1"))
+         .grid(row=3, column=0, columnspan=3, padx=10, pady=(10, 10)))
+
+        # ------------------------- Right panel -------------------------
+        self.t1_frame = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                     fg_color="white")
+        self.t1_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        self.t1_frame.grid_columnconfigure(0, weight=1)
+        self.t1_frame.grid_rowconfigure(0, weight=1)
+        self.t1_frame.grid_propagate(False)
+
+        self.t1_placeholder_label = ctk.CTkLabel(master=self.t1_frame, text="Plot Area", text_color="black")
+        self.t1_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
+
+        if getattr(self, "t1_fig", None) is not None:
+            self.t1_canvas = FigureCanvasTkAgg(self.t1_fig, master=self.t1_frame)
+            widget = self.t1_canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t1_canvas.draw()
+
+            if getattr(self, "t1_save_btn", None) is not None and self.t1_save_btn.winfo_exists():
+                try:
+                    self.t1_save_btn.destroy()
+                except Exception:
+                    pass
+            self.t1_save_btn = ctk.CTkButton(master=self.t1_frame, text="💾", width=30, height=30,
+                                             fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                             command=partial(self._save_figure, "t1_fig"))
+            self.t1_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
+
+        # Save
+        ctk.CTkButton(tab, text="Save Sequence", command=self.save_sequence).grid(row=1, column=1, padx=5, pady=5)
+
+    def t1_update_r_label(self, *args):
+        self.t1_r_value_label.configure(text=f"{self.t1_r_var.get():.2f}")
+
+    # ------------------------------------------------------------------
+    # Tab 2: 2-mers
+    # ------------------------------------------------------------------
+    # TODO: There is a bug when all the values are the same!
+    def _build_2mer_tab(self, tab):
+        tab.grid_rowconfigure(0, weight=50)
+        tab.grid_rowconfigure(1, weight=1)
+        tab.grid_columnconfigure(0, weight=2)
+        tab.grid_columnconfigure(1, weight=1)
+        tab.grid_propagate(False)
+
+        config_frame = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        config_frame.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        config_frame.grid_columnconfigure(0, weight=0)
+        config_frame.grid_columnconfigure(1, weight=1)
+        config_frame.grid_columnconfigure(2, weight=0)
+        config_frame.grid_propagate(False)
+
+        # k-mer sliders
+        last_row = 0
         for i, kmer in enumerate(self.t2_kmers):
-            padding = 0 if i > 0 else 5
-            t2_config.grid_rowconfigure(i, weight=1)
-            ctk.CTkLabel(t2_config, text=f"{kmer}: ").grid(row=i, column=0, padx=(10, 0), pady=(padding, 0),
-                                                           sticky="w")
-            # Create a slider
+            pad = 0 if i > 0 else 8
+            config_frame.grid_rowconfigure(i, weight=1)
+
+            ctk.CTkLabel(config_frame, text=f"{kmer}: ").grid(row=i, column=0, padx=(10, 0), pady=(pad, 0), sticky="w")
+
             var = ctk.DoubleVar(value=0.0)
             self.k_var_dict[kmer] = var
-            r_slider = ctk.CTkSlider(t2_config, from_=-3, to=3, variable=var, width=150, height=14)
-            r_slider.grid(row=i, column=1, padx=(10, 0), pady=(padding, 0), sticky="ew")
-            # Create a label for the slider
-            self.k_value_label_dict[kmer] = ctk.CTkLabel(t2_config, text="0.0000", width=60)
-            self.k_value_label_dict[kmer].grid(row=i, column=2, padx=(10, 10), pady=(padding, 0), sticky="w")
+
+            (ctk.CTkSlider(config_frame, from_=-3, to=3, variable=var, width=150, height=14).
+             grid(row=i, column=1, padx=(10, 0), pady=(pad, 0), sticky="ew"))
+
+            self.k_value_label_dict[kmer] = ctk.CTkLabel(config_frame, text="0.0000", width=60)
+            self.k_value_label_dict[kmer].grid(row=i, column=2, padx=(10, 10), pady=(pad, 0), sticky="w")
             # Bind the slider to update the label
             try:
                 var.trace_add("write", self.update_all_k_labels)
@@ -3700,198 +3372,49 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             last_row = i + 1
         self.update_all_k_labels()
 
-        # put sequence length
-        seq_frame = ctk.CTkFrame(t2_config, fg_color="transparent")
+        # Sequence length
+        seq_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
         seq_frame.grid(row=last_row, column=0, columnspan=3, padx=(10, 10), pady=(5, 0), sticky="w")
-
         ctk.CTkLabel(seq_frame, text="Sequence length:").grid(row=0, column=0, padx=(0, 5), sticky="w")
-        ctk.CTkEntry(seq_frame, textvariable=self.seq_len, width=150).grid(row=0, column=1, sticky="w")
+        segment_entry = ctk.CTkEntry(seq_frame, textvariable=self.seq_len, width=150)
+        segment_entry.grid(row=0, column=1, sticky="w")
+        segment_entry.bind('<FocusOut>', self._sequence_length_change)
+        segment_entry.bind('<Key-Return>', self._sequence_length_change)
 
-        # Generate button
-        (ctk.CTkButton(t2_config, text="Generate", command=lambda: self.generate_sequence("t2"))
-         .grid(row=last_row + 1, column=0, columnspan=3, padx=10, pady=(10, 10)))
+        # buttons (reset + generate)
+        btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        btn_frame.grid(row=last_row + 1, column=0, columnspan=3, padx=10, pady=(10, 10), sticky="ew")
+        ctk.CTkButton(btn_frame, text="Reset logits", command=self.t2_reset_logits).pack(side="left")
+        ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t2")).pack(side="right")
 
-        # Save button
-        (ctk.CTkButton(tabview.tab(tab_names[1]), text="Save Sequence", command=self.save_sequence)
-         .grid(row=1, column=1, padx=(5, 5), pady=(5, 5)))
+        # ------------------------- Right panel -------------------------
+        self.t2_frame = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                     fg_color="white")
+        self.t2_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        self.t2_frame.grid_columnconfigure(0, weight=1)
+        self.t2_frame.grid_rowconfigure(0, weight=1)
+        self.t2_frame.grid_propagate(False)
 
-        '''
-            Designing the third tab (k-mer method)
-        '''
-        tabview.tab(tab_names[2]).grid_columnconfigure(0, weight=1)
-        tabview.tab(tab_names[2]).grid_columnconfigure(1, weight=10)
-        tabview.tab(tab_names[2]).grid_rowconfigure(0, weight=50)
-        tabview.tab(tab_names[2]).grid_rowconfigure(1, weight=1)
-        # Frames
-        t3_config = ctk.CTkFrame(tabview.tab(tab_names[2]), corner_radius=10, border_color="#333333",
-                                 border_width=2)
-        t3_config.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        t3_config.grid_columnconfigure(0, weight=1)
-        t3_config.grid_columnconfigure(1, weight=1)
-        for i in range(6):
-            t3_config.grid_rowconfigure(i, weight=1)
+        self.t2_placeholder_label = ctk.CTkLabel(master=self.t2_frame, text="Plot Area", text_color="black")
+        self.t2_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
-        self.t3_frame = ctk.CTkFrame(tabview.tab(tab_names[2]), corner_radius=10, border_color="#333333",
-                                     border_width=2, fg_color="white")
-        self.t3_frame.grid(row=0, column=1, padx=(5, 5), pady=(5, 5), sticky="nsew")
-        self.t3_frame.grid_columnconfigure(0, weight=1)
-        self.t3_frame.grid_rowconfigure(0, weight=1)
+        if getattr(self, "t2_fig", None) is not None:
+            self.t2_canvas = FigureCanvasTkAgg(self.t2_fig, master=self.t2_frame)
+            self.t2_canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t2_canvas.draw()
 
-        # ========== STATE ==========
-        self.k = 2
-        self.t3_kmers = generate_kmers(self.k)  # order defines p_input order
-        self.kmer_to_idx = {kmer: i for i, kmer in enumerate(self.t3_kmers)}
-        self.logits = np.zeros(len(self.t3_kmers), dtype=float)  # start all equal
-        self.current_kmer = None
+            if getattr(self, "t2_save_btn", None) is not None and self.t2_save_btn.winfo_exists():
+                try:
+                    self.t2_save_btn.destroy()
+                except Exception:
+                    pass
+            self.t2_save_btn = ctk.CTkButton(master=self.t2_frame, text="💾", width=30, height=30,
+                                             fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                             command=partial(self._save_figure, "t2_fig"))
+            self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
-        # Design the configuration frame
-        # k combobox
-        ctk.CTkLabel(t3_config, text="k-mer length: ").grid(row=0, column=0, padx=10, pady=(10, 0),
-                                                            sticky="w")
-        k_mer_combobox = ctk.CTkComboBox(t3_config, values=values_list, width=80, variable=self.t1_k_var,
-                                         command=self.set_kmers_event)
-        k_mer_combobox.set("2")
-        k_mer_combobox.grid(row=0, column=1, padx=(0, 10), pady=(10, 0), sticky="w")
-
-        # sequence length
-        ctk.CTkLabel(t3_config, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10,
-                                                               pady=(10, 0))
-        (ctk.CTkEntry(t3_config, textvariable=self.seq_len)
-         .grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew"))
-
-        # k-mer entry + checkmark
-        # frame
-        entry_frame = ctk.CTkFrame(t3_config, fg_color="transparent")
-        entry_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=(5, 5), sticky="ew")
-        entry_frame.grid_columnconfigure(0, weight=0)
-        entry_frame.grid_columnconfigure(1, weight=1)
-        entry_frame.grid_columnconfigure(2, weight=0)
-        entry_frame.grid_columnconfigure(3, weight=0)
-        ctk.CTkLabel(entry_frame, text="k-mer").grid(row=0, column=0, sticky="w")
-
-        # entry
-        self.kmer_entry = ctk.CTkEntry(entry_frame, placeholder_text="e.g., ACAC", width=80)
-        self.kmer_entry.grid(row=1, column=0, sticky="w", pady=(0, 5))
-        self.kmer_entry.bind("<Return>", lambda _e: self._load_kmer_into_slider())
-        # Slider
-        self.t3_slider_var = ctk.DoubleVar(value=0.0)
-        self.t3_kmer_slider = ctk.CTkSlider(entry_frame, from_=-3.0, to=3.0, variable=self.t3_slider_var)
-        self.t3_kmer_slider.grid(row=1, column=1, sticky="ew", pady=(0, 5))
-        self.t3_kmer_label = ctk.CTkLabel(entry_frame, text=f"{self.t3_slider_var.get():.4f}")
-        self.t3_kmer_label.grid(row=1, column=2, sticky="w", pady=(0, 5))
-        self.t3_slider_var.trace_add("write", self.update_t3_kmer_label)
-        self.slider_normal_color = self.t3_kmer_slider.cget("button_color")
-        self.t3_kmer_slider.configure(state="disabled",
-                                      button_color="#888888")  # disable the slider until a k-mer is loaded
-        # Save button
-        self.save_btn = ctk.CTkButton(entry_frame, text="✓", width=10, command=self._refresh_summary)
-        self.save_btn.grid(row=1, column=3, sticky="w", padx=(10, 0), pady=(0, 5))
-
-        # summary textbox
-        ctk.CTkLabel(t3_config, text="Summary").grid(row=3, column=0, padx=10, pady=(5, 0), sticky="w")
-        self.summary_box = ctk.CTkTextbox(t3_config, height=160)
-        self.summary_box.grid(row=4, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
-
-        # buttons
-        btn_frame = ctk.CTkFrame(t3_config, fg_color="transparent")
-        btn_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
-        self.reset_btn = ctk.CTkButton(btn_frame, text="Reset logits", command=self._reset_logits)
-        self.reset_btn.pack(side="left")
-        self.gen_btn = ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t3"))
-        self.gen_btn.pack(side="right")
-
-        # Save button
-        (ctk.CTkButton(tabview.tab(tab_names[2]), text="Save Sequence", command=self.save_sequence)
-         .grid(row=1, column=1, padx=(5, 5), pady=(5, 5)))
-
-        # initial summary
-        self._refresh_summary()
-
-    def set_kmers_event(self, *args):
-        try:
-            k = self.t1_k_var.get()
-        except ValueError:
-            messagebox.showerror("Invalid k", "k must be an integer.")
-            return
-        self.t3_kmers = generate_kmers(k)
-        self.kmer_to_idx = {kmer: i for i, kmer in enumerate(self.t3_kmers)}
-        self.logits = np.zeros(len(self.t3_kmers), dtype=float)
-        self.current_kmer = None
-        self.kmer_entry.delete(0, tkinter.END)
-        self.t3_slider_var.set(0.0)
-        self.t3_kmer_slider.configure(state="disabled", button_color="#888888")
-        self._refresh_summary()
-
-    def _load_kmer_into_slider(self, *args):
-        kmer = self.kmer_entry.get().strip().upper()
-        if len(kmer) != self.t1_k_var.get() or any(c not in 'ACGT' for c in kmer):
-            messagebox.showerror("Invalid k-mer",
-                                 f"Please enter a length-{self.t1_k_var.get()} k-mer using only A,C,G,T.")
-            self.t3_kmer_slider.configure(state="disabled", button_color="#888888")
-            self.current_kmer = None
-            self.t3_slider_var.set(0.0)
-            self.t3_kmer_label.configure(text="0.0000")
-            return
-        self.t3_kmer_slider.configure(state="normal", button_color=self.slider_normal_color)
-        self.current_kmer = kmer
-        idx = self.kmer_to_idx[kmer]
-        self.t3_slider_var.set(float(self.logits[idx]))
-
-    def _softmax(self):
-        x = self.logits - self.logits.max()
-        e = np.exp(x)
-        return e / e.sum()
-
-    def update_t3_kmer_label(self, *args):
-        if self.current_kmer is None:
-            self.t3_kmer_label.configure(text=f"{self.t3_slider_var.get():.4f}")
-            return
-        idx = self.kmer_to_idx[self.current_kmer]
-        self.logits[idx] = float(self.t3_slider_var.get())
-        self.t3_kmer_label.configure(text=f"{self._softmax()[idx]:.4f}")
-
-    def _reset_logits(self, *args):
-        self.logits[:] = 0.0
-        if self.current_kmer:
-            idx = self.kmer_to_idx[self.current_kmer]
-            self.t3_slider_var.set(float(self.logits[idx]))
-        self._refresh_summary()
-
-    def _refresh_summary(self):
-        if self.kmer_entry.get().strip().upper() == "":
-            self.t3_kmer_slider.configure(state="disabled", button_color="#888888")
-            self.current_kmer = None
-            self.t3_slider_var.set(0.0)
-            self.t3_kmer_label.configure(text="0.0000")
-        p = self._softmax()
-        # summarize: if all equal
-        if np.allclose(self.logits, self.logits[0]):
-            txt = (f"All {len(self.t3_kmers)} k-mers have equal weight.\n"
-                   f"Each probability = {1.0 / len(self.t3_kmers):.4f}\n")
-        else:
-            # list only k-mers whose logits differ from the median by > 1e-9 (assigned)
-            med = np.median(self.logits)
-            assigned = [(km, p[self.kmer_to_idx[km]]) for km in self.t3_kmers
-                        if abs(self.logits[self.kmer_to_idx[km]] - med) > 1e-9]
-            # keep the list short: show up to 20 explicitly
-            assigned_sorted = sorted(assigned, key=lambda x: -x[1])[:20]
-            others = 1.0 - sum(prob for _, prob in assigned_sorted)
-            n_others = len(self.t3_kmers) - len(assigned_sorted)
-            avg_other = (others / n_others) if n_others > 0 else 0.0
-
-            lines = [f"Assigned k-mers (top {len(assigned_sorted)} shown):"]
-            lines += [f"  {km}: {prob:.4f}" for km, prob in assigned_sorted]
-            if n_others > 0:
-                lines += [f"Others ({n_others}): avg ≈ {avg_other:.4f} (sum ≈ {others:.4f})"]
-            txt = "\n".join(lines)
-
-        self.summary_box.configure(state="normal")
-        self.summary_box.delete("1.0", tkinter.END)
-        self.summary_box.insert("1.0", txt)
-        self.summary_box.configure(state="disabled")
-
-    def update_r_label(self, *args):
-        self.t1_r_value_label.configure(text=f"{self.t1_r_var.get():.2f}")
+        # Save
+        ctk.CTkButton(tab, text="Save Sequence", command=self.save_sequence).grid(row=1, column=1, padx=5, pady=5)
 
     def update_all_k_labels(self, *args):
         # collect logits from all sliders
@@ -3904,90 +3427,322 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         for k, p in zip(self.t2_kmers, probs):
             self.k_value_label_dict[k].configure(text=f"{p:.4f}")
 
+    def t2_reset_logits(self):
+        for k in self.t2_kmers:
+            self.k_var_dict[k].set(0.0)
+
+
+    # ------------------------------------------------------------------
+    # Tab 3: k-mers (logits)
+    # ------------------------------------------------------------------
+    def _build_kmer_tab(self, tab):
+        tab.grid_rowconfigure(0, weight=50)
+        tab.grid_rowconfigure(1, weight=1)
+        tab.grid_columnconfigure(0, weight=2)
+        tab.grid_columnconfigure(1, weight=1)
+        tab.grid_propagate(False)
+
+        config_frame = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        config_frame.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        config_frame.grid_columnconfigure(0, weight=1)
+        config_frame.grid_columnconfigure(1, weight=1)
+        for i in range(6):
+            config_frame.grid_rowconfigure(i, weight=1)
+        config_frame.grid_propagate(False)
+
+        # k combobox
+        ctk.CTkLabel(config_frame, text="k-mer length: ").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
+        (ctk.CTkComboBox(config_frame, values=KMERS_SYNTH, state="readonly", variable=self.t3_k_var, width=80,
+                         command=self.t3_set_kmers_event).grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(10, 0)))
+
+        # sequence length
+        ctk.CTkLabel(config_frame, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10, pady=(10, 0))
+        segment_entry = ctk.CTkEntry(config_frame, textvariable=self.seq_len)
+        segment_entry.grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew")
+        segment_entry.bind('<FocusOut>', self._sequence_length_change)
+        segment_entry.bind('<Key-Return>', self._sequence_length_change)
+
+        # k-mer entry + slider + save checkmark
+        entry_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        entry_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=(5, 5), sticky="ew")
+        entry_frame.grid_columnconfigure(0, weight=0)
+        entry_frame.grid_columnconfigure(1, weight=1)
+        entry_frame.grid_columnconfigure(2, weight=0)
+        entry_frame.grid_columnconfigure(3, weight=0)
+
+        ctk.CTkLabel(entry_frame, text="k-mer").grid(row=0, column=0, sticky="w")
+
+        self.t3_kmer_entry = ctk.CTkEntry(entry_frame, placeholder_text="e.g., ACAC", width=80)
+        self.t3_kmer_entry.grid(row=1, column=0, sticky="w", pady=(0, 5))
+        self.t3_kmer_entry.bind("<Return>", lambda _e: self.t3_load_kmer_into_slider())
+
+        self.t3_kmer_slider = ctk.CTkSlider(entry_frame, from_=-3.0, to=3.0, variable=self.t3_slider_var)
+        self.t3_kmer_slider.grid(row=1, column=1, sticky="ew", pady=(0, 5))
+        self.t3_kmer_slider.configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+
+        self.t3_kmer_label = ctk.CTkLabel(entry_frame, text=f"{self.t3_slider_var.get():.4f}")
+        self.t3_kmer_label.grid(row=1, column=2, sticky="w", pady=(0, 5))
+        self.t3_slider_var.trace_add("write", self.t3_update_kmer_label)
+
+        (ctk.CTkButton(entry_frame, text="✓", width=10, command=self.t3_refresh_summary)
+         .grid(row=1, column=3, sticky="w", padx=(10, 0), pady=(0, 5)))
+
+        # summary textbox
+        ctk.CTkLabel(config_frame, text="Summary").grid(row=3, column=0, padx=10, pady=(5, 0), sticky="w")
+        self.t3_summary_box = ctk.CTkTextbox(config_frame, height=160)
+        self.t3_summary_box.grid(row=4, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
+
+        self.t3_refresh_summary()
+
+        # buttons (reset + generate)
+        btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        btn_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
+        ctk.CTkButton(btn_frame, text="Reset logits", command=self.t3_reset_logits).pack(side="left")
+        ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t3")).pack(side="right")
+
+        # ------------------------- Right panel -------------------------
+        self.t3_frame = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                     fg_color="white")
+        self.t3_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        self.t3_frame.grid_columnconfigure(0, weight=1)
+        self.t3_frame.grid_rowconfigure(0, weight=1)
+        self.t3_frame.grid_propagate(False)
+
+        self.t3_placeholder_label = ctk.CTkLabel(master=self.t3_frame, text="Plot Area", text_color="black")
+        self.t3_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
+
+        if getattr(self, "t3_fig", None) is not None:
+            self.t3_canvas = FigureCanvasTkAgg(self.t3_fig, master=self.t3_frame)
+            self.t3_canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t3_canvas.draw()
+
+            if getattr(self, "t3_save_btn", None) is not None and self.t3_save_btn.winfo_exists():
+                try:
+                    self.t3_save_btn.destroy()
+                except Exception:
+                    pass
+            self.t3_save_btn = ctk.CTkButton(master=self.t3_frame, text="💾", width=30, height=30,
+                                             fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                             command=partial(self._save_figure, "t3_fig"))
+            self.t3_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
+
+        # Save
+        ctk.CTkButton(tab, text="Save Sequence", command=self.save_sequence).grid(row=1, column=1, padx=5, pady=5)
+
+    def t3_set_kmers_event(self, *args):
+        self.t3_kmers = generate_kmers(self.t3_k_var.get())
+        self.kmer_to_idx = {kmer: i for i, kmer in enumerate(self.t3_kmers)}
+        self.logits = np.zeros(len(self.t3_kmers), dtype=float)
+        self.t3_current_kmer = None
+        # Reset the entry + slider, and refresh the summary box
+        self.t3_kmer_entry.delete(0, tkinter.END)
+        self.t3_slider_var.set(0.0)
+        self.t3_kmer_slider.configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+        self.t3_refresh_summary()
+
+    def t3_load_kmer_into_slider(self, *args):
+        kmer = self.t3_kmer_entry.get().strip().upper()
+        if len(kmer) != self.t3_k_var.get() or any(c not in 'ACGT' for c in kmer):
+            messagebox.showerror("Invalid k-mer",
+                                 f"Please enter a length-{self.t3_k_var.get()} k-mer using only A,C,G,T.")
+            self.t3_current_kmer = None
+            self.t3_kmer_entry.delete(0, tkinter.END)
+            self.t3_slider_var.set(0.0)
+            self.t3_kmer_slider.configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+            return
+        self.t3_current_kmer = kmer
+        idx = self.kmer_to_idx[self.t3_current_kmer]
+        self.t3_slider_var.set(float(self.logits[idx]))
+        self.t3_kmer_slider.configure(state="normal", button_color=COLORS["BTN_COLOR"])
+
+    def t3_softmax(self):
+        x = self.logits - self.logits.max()
+        e = np.exp(x)
+        return e / e.sum()
+
+    def t3_update_kmer_label(self, *args):
+        if self.t3_current_kmer is None:
+            self.t3_kmer_label.configure(text=f"{self.t3_slider_var.get():.4f}")
+            return
+        idx = self.kmer_to_idx[self.t3_current_kmer]
+        self.logits[idx] = float(self.t3_slider_var.get())
+        self.t3_kmer_label.configure(text=f"{self.t3_softmax()[idx]:.4f}")
+
+    def t3_reset_logits(self, *args):
+        self.logits[:] = 0.0
+        if self.t3_current_kmer:
+            idx = self.kmer_to_idx[self.t3_current_kmer]
+            self.t3_slider_var.set(float(self.logits[idx]))
+        self.t3_refresh_summary()
+
+    def t3_refresh_summary(self):
+        if self.t3_kmer_entry.get().strip().upper() == "":
+            self.t3_current_kmer = None
+            self.t3_slider_var.set(0.0)
+            self.t3_kmer_slider.configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+        p = self.t3_softmax()
+        # summarize: if all equal
+        if np.allclose(self.logits, self.logits[0]):
+            txt = (f"All {len(self.t3_kmers)} k-mers have equal weight.\n"
+                   f"Each probability = {1.0 / len(self.t3_kmers):.4f}\n")
+        else:
+            # list only k-mers whose logits differ from the median by > 1e-9 (assigned)
+            med = np.median(self.logits)
+            assigned = [(km, p[self.kmer_to_idx[km]]) for km in self.t3_kmers
+                        if abs(self.logits[self.kmer_to_idx[km]] - med) > 1e-9]
+            assigned_sorted = sorted(assigned, key=lambda x: -x[1])
+            others = 1.0 - sum(prob for _, prob in assigned_sorted)
+            n_others = len(self.t3_kmers) - len(assigned_sorted)
+            avg_other = (others / n_others) if n_others > 0 else 0.0
+
+            lines = [f"Assigned k-mers ({len(assigned_sorted)}):"]
+            lines += [f"  {km}: {prob:.4f}" for km, prob in assigned_sorted]
+            if n_others > 0:
+                lines += [f"Others ({n_others}): avg ≈ {avg_other:.4f} (sum ≈ {others:.4f})"]
+            txt = "\n".join(lines)
+
+        self.t3_summary_box.configure(state="normal")
+        self.t3_summary_box.delete("1.0", tkinter.END)
+        self.t3_summary_box.insert("1.0", txt)
+        self.t3_summary_box.configure(state="disabled")
+
+    # ------------------------------------------------------------------
+    # General functions for all tabs
+    # ------------------------------------------------------------------
+    def _sequence_length_change(self, *args):
+        val = self.seq_len.get().replace(",", "").strip()
+
+        if not val.isdigit() or int(val) <= 0:
+            messagebox.showerror("Error", "Sequence length must be a positive integer.")
+
+            # revert to last valid value (or a default)
+            last = getattr(self, "t1_last_valid_seq_len", None)
+            if last is None:
+                last = 1000
+            self.seq_len.set(f"{last:,}")
+            return
+
+        self.t1_last_valid_seq_len = int(val)
+        self.seq_len.set(f"{int(val):,}")
+
+    # TODO: Fix Synthetic bug, maybe add a design to show the real value the code chooses
     def generate_sequence(self, frame_num):
         if frame_num == "t1":
-            plot_frame = self.t1_frame
             k = self.t1_k_var.get()
-            seq_len = self.seq_len.get()
+            seq_len = int(self.seq_len.get().replace(",", "").strip())
             r = self.t1_r_var.get()
-            if k not in [2, 3, 4, 5, 6]:
-                messagebox.showerror("Input Error", "Please select a valid k-mer size (2-6).")
-                return
-            try:
-                seq_len = int(seq_len)
-                if seq_len <= 0:
-                    raise ValueError
-            except ValueError:
-                messagebox.showerror("Input Error", "Please enter a valid positive integer for sequence length.")
-                return
-            if not (0.25 <= r <= 1.0):
-                messagebox.showerror("Input Error", "Entropy scaling factor must be between 0.25 and 1.0.")
-                return
-            # # If all inputs are valid, proceed with sequence generation
-            # messagebox.showinfo("Success", f"Generating sequence with k={k}, length={window_size}, r={r:.2f}")
-            # Here you would call your sequence generation function
-            target_entropy = r * (2 * k)
-            sequence, _, p = generate_dna_sequence(k, seq_len, target_entropy=target_entropy)
+            sequence, _, p = generate_dna_sequence(k, seq_len, target_entropy=r * (2 * k))
         elif frame_num == "t2":
             plot_frame = self.t2_frame
             k = 2
-            seq_len = int(self.seq_len.get())
-            # Collect the slider values
+            seq_len = int(self.seq_len.get().replace(",", "").strip())
             slider_values = [self.k_var_dict[kmer].get() for kmer in self.t2_kmers]
             sequence, _, p = generate_dna_sequence(k, seq_len, p_input=slider_values)
         elif frame_num == "t3":
             plot_frame = self.t3_frame
-            k = self.t1_k_var.get()
-            seq_len = int(self.seq_len.get())
+            k = self.t3_k_var.get()
+            seq_len = int(self.seq_len.get().replace(",", "").strip())
             if np.allclose(self.logits, self.logits[0]):
                 p_input = None
             else:
-                p_input = self._softmax()
+                p_input = self.t3_softmax()
             sequence, _, p = generate_dna_sequence(k, seq_len, p_input=p_input)
         else:
             return
         self.generated_sequence = sequence
         fcgr = CGR(sequence, k).get_fcgr()
-        # Generate the CGR image and display it
-        fig, (ax1) = plt.subplots(1, 1)
-        extent = 0, 1, 0, 1
-        # Assuming extent = [xmin, xmax, ymin, ymax]
-        xmin, xmax, ymin, ymax = extent
-        offset = 0.01 * (xmax - xmin)  # 1% of the width/height as padding
 
-        ax1.text(xmin - offset, ymax + offset, 'C', fontsize=12, fontweight='bold', ha='right', va='bottom')
-        ax1.text(xmax + offset, ymax + offset, 'G', fontsize=12, fontweight='bold', ha='left', va='bottom')
-        ax1.text(xmin - offset, ymin - offset, 'A', fontsize=12, fontweight='bold', ha='right', va='top')
-        ax1.text(xmax + offset, ymin - offset, 'T', fontsize=12, fontweight='bold', ha='left', va='top')
+        # Prepare plot area
+        frame = getattr(self, f"{frame_num}_frame")
+        fig_name = f"{frame_num}_fig"
+        canvas_name = f"{frame_num}_canvas"
+        save_btn_name = f"{frame_num}_save_btn"
+        placeholder_name = f"{frame_num}_placeholder_label"
 
-        display_frame_color = plot_frame.cget("fg_color")
-        fig.patch.set_facecolor(display_frame_color)
+        # --- 1) Figure setup ---
+        fig = getattr(self, fig_name, None)
+        if fig is None:
+            fig = plt.Figure(dpi=120)
+            setattr(self, fig_name, fig)
 
-        fcgr_image = CGR.array2img(fcgr, bits=8, resolution=2)
-        fcgr_image = Image.fromarray(fcgr_image, 'L')
-        ax1.imshow(fcgr_image, cmap='gray', extent=extent)
-        ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+        # --- 2) Canvas setup ---
+        canvas = getattr(self, canvas_name, None)
+        if canvas is None or not canvas.get_tk_widget().winfo_exists() or canvas.get_tk_widget().master is not frame:
+            canvas = FigureCanvasTkAgg(fig, master=frame)
+            canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            setattr(self, canvas_name, canvas)
+            # --- Save button ---
+            save_btn = getattr(self, save_btn_name, None)
+            if save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame:
+                save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30, fg_color=COLORS["BORDER_COLOR"],
+                                         hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                         command=partial(self._save_figure, fig_name), )
+            save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
+            setattr(self, save_btn_name, save_btn)
 
-        # Clear the previous figure from the display frame if any
-        for widget in plot_frame.winfo_children():
-            widget.destroy()
+        # --- 3) Clear figure and re-plot ---
+        fig.clear()
+        # Draw FCGR
+        ax = fig.add_subplot(111)
+        f = CGR.normalize(fcgr)
+        self.parent.fcgr_normalizer.fit([f], ks=[self.t3_k_var.get()])
+        V = self.parent.fcgr_normalizer.transform01(f, k=self.t3_k_var.get(), L=self.seq_len.get())
+        img_uint8 = FCGRNormalizer.to_uint8_from_01(V, white_is_high=True)
+        img = Image.fromarray(img_uint8)
+        ax.imshow(img, cmap="gray", origin="upper")
+        ax.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+        corner_labels = [("A", (0.00, -0.01), (-0.05, -0.05), "right", "top"),
+                         ("C", (0.00, 0.99), (-0.05, +0.05), "right", "bottom"),
+                         ("T", (1.00, -0.01), (+0.05, -0.05), "left", "top"),
+                         ("G", (1.00, 0.99), (+0.05, +0.05), "left", "bottom")]
+        for text, xy, offset, ha, va in corner_labels:
+            ax.annotate(text, xy=xy, xycoords="axes fraction", xytext=offset, textcoords="offset points",
+                        ha=ha, va=va, fontsize=10, color="black", clip_on=False)
 
-        # Create a canvas and add the figure to it
-        canvas = FigureCanvasTkAgg(fig, master=plot_frame)
+        # --- 4) Hide placeholder ---
+        placeholder = getattr(self, placeholder_name, None)
+        if placeholder is not None and placeholder.winfo_exists():
+            try:
+                placeholder.place_forget()
+            except Exception:
+                pass
+
+        # --- 5) Redraw canvas ---
         canvas.draw()
 
-        # Set the canvas size explicitly
-        canvas_width = plot_frame.cget("width")
-        canvas_height = plot_frame.cget("height")
-        canvas.get_tk_widget().config(width=canvas_width, height=canvas_height)
-        # Use grid to place the canvas
-        canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
-        plt.close()
+    def _save_figure(self, fig_attr):
+        fig = getattr(self, fig_attr, None)
+        if fig is None:
+            return messagebox.showerror("Error", "No figure to save. Please plot first.")
+
+        file_path = fd.asksaveasfilename(defaultextension=".png", title="Save figure",
+                                         filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf"),
+                                                    ("SVG Image", "*.svg"), ("All Files", "*.*")])
+        if not file_path:
+            return  # user cancelled
+
+        try:
+            fig.savefig(file_path, dpi=300, bbox_inches="tight")
+        except Exception:
+            messagebox.showerror("Error", "Could not save figure.")
+
+    def show(self):
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        self.grab_set()
+
+    def _on_user_close(self):
+        # hide instead of destroy -> keeps all vars + widget state
+        self.grab_release()
+        self.withdraw()
 
     def save_sequence(self):
-        if hasattr(self, "generated_sequence") and self.on_save:
+        if callable(self.on_save):
             self.on_save(self.generated_sequence)
-        self.destroy()  # close the pop-up
+
+        self.grab_release()
+        self.withdraw()
 
 
 if __name__ == "__main__":
