@@ -179,6 +179,8 @@ class CGR:
         # import matplotlib.pyplot as plt
         # plt.imshow(input_matrix_copy)
         # plt.show()
+        if np.min(input_matrix_copy) == np.max(input_matrix_copy):
+            return input_matrix_copy / np.max(input_matrix_copy)
         matrix = input_matrix_copy - np.min(input_matrix_copy)
         matrix = matrix / np.max(matrix)
         if reverse:

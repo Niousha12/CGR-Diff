@@ -3333,7 +3333,6 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # Tab 2: 2-mers
     # ------------------------------------------------------------------
-    # TODO: There is a bug when all the values are the same!
     def _build_2mer_tab(self, tab):
         tab.grid_rowconfigure(0, weight=50)
         tab.grid_rowconfigure(1, weight=1)
@@ -3430,7 +3429,6 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
     def t2_reset_logits(self):
         for k in self.t2_kmers:
             self.k_var_dict[k].set(0.0)
-
 
     # ------------------------------------------------------------------
     # Tab 3: k-mers (logits)
