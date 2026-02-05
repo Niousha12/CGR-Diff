@@ -51,7 +51,7 @@ COLORS = dict(
     FRAME_HOVER_COLOR="#444444",
     BORDER_COLOR="#333333",
     LIGHT_FRAME_COLOR="#DBDBDB", )
-KMERS = [str(i) for i in range(1, 10)]
+KMERS = [str(i) for i in range(2, 10)]
 KMERS_SYNTH = [str(i) for i in range(2, 7)]
 DISTANCES = ["Normalized Euclidean", "Cosine", "Manhattan", "Descriptor", "DSSIM", "K-S", "Wasserstein"]
 RESOLUTION_DICT = {2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 4, 9: 4, 10: 4, 11: 4, 12: 4}
@@ -281,7 +281,6 @@ class App(ctk.CTk):
         self.t3_3d_fig = None
         self.t3_3d_canvas = None
         self._t3_mds_drawn = False
-        self.t3_mds_toolbar = None
         self.t3_seg_info = None
         self.t3_ref_info = None
 
@@ -1521,7 +1520,7 @@ class App(ctk.CTk):
         Z = np.asarray(fcgr, dtype=float)
         h, w = Z.shape
 
-        bits_to_base = {(0, 0): "C", (1, 0): "G", (0, 1): "A", (1, 1): "T"}
+        bits_to_base = {(0, 0): "C", (1, 0): "A", (0, 1): "G", (1, 1): "T"}
 
         kmers = np.empty((h, w), dtype=object)
         for y in range(h):
@@ -3631,13 +3630,12 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             r = self.t1_r_var.get()
             sequence, _, p = generate_dna_sequence(k, seq_len, target_entropy=r * (2 * k))
         elif frame_num == "t2":
-            plot_frame = self.t2_frame
             k = 2
             seq_len = int(self.seq_len.get().replace(",", "").strip())
             slider_values = [self.k_var_dict[kmer].get() for kmer in self.t2_kmers]
             sequence, _, p = generate_dna_sequence(k, seq_len, p_input=slider_values)
         elif frame_num == "t3":
-            plot_frame = self.t3_frame
+            # TODO: There is a bug here with k=2. p_input is none in case of all equal logits.
             k = self.t3_k_var.get()
             seq_len = int(self.seq_len.get().replace(",", "").strip())
             if np.allclose(self.logits, self.logits[0]):
