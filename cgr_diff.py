@@ -578,8 +578,8 @@ class App(ctk.CTk):
         # grid configuration for display content:
         display_frame.grid_rowconfigure(0, weight=1)
         display_frame.grid_rowconfigure(1, weight=2)
-        display_frame.grid_columnconfigure(0, weight=1)  # left
-        display_frame.grid_columnconfigure(1, weight=2)  # right (larger)
+        display_frame.grid_columnconfigure(0, weight=2)  # left
+        display_frame.grid_columnconfigure(1, weight=3)  # right (larger)
 
         # top histogram frame (full width)
         self.t1_hist_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
@@ -1507,49 +1507,6 @@ class App(ctk.CTk):
 
         canvas.draw_idle()
 
-    def _open_t1_fcgr_3d(self):
-        import numpy as np
-        import plotly.graph_objects as go
-        import plotly.io as pio
-        import tempfile
-        import webbrowser
-        from pathlib import Path
-
-        fcgr = self.t1_fcgrs_dict["fcgr"]
-        k = self.k_var.get()
-
-        Z = np.asarray(fcgr, dtype=float)
-        h, w = Z.shape
-
-        bits_to_base = {(0, 0): "C", (1, 0): "A", (0, 1): "G", (1, 1): "T"}
-
-        kmers = np.empty((h, w), dtype=object)
-        for y in range(h):
-            for x in range(w):
-                out = []
-                for i in range(k):
-                    bitpos = (k - 1 - i)
-                    xb = (x >> bitpos) & 1
-                    yb = (y >> bitpos) & 1
-                    out.append(bits_to_base[(xb, yb)])
-                kmers[y, x] = "".join(out)
-
-        fig = go.Figure(go.Surface(
-            z=Z, customdata=kmers, colorscale="Greys", showscale=True,
-            hovertemplate="k-mer: %{customdata}<br>x=%{x}<br>y=%{y}<br>value=%{z}<extra></extra>"))
-
-        fig.update_layout(title=f"FCGR 3D Surface (k={k})",
-                          scene=dict(xaxis_title="FCGR x", yaxis_title="FCGR y", zaxis_title="count"))
-
-        html = pio.to_html(fig, full_html=True, include_plotlyjs="cdn")
-
-        # Write to a temp HTML file and open in browser
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
-        tmp.write(html.encode("utf-8"))
-        tmp.close()
-
-        webbrowser.open(Path(tmp.name).as_uri())
-
     @staticmethod
     def _count_kmers(seq, k, progress_cb=None):
         def prog(x):
@@ -1654,73 +1611,134 @@ class App(ctk.CTk):
         prog(1.0)
         return labels
 
-    def _plot_fcgr_3d(self, fcgrs, bg=None, fig=None):
-        if fig is None:
-            fig = plt.Figure()
-        if bg is not None:
-            fig.patch.set_facecolor(bg)
+    def _plot_fcgr_3d(self, fcgrs, bg=None, fig=None, canvas=None, include_zeros=True):
+        import time
+        from matplotlib.colors import LinearSegmentedColormap
+        from mpl_toolkits.mplot3d import proj3d
+
+        # ---------- helpers ----------
+        def _xy_to_kmer(x, y, k):
+            bits_to_base = {(0, 0): "C", (1, 0): "G", (0, 1): "A", (1, 1): "T"}
+            out = []
+            for i in range(k - 1, -1, -1):
+                xb = (x >> i) & 1
+                yb = (y >> i) & 1
+                out.append(bits_to_base[(xb, yb)])
+            return "".join(out)
+
+        # ---------- figure ----------
+        fig.set_size_inches(15, 10)  # width, height in inches
 
         Zfull = np.asarray(fcgrs["fcgr"], dtype=float)
         h, w = Zfull.shape
         Xfull, Yfull = np.meshgrid(np.arange(w), np.arange(h))
 
         ax = fig.add_subplot(111, projection="3d")
-        if bg is not None:
-            ax.set_facecolor(bg)
+        ax.set_facecolor(bg)
 
-        # -------- Surface (downsampled) --------
-        max_side = 180
-        step = max(1, int(np.ceil(max(h, w) / max_side)))
+        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+            axis._axinfo["grid"]["color"] = (0.4, 0.4, 0.4, 0.3)
+            axis._axinfo["grid"]["linewidth"] = 0.5
+            axis._axinfo["grid"]["linestyle"] = "-"
+        ax.tick_params(axis="x", pad=0, labelsize=8)
+        ax.tick_params(axis="y", pad=0, labelsize=8)
+        ax.tick_params(axis="z", pad=0, labelsize=8)
 
-        Xd = Xfull[::step, ::step]
-        Yd = Yfull[::step, ::step]
-        Zd = Zfull[::step, ::step]
+        blue_green = LinearSegmentedColormap.from_list("blue_green", ["#3668A0", "#2E8B57"])
+        ax.plot_surface(Xfull, Yfull, Zfull, cmap=blue_green, linewidth=0, antialiased=False, shade=True)
 
-        ax.plot_surface(Xd, Yd, Zd, cmap="gray", linewidth=0, antialiased=True)
-
-        ax.set_zlabel("count")
+        ax.set_zlabel("count", fontsize=10)
         ax.invert_yaxis()
         fig.tight_layout()
 
-        # -------- Histogram-style hover via mplcursors --------
-        if max(h, w) <= 64:
-            tip_step = 1
-        else:
-            tip_step = max(step, 4)
+        # ---------- hover wiring needs a real canvas ----------
+        if not hasattr(self, "_t1_fcgr3d_cids"):
+            self._t1_fcgr3d_cids = []
+        for cid in self._t1_fcgr3d_cids:
+            try:
+                canvas.mpl_disconnect(cid)
+            except Exception:
+                pass
+        self._t1_fcgr3d_cids = []
 
-        Xp = Xfull[::tip_step, ::tip_step].ravel()
-        Yp = Yfull[::tip_step, ::tip_step].ravel()
-        Zp = Zfull[::tip_step, ::tip_step].ravel()
+        # flatten points (ALL points by default)
+        xs = Xfull.ravel().astype(int)
+        ys = Yfull.ravel().astype(int)
+        zs = Zfull.ravel()
 
-        # Keep nonzero points, but if that leaves nothing, fall back to keeping all points
-        mask = Zp > 0
-        if np.any(mask):
-            Xp, Yp, Zp = Xp[mask], Yp[mask], Zp[mask]
+        if not include_zeros:
+            m = zs != 0
+            xs, ys, zs = xs[m], ys[m], zs[m]
 
-        # IMPORTANT: don't use alpha=0.0 (can break hover/picking in some cases)
-        # Use a tiny alpha instead (nearly invisible but still pickable).
-        sc = ax.scatter(Xp, Yp, Zp, s=18, alpha=0.03, picker=True)
-        sc.set_pickradius(8)  # helps hover detection
+        # Tooltip anchored to axes (stable + readable)
+        tooltip = ax.text2D(
+            0.02, 0.98, "", transform=ax.transAxes, ha="left", va="top", fontsize=8, color="white",
+            bbox=dict(boxstyle="round,pad=0.35", fc=(0.25, 0.25, 0.25, 0.90), ec=(1, 1, 1, 0.20), lw=0.8))
+        tooltip.set_visible(False)
 
-        cursor = mplcursors.cursor(sc, hover=True)
+        # cache projected screen coords; recompute only when view changes / redraw
+        state = {"xy_pix": None, "view": None, "last_idx": None, "last_t": 0.0}
 
-        @cursor.connect("add")
-        def _on_add(sel):
-            i = int(sel.index)
-            x = int(Xp[i])
-            y = int(Yp[i])
-            z = float(Zp[i])
+        def _reproject():
+            # project 3D points into 2D and then into pixel coords
+            x2, y2, _ = proj3d.proj_transform(xs, ys, zs, ax.get_proj())
+            disp = ax.transData.transform(np.column_stack([x2, y2]))  # pixel coords
+            state["xy_pix"] = disp
+            state["view"] = (ax.elev, ax.azim)
+            state["last_idx"] = None
 
-            sel.annotation.set_text(f"x: {x}\ny: {y}\nvalue: {z:.4g}")
+        def on_draw(event):
+            # any draw can change projection (rotation/zoom)
+            state["xy_pix"] = None
 
-            ann = sel.annotation
-            ann.get_bbox_patch().set(
-                fc="white", ec="#444444", alpha=0.95,
-                boxstyle="round,pad=0.3"
-            )
-            ann.get_bbox_patch().set_linewidth(0.8)
-            ann.set_fontsize(10)
-            ann.set_color("black")
+        def on_motion(event):
+            if event.inaxes != ax:
+                if tooltip.get_visible():
+                    tooltip.set_visible(False)
+                    canvas.draw_idle()
+                return
+
+            # throttle a bit to avoid heavy work on super-fast mouse motion
+            t = time.time()
+            if t - state["last_t"] < 0.03:  # ~30ms
+                return
+            state["last_t"] = t
+
+            if state["xy_pix"] is None or state["view"] != (ax.elev, ax.azim):
+                _reproject()
+
+            xy = state["xy_pix"]
+            if xy is None or len(xy) == 0:
+                return
+
+            mx, my = event.x, event.y
+            d2 = (xy[:, 0] - mx) ** 2 + (xy[:, 1] - my) ** 2
+            idx = int(np.argmin(d2))
+            dist2 = float(d2[idx])
+
+            # only show tooltip if cursor is close enough to a point
+            if dist2 > 14 ** 2:
+                if tooltip.get_visible():
+                    tooltip.set_visible(False)
+                    canvas.draw_idle()
+                return
+
+            if state["last_idx"] == idx and tooltip.get_visible():
+                return
+
+            x = int(xs[idx]);
+            y = int(ys[idx]);
+            z = float(zs[idx])
+            km = _xy_to_kmer(x, y, self.k_var.get())
+            tooltip.set_text(f"{km}\n{int(round(z)):,}")
+
+            tooltip.set_visible(True)
+            state["last_idx"] = idx
+            canvas.draw_idle()
+
+        cid1 = canvas.mpl_connect("motion_notify_event", on_motion)
+        cid2 = canvas.mpl_connect("draw_event", on_draw)
+        self._t1_fcgr3d_cids.extend([cid1, cid2])
 
         return fig
 
@@ -3036,7 +3054,7 @@ class App(ctk.CTk):
             setattr(self, canvas_attr, canvas)
 
             # --- Save button setup ---
-            if panel_type in ("fcgr", "chart", "kmer_hist", "fcgr_3d"):
+            if panel_type in ("fcgr", "chart", "kmer_hist"):
                 save_btn = getattr(self, save_btn_attr, None)
                 if save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame:
                     save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30,
@@ -3044,7 +3062,7 @@ class App(ctk.CTk):
                                              command=save_command, )
                     save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
                     setattr(self, save_btn_attr, save_btn)
-            if panel_type == "mds":
+            if panel_type in ("mds", "fcgr_3d"):
                 toolbar_attr = f"{canvas_attr}_toolbar"
                 toolbar = getattr(self, toolbar_attr, None)
 
@@ -3220,7 +3238,7 @@ class App(ctk.CTk):
                     fcgrs_dict = pickle.load(handle)
             self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
         if panel_type == "fcgr_3d":
-            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig)
+            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig, canvas=canvas)
         elif panel_type == "chart":
             dists = list(self.t3_cgr_distance_history)
             self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
