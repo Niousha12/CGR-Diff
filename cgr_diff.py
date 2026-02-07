@@ -233,7 +233,9 @@ class App(ctk.CTk):
         self.t1_fcgr_fig = None
         self.t1_fcgr_canvas = None
         self.t1_fcgr_save_btn = None
-        self.t1_fcgr_3d_btn = None
+        self.t1_3d_fcgr_frame = None
+        self.t1_3d_fcgr_fig = None
+        self.t1_3d_fcgr_canvas = None
 
         # Variables for page 2 (CGR Comparator)
         self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
@@ -626,24 +628,19 @@ class App(ctk.CTk):
                                                   command=partial(self._save_figure, "t1_fcgr_fig"))
             self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
-            if getattr(self, "t1_fcgr_3d_btn", None) is not None and self.t1_fcgr_3d_btn.winfo_exists():
-                try:
-                    self.t1_fcgr_3d_btn.destroy()
-                except Exception:
-                    pass
-
-            self.t1_fcgr_3d_btn = ctk.CTkButton(master=self.t1_fcgr_frame, text="3D", width=30, height=30,
-                                                fg_color=COLORS["BORDER_COLOR"],
-                                                hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                                command=self._open_t1_fcgr_3d)
-            self.t1_fcgr_3d_btn.place(relx=0.01, rely=0.99, anchor="sw", x=33)
-
         # bottom-right frame (larger)
         self.t1_3d_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
         self.t1_3d_fcgr_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 5), pady=(5, 5), )
         self.t1_3d_fcgr_frame.grid_rowconfigure(0, weight=1)
         self.t1_3d_fcgr_frame.grid_columnconfigure(0, weight=1)
         self.t1_3d_fcgr_frame.grid_propagate(False)
+        if getattr(self, "t1_3d_fcgr_fig", None) is not None:
+            self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+                                            border_color=COLORS["BORDER_COLOR"])
+            self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
+                             save_btn_attr="t1_3d_fcgr_save_btn",
+                             save_command=lambda: self._save_figure("t1_3d_fcgr_fig"), placeholder_attr=None,
+                             fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
 
     def _build_cgr_comparator(self, parent):
         parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
@@ -1042,7 +1039,7 @@ class App(ctk.CTk):
                     D = pickle.load(handle)
             self._t3_mds_drawn = False  # force reconnect
             self._draw_panel(frame=self.t3_3d_display_frame, fig_attr="t3_3d_fig", canvas_attr="t3_3d_canvas",
-                             save_btn_attr="t3_3d_save_btn", save_command=lambda: self._save_figure("t3_3d_fig"),
+                             save_btn_attr=None, save_command=lambda: self._save_figure("t3_3d_fig"),
                              placeholder_attr="t3_3d_placeholder_label", fcgrs_dict=None,
                              index=int(self.t3_pic_num.get() or 0), panel_type="mds", D=D, )
 
@@ -1365,11 +1362,15 @@ class App(ctk.CTk):
             self._draw_panel(frame=self.t1_fcgr_frame, fig_attr="t1_fcgr_fig", canvas_attr="t1_fcgr_canvas",
                              save_btn_attr="t1_fcgr_save_btn", save_command=lambda: self._save_figure("t1_fcgr_fig"),
                              placeholder_attr=None, fcgrs_dict=self.t1_fcgrs_dict,
-                             panel_type="fcgr_3d", )
+                             panel_type="fcgr", )
 
-            # # 3D FCGR plot
-            # self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
-            #                                 border_color=COLORS["BORDER_COLOR"])
+            # 3D FCGR plot
+            self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+                                            border_color=COLORS["BORDER_COLOR"])
+            self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
+                             save_btn_attr="t1_3d_fcgr_save_btn",
+                             save_command=lambda: self._save_figure("t1_3d_fcgr_fig"), placeholder_attr=None,
+                             fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
 
     def _t1_disconnect_hist_events(self):
         if getattr(self, "t1_hist_canvas", None) is not None:
@@ -1652,6 +1653,76 @@ class App(ctk.CTk):
 
         prog(1.0)
         return labels
+
+    def _plot_fcgr_3d(self, fcgrs, bg=None, fig=None):
+        if fig is None:
+            fig = plt.Figure()
+        if bg is not None:
+            fig.patch.set_facecolor(bg)
+
+        Zfull = np.asarray(fcgrs["fcgr"], dtype=float)
+        h, w = Zfull.shape
+        Xfull, Yfull = np.meshgrid(np.arange(w), np.arange(h))
+
+        ax = fig.add_subplot(111, projection="3d")
+        if bg is not None:
+            ax.set_facecolor(bg)
+
+        # -------- Surface (downsampled) --------
+        max_side = 180
+        step = max(1, int(np.ceil(max(h, w) / max_side)))
+
+        Xd = Xfull[::step, ::step]
+        Yd = Yfull[::step, ::step]
+        Zd = Zfull[::step, ::step]
+
+        ax.plot_surface(Xd, Yd, Zd, cmap="gray", linewidth=0, antialiased=True)
+
+        ax.set_zlabel("count")
+        ax.invert_yaxis()
+        fig.tight_layout()
+
+        # -------- Histogram-style hover via mplcursors --------
+        if max(h, w) <= 64:
+            tip_step = 1
+        else:
+            tip_step = max(step, 4)
+
+        Xp = Xfull[::tip_step, ::tip_step].ravel()
+        Yp = Yfull[::tip_step, ::tip_step].ravel()
+        Zp = Zfull[::tip_step, ::tip_step].ravel()
+
+        # Keep nonzero points, but if that leaves nothing, fall back to keeping all points
+        mask = Zp > 0
+        if np.any(mask):
+            Xp, Yp, Zp = Xp[mask], Yp[mask], Zp[mask]
+
+        # IMPORTANT: don't use alpha=0.0 (can break hover/picking in some cases)
+        # Use a tiny alpha instead (nearly invisible but still pickable).
+        sc = ax.scatter(Xp, Yp, Zp, s=18, alpha=0.03, picker=True)
+        sc.set_pickradius(8)  # helps hover detection
+
+        cursor = mplcursors.cursor(sc, hover=True)
+
+        @cursor.connect("add")
+        def _on_add(sel):
+            i = int(sel.index)
+            x = int(Xp[i])
+            y = int(Yp[i])
+            z = float(Zp[i])
+
+            sel.annotation.set_text(f"x: {x}\ny: {y}\nvalue: {z:.4g}")
+
+            ann = sel.annotation
+            ann.get_bbox_patch().set(
+                fc="white", ec="#444444", alpha=0.95,
+                boxstyle="round,pad=0.3"
+            )
+            ann.get_bbox_patch().set_linewidth(0.8)
+            ann.set_fontsize(10)
+            ann.set_color("black")
+
+        return fig
 
     # --------------------------------------------------
     # Helper functions for CGR comparator tab
@@ -2166,7 +2237,7 @@ class App(ctk.CTk):
             # MDS (3d)
             self._t3_mds_drawn = False
             self._draw_panel(frame=self.t3_3d_display_frame, fig_attr="t3_3d_fig",
-                             canvas_attr="t3_3d_canvas", save_btn_attr="t3_3d_save_btn",
+                             canvas_attr="t3_3d_canvas", save_btn_attr=None,
                              save_command=lambda: self._save_figure("t3_3d_fig"),
                              placeholder_attr="t3_3d_placeholder_label", fcgrs_dict=None, index=0, panel_type="mds",
                              D=D)
@@ -2973,14 +3044,6 @@ class App(ctk.CTk):
                                              command=save_command, )
                     save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
                     setattr(self, save_btn_attr, save_btn)
-            if panel_type == "fcgr_3d":
-                btn_3d = getattr(self, "t1_fcgr_3d_btn", None)
-                if btn_3d is None or not btn_3d.winfo_exists() or btn_3d.master is not frame:
-                    btn_3d = ctk.CTkButton(master=frame, text="3D", width=30, height=30,
-                                           fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
-                                           command=self._open_t1_fcgr_3d)
-                    btn_3d.place(relx=0.01, rely=0.99, anchor="sw", x=33)
-                    setattr(self, "t1_fcgr_3d_btn", btn_3d)
             if panel_type == "mds":
                 toolbar_attr = f"{canvas_attr}_toolbar"
                 toolbar = getattr(self, toolbar_attr, None)
@@ -3150,12 +3213,14 @@ class App(ctk.CTk):
 
         # --- 3) Clear figure and re-plot ---
         fig.clear()
-        if panel_type in ("fcgr", "fcgr_3d"):
+        if panel_type == "fcgr":
             # If we are in third tab and no fcgrs_dict provided, load from pickle
             if fig_attr == "t3_fcgr_fig" and not fcgrs_dict:
                 with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as handle:
                     fcgrs_dict = pickle.load(handle)
             self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
+        if panel_type == "fcgr_3d":
+            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig)
         elif panel_type == "chart":
             dists = list(self.t3_cgr_distance_history)
             self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
