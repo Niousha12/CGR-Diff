@@ -580,10 +580,11 @@ class App(ctk.CTk):
         display_frame.grid_rowconfigure(1, weight=2)
         display_frame.grid_columnconfigure(0, weight=2)  # left
         display_frame.grid_columnconfigure(1, weight=3)  # right (larger)
+        display_frame.grid_columnconfigure(2, weight=1)
 
         # top histogram frame (full width)
         self.t1_hist_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
-        self.t1_hist_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=(5, 5), pady=(5, 0), )
+        self.t1_hist_frame.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=(5, 5), pady=(5, 0), )
         self.t1_hist_frame.grid_rowconfigure(0, weight=1)
         self.t1_hist_frame.grid_columnconfigure(0, weight=1)
         self.t1_hist_frame.grid_propagate(False)
@@ -641,6 +642,14 @@ class App(ctk.CTk):
                              save_btn_attr="t1_3d_fcgr_save_btn",
                              save_command=lambda: self._save_figure("t1_3d_fcgr_fig"), placeholder_attr=None,
                              fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
+        # TODO: another frame specify 9-mers in a table
+        self.t1_stat_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
+        self.t1_stat_frame.grid(row=1, column=2, sticky="nsew", padx=(5, 5), pady=(5, 5), )
+        self.t1_stat_frame.grid_rowconfigure(0, weight=1)
+        self.t1_stat_frame.grid_columnconfigure(0, weight=1)
+        self.t1_stat_frame.grid_propagate(False)
+        if getattr(self, "t1_fcgrs_dict", None) is not None:
+            self._update_t1_stats_table_from_fcgr(top_n=100)
 
     def _build_cgr_comparator(self, parent):
         parent.grid_columnconfigure(0, weight=0, minsize=320)  # left panel
@@ -1372,6 +1381,8 @@ class App(ctk.CTk):
                              save_command=lambda: self._save_figure("t1_3d_fcgr_fig"), placeholder_attr=None,
                              fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
 
+            self._update_t1_stats_table_from_fcgr(top_n=100)
+
     def _t1_disconnect_hist_events(self):
         if getattr(self, "t1_hist_canvas", None) is not None:
             for cid in getattr(self, "_t1_hist_cids", []):
@@ -1611,24 +1622,22 @@ class App(ctk.CTk):
         prog(1.0)
         return labels
 
+    @staticmethod
+    def _xy_to_kmer(x: int, y: int, k: int) -> str:
+        bits_to_base = {(0, 0): "C", (1, 0): "G", (0, 1): "A", (1, 1): "T"}
+        out = []
+        for i in range(k - 1, -1, -1):
+            xb = (x >> i) & 1
+            yb = (y >> i) & 1
+            out.append(bits_to_base[(xb, yb)])
+        return "".join(out)
+
     def _plot_fcgr_3d(self, fcgrs, bg=None, fig=None, canvas=None, include_zeros=True):
         import time
         from matplotlib.colors import LinearSegmentedColormap
         from mpl_toolkits.mplot3d import proj3d
 
-        # ---------- helpers ----------
-        def _xy_to_kmer(x, y, k):
-            bits_to_base = {(0, 0): "C", (1, 0): "G", (0, 1): "A", (1, 1): "T"}
-            out = []
-            for i in range(k - 1, -1, -1):
-                xb = (x >> i) & 1
-                yb = (y >> i) & 1
-                out.append(bits_to_base[(xb, yb)])
-            return "".join(out)
-
         # ---------- figure ----------
-        fig.set_size_inches(15, 10)  # width, height in inches
-
         Zfull = np.asarray(fcgrs["fcgr"], dtype=float)
         h, w = Zfull.shape
         Xfull, Yfull = np.meshgrid(np.arange(w), np.arange(h))
@@ -1642,14 +1651,16 @@ class App(ctk.CTk):
             axis._axinfo["grid"]["linestyle"] = "-"
         ax.tick_params(axis="x", pad=0, labelsize=8)
         ax.tick_params(axis="y", pad=0, labelsize=8)
-        ax.tick_params(axis="z", pad=0, labelsize=8)
+        ax.tick_params(axis="z", pad=2, labelsize=8)
 
         blue_green = LinearSegmentedColormap.from_list("blue_green", ["#3668A0", "#2E8B57"])
         ax.plot_surface(Xfull, Yfull, Zfull, cmap=blue_green, linewidth=0, antialiased=False, shade=True)
 
         ax.set_zlabel("count", fontsize=10)
         ax.invert_yaxis()
-        fig.tight_layout()
+        # fig.tight_layout()
+
+        fig.subplots_adjust(left=0.05, right=0.82, bottom=0.08, top=0.98)
 
         # ---------- hover wiring needs a real canvas ----------
         if not hasattr(self, "_t1_fcgr3d_cids"):
@@ -1729,7 +1740,7 @@ class App(ctk.CTk):
             x = int(xs[idx]);
             y = int(ys[idx]);
             z = float(zs[idx])
-            km = _xy_to_kmer(x, y, self.k_var.get())
+            km = self._xy_to_kmer(x, y, self.k_var.get())
             tooltip.set_text(f"{km}\n{int(round(z)):,}")
 
             tooltip.set_visible(True)
@@ -1742,9 +1753,73 @@ class App(ctk.CTk):
 
         return fig
 
-    # --------------------------------------------------
-    # Helper functions for CGR comparator tab
-    # --------------------------------------------------
+    def _get_top_kmers_from_fcgr(self, fcgr, k, top_n=100, include_zeros=False):
+        Z = np.asarray(fcgr, dtype=float)
+
+        # flatten
+        zs = Z.ravel()
+        if not include_zeros:
+            nz = zs != 0
+            if not np.any(nz):
+                return []
+            idx_all = np.flatnonzero(nz)
+            vals = zs[idx_all]
+        else:
+            idx_all = np.arange(zs.size)
+            vals = zs
+
+        # top-N without fully sorting everything
+        n = min(top_n, vals.size)
+        if n <= 0:
+            return []
+
+        top_local = np.argpartition(vals, -n)[-n:]
+        top_local = top_local[np.argsort(vals[top_local])[::-1]]
+
+        # map flat index -> (x,y)
+        w = Z.shape[1]
+        flat_idx = idx_all[top_local]
+        ys = (flat_idx // w).astype(int)
+        xs = (flat_idx % w).astype(int)
+
+        out = []
+        for x, y, v in zip(xs, ys, vals[top_local]):
+            out.append((self._xy_to_kmer(int(x), int(y), int(k)), int(round(float(v)))))
+        return out
+
+    def _update_t1_stats_table_from_fcgr(self, top_n=100):
+        from tkinter import ttk
+
+        # clear old widgets
+        for w in self.t1_stat_frame.winfo_children():
+            w.destroy()
+
+        fcgr = self.t1_fcgrs_dict.get("fcgr")
+        k = int(self.t1_fcgrs_dict.get("k"))
+
+        rows = self._get_top_kmers_from_fcgr(fcgr, k, top_n=top_n, include_zeros=False)
+
+        columns = ("kmer", "value")
+        tree = ttk.Treeview(self.t1_stat_frame, columns=columns, show="headings", height=18, selectmode="none")
+
+        tree.heading("kmer", text=f"{k}-mer")
+        tree.heading("value", text="Count")
+
+        tree.column("kmer", anchor="center", width=110)
+        tree.column("value", anchor="center", width=90)
+
+        for km, v in rows:
+            tree.insert("", "end", values=(km, f"{v:,}"))
+
+        sb = ttk.Scrollbar(self.t1_stat_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        sb.grid(row=0, column=1, sticky="ns")
+
+        self.t1_stat_frame.grid_rowconfigure(0, weight=1)
+        self.t1_stat_frame.grid_columnconfigure(0, weight=1)
+
     def t2_sequence_selection_event(self, sender, value):
         # Set its sequence and sequence name
         sequence_path = self.uploaded_files[self.file_names.index(value)]
@@ -3227,7 +3302,7 @@ class App(ctk.CTk):
                 reset_btn.configure(command=_reset)
 
                 _set_btn_active(pan_btn, nav_state["pan_on"])
-                frame.after(0, _ensure_base_view)
+                # frame.after(0, _ensure_base_view)
 
         # --- 3) Clear figure and re-plot ---
         fig.clear()
@@ -3245,7 +3320,7 @@ class App(ctk.CTk):
         elif panel_type == "mds":
             self._plot_mds(fig=fig, bg=bg, D=D, index=index, canvas=canvas)
         elif panel_type == "kmer_hist":
-            seq_len = fcgrs_dict["seq_len"]
+            seq_len = fcgrs_dict["e"] - fcgrs_dict["b"]
             # k = fcgrs_dict["k"]
             counts = fcgrs_dict["counts"]
             labels = fcgrs_dict["labels"]
@@ -3262,6 +3337,16 @@ class App(ctk.CTk):
 
         # --- 5) Redraw canvas ---
         canvas.draw()
+
+        # capture base limits AFTER plot exists
+        try:
+            nav_state_attr = f"{canvas_attr}_nav_state"
+            if hasattr(self, nav_state_attr):
+                nav_state = getattr(self, nav_state_attr)
+                nav_state["base_set"] = False  # force refresh for new plot
+                frame.after_idle(_ensure_base_view)  # capture correct x/y/z + camera
+        except Exception:
+            pass
 
 
 class GenerateSyntheticSequence(ctk.CTkToplevel):
