@@ -642,10 +642,11 @@ class App(ctk.CTk):
                              save_btn_attr="t1_3d_fcgr_save_btn",
                              save_command=lambda: self._save_figure("t1_3d_fcgr_fig"), placeholder_attr=None,
                              fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
-        # TODO: another frame specify 9-mers in a table
+
         self.t1_stat_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
         self.t1_stat_frame.grid(row=1, column=2, sticky="nsew", padx=(5, 5), pady=(5, 5), )
         self.t1_stat_frame.grid_rowconfigure(0, weight=1)
+        self.t1_stat_frame.grid_rowconfigure(1, weight=1)
         self.t1_stat_frame.grid_columnconfigure(0, weight=1)
         self.t1_stat_frame.grid_propagate(False)
         if getattr(self, "t1_fcgrs_dict", None) is not None:
@@ -1796,29 +1797,38 @@ class App(ctk.CTk):
 
         fcgr = self.t1_fcgrs_dict.get("fcgr")
         k = int(self.t1_fcgrs_dict.get("k"))
-
         rows = self._get_top_kmers_from_fcgr(fcgr, k, top_n=top_n, include_zeros=False)
 
+        # ------------------ STYLE ------------------
+        style = ttk.Style()
+        style.configure("Custom.Treeview", font=("Segoe UI", 12))
+        style.configure("Custom.Treeview.Heading", font=("Segoe UI", 13, "bold"))
+
+        # ------------------ TITLE ------------------
+        (ctk.CTkLabel(self.t1_stat_frame, text=f"Top {top_n} {k}-mer Frequencies", font=("Segoe UI", 18, "bold"))
+         .grid(row=0, column=0, columnspan=2, pady=(5, 2)))
+
+        # ------------------ TREE ------------------
         columns = ("kmer", "value")
-        tree = ttk.Treeview(self.t1_stat_frame, columns=columns, show="headings", height=18, selectmode="none")
+        tree = ttk.Treeview(self.t1_stat_frame, columns=columns, show="headings", height=18, selectmode="none",
+                            style="Custom.Treeview")
 
         tree.heading("kmer", text=f"{k}-mer")
         tree.heading("value", text="Count")
-
         tree.column("kmer", anchor="center", width=110)
         tree.column("value", anchor="center", width=90)
 
-        for km, v in rows:
-            tree.insert("", "end", values=(km, f"{v:,}"))
+        tree.tag_configure("oddrow", background="#2b2b2b")
+        tree.tag_configure("evenrow", background="#242424")
+        for i, (km, v) in enumerate(rows):
+            tag = "evenrow" if i % 2 == 0 else "oddrow"
+            tree.insert("", "end", values=(km, f"{v:,}"), tags=(tag,))
 
         sb = ttk.Scrollbar(self.t1_stat_frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
 
-        tree.grid(row=0, column=0, sticky="nsew")
-        sb.grid(row=0, column=1, sticky="ns")
-
-        self.t1_stat_frame.grid_rowconfigure(0, weight=1)
-        self.t1_stat_frame.grid_columnconfigure(0, weight=1)
+        tree.grid(row=1, column=0, sticky="nsew")
+        sb.grid(row=1, column=1, sticky="ns")
 
     def t2_sequence_selection_event(self, sender, value):
         # Set its sequence and sequence name
