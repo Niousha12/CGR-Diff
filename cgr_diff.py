@@ -8,7 +8,7 @@ from functools import partial
 import random
 
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import tkinter.filedialog as fd
 
 import numpy as np
@@ -1281,12 +1281,25 @@ class App(ctk.CTk):
         self._t1_last_seq = None
 
     def t1_gen_synth_seq_event(self):
-        def _accept_sequence(seq):
-            # TODO: add the generated sequence to the list.
-            # TODO: might need to ask for a name for it.
+        def _accept_sequence(seq, name):
             if len(seq) <= 0:
                 messagebox.showerror("Error", "No sequence generated.")
                 return
+            else:
+                path = f"{self.temp_output_path}/Synthetic"
+                if not os.path.exists(path):
+                    os.makedirs(path)
+                fasta_path = f"{path}/{name}.fasta"
+                with open(fasta_path, "w") as f:
+                    f.write(f">{name}\n")
+                    # Write the sequence in there in one line
+                    f.write(seq + "\n")
+
+                # Add the generated sequence to the list of uploaded files
+                self.uploaded_files.append(fasta_path)
+                self.t1_refresh_uploaded_file_list()
+                # Set the generated sequence as selected
+                self.t1_set_selected_uploaded(len(self.uploaded_files) - 1, reset_range=True)
 
         # create once, reuse forever
         if (not hasattr(self, "t1_synth_dialog") or self.t1_synth_dialog is None or
@@ -3912,11 +3925,70 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.withdraw()
 
     def save_sequence(self):
+        seq = getattr(self, "generated_sequence", "")
+        if not seq:
+            messagebox.showerror("Error", "No sequence generated.")
+            return
+
+        default_name = f"Synthetic_k{self.t3_k_var.get()}_{len(seq)}bp"
+        dialog = CTkAskString(self, initial_value=default_name)
+
+        self.wait_window(dialog)
+        name = dialog.result
+
+        if name is None:  # user pressed Cancel
+            return
+
+        name = name.strip()
+        if not name:
+            messagebox.showwarning("Warning", "Name cannot be empty.")
+            return
+
         if callable(self.on_save):
-            self.on_save(self.generated_sequence)
+            self.on_save(seq, name)
 
         self.grab_release()
         self.withdraw()
+
+
+class CTkAskString(ctk.CTkToplevel):
+    def __init__(self, parent, initial_value=""):
+        super().__init__(parent)
+        self.parent = parent
+        self.result = None
+        self.title("Sequence Name")
+
+        # make it modal & on top of parent
+        self.transient(self.parent)
+        self.grab_set()
+        self.focus_set()
+        # size/center relative to parent (not the screen)
+        self.parent.update_idletasks()
+        w = int(self.parent.winfo_width() * 0.4)
+        h = int(self.parent.winfo_height() * 0.3)
+        x = self.parent.winfo_rootx() + (self.parent.winfo_width() - w) // 2
+        y = self.parent.winfo_rooty() + (self.parent.winfo_height() - h) // 2
+        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.resizable(False, False)
+
+        ctk.CTkLabel(self, text="Enter a name for the synthetic sequence:").pack(pady=(20, 10))
+
+        self.entry = ctk.CTkEntry(self, width=250)
+        self.entry.pack()
+        self.entry.insert(0, initial_value)
+        self.entry.focus()
+
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        ctk.CTkButton(btn_frame, text="OK", width=100, command=self._on_ok).pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, command=self.destroy).pack(side="left", padx=10)
+
+        self.bind("<Return>", lambda e: self._on_ok())
+
+    def _on_ok(self):
+        self.result = self.entry.get().strip()
+        self.destroy()
 
 
 if __name__ == "__main__":
