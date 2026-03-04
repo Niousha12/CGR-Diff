@@ -38,6 +38,8 @@ ctk.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
 HEADER_FONT = ('Cambria', 15)
 HEADER_FONT_BOLD = ('Cambria', 15, 'bold')
+UNDER_REP = "Lavender"
+OVER_REP = "Blue"
 
 # main colors in the theme
 COLORS = dict(
@@ -50,7 +52,10 @@ COLORS = dict(
     FRAME_NORMAL_COLOR="#2B2B2B",
     FRAME_HOVER_COLOR="#444444",
     BORDER_COLOR="#333333",
-    LIGHT_FRAME_COLOR="#DBDBDB", )
+    LIGHT_FRAME_COLOR="#DBDBDB",
+    Green="#2E8B57",
+    Blue="#3668A0",
+    Lavender="#967BB6", )
 KMERS = [str(i) for i in range(2, 10)]
 KMERS_SYNTH = [str(i) for i in range(2, 7)]
 DISTANCES = ["Normalized Euclidean", "Cosine", "Manhattan", "Descriptor", "DSSIM", "K-S", "Wasserstein"]
@@ -1412,7 +1417,7 @@ class App(ctk.CTk):
 
         # Data
         total = int(counts.sum())
-        subtitle = f"Length: {seq_len:,}  |  Valid {k}-mers: {total:,}  |  [Green: ≥ average frequency, Blue: < average frequency]"
+        subtitle = f"Length: {seq_len:,}  |  Valid {k}-mers: {total:,}  |  [{OVER_REP}: ≥ average frequency, {UNDER_REP}: < average frequency]"
 
         # Clear and axes
         fig.clf()
@@ -1425,7 +1430,7 @@ class App(ctk.CTk):
 
         # avg + colors + avg line
         avg = float(np.mean(counts)) if len(counts) else 0.0
-        colors = np.where(counts >= avg, "#2E8B57", "#3668A0")  # green / blue
+        colors = np.where(counts >= avg, COLORS[OVER_REP], COLORS[UNDER_REP])  # green / blue
         bars = ax.bar(x, counts, width=0.85, color=colors)
 
         ax.axhline(avg, linestyle="--", linewidth=1.0, alpha=0.8, color="#2B2B2B")
@@ -1667,8 +1672,8 @@ class App(ctk.CTk):
         ax.tick_params(axis="y", pad=0, labelsize=8)
         ax.tick_params(axis="z", pad=2, labelsize=8)
 
-        blue_green = LinearSegmentedColormap.from_list("blue_green", ["#3668A0", "#2E8B57"])
-        ax.plot_surface(Xfull, Yfull, Zfull, cmap=blue_green, linewidth=0, antialiased=False, shade=True)
+        over_under = LinearSegmentedColormap.from_list("over_under", [COLORS[UNDER_REP], COLORS[OVER_REP]])
+        ax.plot_surface(Xfull, Yfull, Zfull, cmap=over_under, linewidth=0, antialiased=False, shade=True)
 
         ax.set_zlabel("count", fontsize=10)
         ax.invert_yaxis()
@@ -1751,8 +1756,8 @@ class App(ctk.CTk):
             if state["last_idx"] == idx and tooltip.get_visible():
                 return
 
-            x = int(xs[idx]);
-            y = int(ys[idx]);
+            x = int(xs[idx])
+            y = int(ys[idx])
             z = float(zs[idx])
             km = self._xy_to_kmer(x, y, self.k_var.get())
             tooltip.set_text(f"{km}\n{int(round(z)):,}")
@@ -3377,7 +3382,9 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent = parent
         self.on_save = on_save
-        self.generated_sequence = ""
+        self.t1_generated_sequence = ""
+        self.t2_generated_sequence = ""
+        self.t3_generated_sequence = ""
 
         self.title("Generate Synthetic Sequence")
         # make it modal & on top of parent
@@ -3400,8 +3407,6 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             tabview.add(name)
 
         # ------------------------- state variables -------------------------
-        self.seq_len = ctk.StringVar(value="500,000")  # shared variable
-
         # Entropy tab variables
         self.t1_frame = None
         self.t1_fig = None
@@ -3412,6 +3417,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t1_r_var = ctk.DoubleVar(value=1.0)
         self.t1_r_value_label = None
         self.t1_last_valid_seq_len = None
+        self.t1_seq_len = ctk.StringVar(value="500,000")
+        self.t1_seq_len_real = None
 
         # 2mer tab variables
         self.t2_frame = None
@@ -3422,6 +3429,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.k_var_dict = {}
         self.k_value_label_dict = {}
         self.t2_kmers = generate_kmers(2)
+        self.t2_seq_len = ctk.StringVar(value="500,000")
+        self.t2_seq_len_real = None
 
         # kmer tab variables
         self.t3_frame = None
@@ -3439,6 +3448,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t3_kmer_slider = None
         self.t3_kmer_label = None
         self.t3_summary_box = None
+        self.t3_seq_len = ctk.StringVar(value="500,000")
+        self.t3_seq_len_real = None
 
         # ------------------------- Build each tab once (state persists when switching tabs) -------------------------
         self._build_entropy_tab(tabview.tab(tab_names[0]))
@@ -3463,29 +3474,39 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         config_frame.grid_propagate(False)
 
         # k-mer size
-        ctk.CTkLabel(config_frame, text="k-mer: ").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
+        ctk.CTkLabel(config_frame, text="k-mer:").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
         (ctk.CTkComboBox(config_frame, values=KMERS_SYNTH, state="readonly", variable=self.t1_k_var, width=80)
          .grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(10, 0)))
 
         # sequence length
-        ctk.CTkLabel(config_frame, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10, pady=(10, 0))
-        segment_entry = ctk.CTkEntry(config_frame, textvariable=self.seq_len)
+        ctk.CTkLabel(config_frame, text="Sequence length:").grid(row=1, column=0, sticky="w", padx=10, pady=(10, 0))
+        segment_entry = ctk.CTkEntry(config_frame, textvariable=self.t1_seq_len)
         segment_entry.grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew")
         segment_entry.bind('<FocusOut>', self._sequence_length_change)
         segment_entry.bind('<Key-Return>', self._sequence_length_change)
+        (ctk.CTkLabel(config_frame, text="Length after generate:", text_color=COLORS["TEXT_DISABLE_COLOR"],
+                      font=('Cambria', 10)).grid(row=2, column=0, sticky="w", padx=10, pady=(0, 0)))
+        if self.t1_seq_len_real is not None and self.t1_seq_len_real.winfo_exists():
+            text = self.t1_seq_len_real.cget("text")
+        else:
+            text = ""
+        self.t1_seq_len_real = ctk.CTkLabel(config_frame, text=text, font=('Cambria', 10),
+                                            text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
+        self.t1_seq_len_real.grid(row=2, column=1, sticky="ew", padx=(5, 5), pady=(0, 0))
+        self.t1_seq_len_real.grid_propagate(False)
 
         # entropy scaling factor
-        (ctk.CTkLabel(config_frame, text="Entropy scaling factor: ")
-         .grid(row=2, column=0, sticky="w", padx=10, pady=(10, 0)))
+        (ctk.CTkLabel(config_frame, text="Entropy scaling factor:")
+         .grid(row=3, column=0, sticky="w", padx=10, pady=(10, 0)))
         (ctk.CTkSlider(config_frame, from_=0.25, to=1.0, variable=self.t1_r_var, width=150)
-         .grid(row=2, column=1, padx=(0, 5), pady=(10, 0), sticky="ew"))
+         .grid(row=3, column=1, padx=(0, 5), pady=(10, 0), sticky="ew"))
         self.t1_r_value_label = ctk.CTkLabel(config_frame, text=f"{self.t1_r_var.get():.2f}", width=60)
-        self.t1_r_value_label.grid(row=2, column=2, padx=(0, 10), pady=(10, 0), sticky="w")
+        self.t1_r_value_label.grid(row=3, column=2, padx=(0, 10), pady=(10, 0), sticky="w")
         self.t1_r_var.trace_add("write", self.t1_update_r_label)
 
         # Generate button
         (ctk.CTkButton(config_frame, text="Generate", command=lambda: self.generate_sequence("t1"))
-         .grid(row=3, column=0, columnspan=3, padx=10, pady=(10, 10)))
+         .grid(row=4, column=0, columnspan=3, padx=10, pady=(10, 10)))
 
         # ------------------------- Right panel -------------------------
         self.t1_frame = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
@@ -3515,7 +3536,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             self.t1_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
         # Save
-        ctk.CTkButton(tab, text="Save Sequence", command=self.save_sequence).grid(row=1, column=1, padx=5, pady=5)
+        (ctk.CTkButton(tab, text="Save Sequence", command=lambda: self.save_sequence("t1"))
+         .grid(row=1, column=1, padx=5, pady=5))
 
     def t1_update_r_label(self, *args):
         self.t1_r_value_label.configure(text=f"{self.t1_r_var.get():.2f}")
@@ -3565,10 +3587,20 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         seq_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
         seq_frame.grid(row=last_row, column=0, columnspan=3, padx=(10, 10), pady=(5, 0), sticky="w")
         ctk.CTkLabel(seq_frame, text="Sequence length:").grid(row=0, column=0, padx=(0, 5), sticky="w")
-        segment_entry = ctk.CTkEntry(seq_frame, textvariable=self.seq_len, width=150)
+        segment_entry = ctk.CTkEntry(seq_frame, textvariable=self.t2_seq_len, width=150)
         segment_entry.grid(row=0, column=1, sticky="w")
         segment_entry.bind('<FocusOut>', self._sequence_length_change)
         segment_entry.bind('<Key-Return>', self._sequence_length_change)
+        (ctk.CTkLabel(seq_frame, text="Length after generate:", text_color=COLORS["TEXT_DISABLE_COLOR"],
+                      font=('Cambria', 10)).grid(row=1, column=0, sticky="w", padx=(0, 5), pady=(0, 0)))
+        if self.t2_seq_len_real is not None and self.t2_seq_len_real.winfo_exists():
+            text = self.t2_seq_len_real.cget("text")
+        else:
+            text = ""
+        self.t2_seq_len_real = ctk.CTkLabel(seq_frame, text=text, font=('Cambria', 10),
+                                            text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
+        self.t2_seq_len_real.grid(row=1, column=1, sticky="ew", padx=(5, 5), pady=(0, 0))
+        self.t2_seq_len_real.grid_propagate(False)
 
         # buttons (reset + generate)
         btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
@@ -3603,7 +3635,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
         # Save
-        ctk.CTkButton(tab, text="Save Sequence", command=self.save_sequence).grid(row=1, column=1, padx=5, pady=5)
+        (ctk.CTkButton(tab, text="Save Sequence", command=lambda: self.save_sequence("t2"))
+         .grid(row=1, column=1, padx=5, pady=5))
 
     def update_all_k_labels(self, *args):
         # collect logits from all sliders
@@ -3634,25 +3667,35 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         config_frame.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
         config_frame.grid_columnconfigure(0, weight=1)
         config_frame.grid_columnconfigure(1, weight=1)
-        for i in range(6):
+        for i in range(7):
             config_frame.grid_rowconfigure(i, weight=1)
         config_frame.grid_propagate(False)
 
         # k combobox
-        ctk.CTkLabel(config_frame, text="k-mer length: ").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
+        ctk.CTkLabel(config_frame, text="k-mer length:").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
         (ctk.CTkComboBox(config_frame, values=KMERS_SYNTH, state="readonly", variable=self.t3_k_var, width=80,
                          command=self.t3_set_kmers_event).grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(10, 0)))
 
         # sequence length
-        ctk.CTkLabel(config_frame, text="Sequence length: ").grid(row=1, column=0, sticky="w", padx=10, pady=(10, 0))
-        segment_entry = ctk.CTkEntry(config_frame, textvariable=self.seq_len)
+        ctk.CTkLabel(config_frame, text="Sequence length:").grid(row=1, column=0, sticky="w", padx=10, pady=(10, 0))
+        segment_entry = ctk.CTkEntry(config_frame, textvariable=self.t3_seq_len)
         segment_entry.grid(row=1, column=1, padx=(0, 10), pady=(10, 0), sticky="ew")
         segment_entry.bind('<FocusOut>', self._sequence_length_change)
         segment_entry.bind('<Key-Return>', self._sequence_length_change)
+        (ctk.CTkLabel(config_frame, text="Length after generate:", text_color=COLORS["TEXT_DISABLE_COLOR"],
+                      font=('Cambria', 10)).grid(row=2, column=0, sticky="w", padx=10, pady=(0, 0)))
+        if self.t3_seq_len_real is not None and self.t3_seq_len_real.winfo_exists():
+            text = self.t3_seq_len_real.cget("text")
+        else:
+            text = ""
+        self.t3_seq_len_real = ctk.CTkLabel(config_frame, text=text, font=('Cambria', 10),
+                                            text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
+        self.t3_seq_len_real.grid(row=2, column=1, sticky="ew", padx=(5, 5), pady=(0, 0))
+        self.t3_seq_len_real.grid_propagate(False)
 
         # k-mer entry + slider + save checkmark
         entry_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
-        entry_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=(5, 5), sticky="ew")
+        entry_frame.grid(row=3, column=0, columnspan=2, padx=10, pady=(5, 5), sticky="ew")
         entry_frame.grid_columnconfigure(0, weight=0)
         entry_frame.grid_columnconfigure(1, weight=1)
         entry_frame.grid_columnconfigure(2, weight=0)
@@ -3676,15 +3719,15 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
          .grid(row=1, column=3, sticky="w", padx=(10, 0), pady=(0, 5)))
 
         # summary textbox
-        ctk.CTkLabel(config_frame, text="Summary").grid(row=3, column=0, padx=10, pady=(5, 0), sticky="w")
+        ctk.CTkLabel(config_frame, text="Summary").grid(row=4, column=0, padx=10, pady=(5, 0), sticky="w")
         self.t3_summary_box = ctk.CTkTextbox(config_frame, height=160)
-        self.t3_summary_box.grid(row=4, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
+        self.t3_summary_box.grid(row=5, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
 
         self.t3_refresh_summary()
 
         # buttons (reset + generate)
         btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
-        btn_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
+        btn_frame.grid(row=6, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
         ctk.CTkButton(btn_frame, text="Reset logits", command=self.t3_reset_logits).pack(side="left")
         ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t3")).pack(side="right")
 
@@ -3715,7 +3758,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             self.t3_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
         # Save
-        ctk.CTkButton(tab, text="Save Sequence", command=self.save_sequence).grid(row=1, column=1, padx=5, pady=5)
+        (ctk.CTkButton(tab, text="Save Sequence", command=lambda: self.save_sequence("t3"))
+         .grid(row=1, column=1, padx=5, pady=5))
 
     def t3_set_kmers_event(self, *args):
         self.t3_kmers = generate_kmers(self.t3_k_var.get())
@@ -3797,8 +3841,16 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # General functions for all tabs
     # ------------------------------------------------------------------
-    def _sequence_length_change(self, *args):
-        val = self.seq_len.get().replace(",", "").strip()
+    def _sequence_length_change(self, tab, *args):
+        if tab == "t1":
+            sequence = self.t1_seq_len
+        elif tab == "t2":
+            sequence = self.t2_seq_len
+        elif tab == "t3":
+            sequence = self.t3_seq_len
+        else:
+            return
+        val = sequence.get().replace(",", "").strip()
 
         if not val.isdigit() or int(val) <= 0:
             messagebox.showerror("Error", "Sequence length must be a positive integer.")
@@ -3807,36 +3859,38 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             last = getattr(self, "t1_last_valid_seq_len", None)
             if last is None:
                 last = 1000
-            self.seq_len.set(f"{last:,}")
+            sequence.set(f"{last:,}")
             return
 
         self.t1_last_valid_seq_len = int(val)
-        self.seq_len.set(f"{int(val):,}")
+        sequence.set(f"{int(val):,}")
 
-    # TODO: Fix Synthetic bug, maybe add a design to show the real value the code chooses
+    # TODO: Fix Synthetic bug, maybe add a design to show the real value the code chooses for length and k-mers
     def generate_sequence(self, frame_num):
         if frame_num == "t1":
             k = self.t1_k_var.get()
-            seq_len = int(self.seq_len.get().replace(",", "").strip())
+            seq_len = int(self.t1_seq_len.get().replace(",", "").strip())
             r = self.t1_r_var.get()
-            sequence, _, p = generate_dna_sequence(k, seq_len, target_entropy=r * (2 * k))
+            self.t1_generated_sequence, _, _ = generate_dna_sequence(k, seq_len, target_entropy=r * (2 * k))
+            sequence = self.t1_generated_sequence
+            # Fix sequence length in the input box
+            self.t1_seq_len_real.configure(text=f"{len(self.t1_generated_sequence):,}")
         elif frame_num == "t2":
             k = 2
-            seq_len = int(self.seq_len.get().replace(",", "").strip())
+            seq_len = int(self.t2_seq_len.get().replace(",", "").strip())
             slider_values = [self.k_var_dict[kmer].get() for kmer in self.t2_kmers]
-            sequence, _, p = generate_dna_sequence(k, seq_len, p_input=slider_values)
+            self.t2_generated_sequence, _, _ = generate_dna_sequence(k, seq_len, p_input=slider_values)
+            sequence = self.t2_generated_sequence
+            self.t2_seq_len_real.configure(text=f"{len(self.t2_generated_sequence):,}")
         elif frame_num == "t3":
-            # TODO: There is a bug here with k=2. p_input is none in case of all equal logits.
             k = self.t3_k_var.get()
-            seq_len = int(self.seq_len.get().replace(",", "").strip())
-            if np.allclose(self.logits, self.logits[0]):
-                p_input = None
-            else:
-                p_input = self.t3_softmax()
-            sequence, _, p = generate_dna_sequence(k, seq_len, p_input=p_input)
+            seq_len = int(self.t3_seq_len.get().replace(",", "").strip())
+            p_input = self.t3_softmax()
+            self.t3_generated_sequence, _, _ = generate_dna_sequence(k, seq_len, p_input=p_input)
+            sequence = self.t3_generated_sequence
+            self.t3_seq_len_real.configure(text=f"{len(self.t3_generated_sequence):,}")
         else:
             return
-        self.generated_sequence = sequence
         fcgr = CGR(sequence, k).get_fcgr()
 
         # Prepare plot area
@@ -3873,7 +3927,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         ax = fig.add_subplot(111)
         f = CGR.normalize(fcgr)
         self.parent.fcgr_normalizer.fit([f], ks=[self.t3_k_var.get()])
-        V = self.parent.fcgr_normalizer.transform01(f, k=self.t3_k_var.get(), L=self.seq_len.get())
+        V = self.parent.fcgr_normalizer.transform01(f, k=self.t3_k_var.get(), L=len(sequence))
         img_uint8 = FCGRNormalizer.to_uint8_from_01(V, white_is_high=True)
         img = Image.fromarray(img_uint8)
         ax.imshow(img, cmap="gray", origin="upper")
@@ -3924,13 +3978,23 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.grab_release()
         self.withdraw()
 
-    def save_sequence(self):
-        seq = getattr(self, "generated_sequence", "")
+    def save_sequence(self, tab):
+        if tab == "t1":
+            seq = getattr(self, "t1_generated_sequence", "")
+            k = self.t1_k_var.get()
+        elif tab == "t2":
+            seq = getattr(self, "t2_generated_sequence", "")
+            k = 2
+        elif tab == "t3":
+            seq = getattr(self, "t3_generated_sequence", "")
+            k = self.t3_k_var.get()
+        else:
+            return
         if not seq:
             messagebox.showerror("Error", "No sequence generated.")
             return
 
-        default_name = f"Synthetic_k{self.t3_k_var.get()}_{len(seq)}bp"
+        default_name = f"Synthetic_k{k}_{len(seq)}bp"
         dialog = CTkAskString(self, initial_value=default_name)
 
         self.wait_window(dialog)
