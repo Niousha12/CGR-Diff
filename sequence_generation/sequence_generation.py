@@ -52,7 +52,9 @@ def determine_kmer_counts_balanced(p, kmers, L, k, max_iter=1000, tol=1e-6):
     Convert probabilities to integer k-mer counts while enforcing conservation
     at every (k-1)-mer vertex. More accurate but slightly slower.
     """
+    return_dict = {'diff_message': "", 'adjust_message': "", 'counts': {}}
     total_kmers = L - k + 1
+    p = np.asarray(p, dtype=float)
     p_dict = dict(zip(kmers, p))
     r = {kmer: total_kmers * p_dict[kmer] for kmer in kmers}
 
@@ -74,17 +76,20 @@ def determine_kmer_counts_balanced(p, kmers, L, k, max_iter=1000, tol=1e-6):
                 if out_groups.get(v, []):
                     for kmer in out_groups[v]:
                         r[kmer] -= diff / (2 * len(out_groups[v]))
+                        if r[kmer] < 0:
+                            r[kmer] = 0
                 if in_groups.get(v, []):
                     for kmer in in_groups[v]:
                         r[kmer] += diff / (2 * len(in_groups[v]))
         if max_diff < tol:
             break
     else:
-        print("Warning: Balance not achieved within max iterations.")
+        return_dict['adjust_message'] = f"Balance not achieved within max iterations of {max_iter}."
 
     s = sum(r.values())
-    for kmer in r:
-        r[kmer] *= total_kmers / s
+    if s > 0:
+        for kmer in r:
+            r[kmer] *= total_kmers / s
 
     counts = {}
     for v, group in out_groups.items():
@@ -97,7 +102,20 @@ def determine_kmer_counts_balanced(p, kmers, L, k, max_iter=1000, tol=1e-6):
             sorted_group = sorted(group, key=lambda kmer: r[kmer] - np.floor(r[kmer]), reverse=True)
             for kmer in sorted_group[:rem]:
                 counts[kmer] += 1
-    return counts
+
+    return_dict['counts'] = counts
+
+    p_final = np.array([counts.get(kmer, 0) / total_kmers for kmer in kmers], dtype=float)
+    max_abs_diff = np.max(np.abs(p_final - p))
+
+    # choose one threshold
+    final_warning_threshold = 0.01  # 1 percentage point per k-mer
+
+    if max_abs_diff > final_warning_threshold:
+        return_dict['diff_message'] = ("The requested k-mer distribution could not be matched exactly, "
+                                       "so it was adjusted to generate a valid sequence.")
+
+    return return_dict
 
 
 def build_de_bruijn_graph(kmer_counts):
@@ -231,9 +249,9 @@ def generate_dna_sequence(k, L, p_input=None, target_entropy=None):
 
     # Use balanced counting for better quality
     kmer_counts = determine_kmer_counts_balanced(p, kmers, L, k)
-    graph = build_de_bruijn_graph(kmer_counts)
+    graph = build_de_bruijn_graph(kmer_counts['counts'])
     balanced_graph, _ = balance_graph(graph)
     eulerian_path = find_eulerian_path(balanced_graph)
     sequence = reconstruct_sequence(eulerian_path)
 
-    return sequence, np.array(list(kmer_counts.values())), p
+    return sequence, kmer_counts, p

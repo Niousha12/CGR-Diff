@@ -31,8 +31,7 @@ except Exception:
 
 from chaos_game_representation import CGR
 from distances.distance_metrics import get_dist
-from sequence_generation.sampling import generate_kmers
-from sequence_generation.sequence_generation import generate_dna_sequence
+from sequence_generation.sequence_generation import generate_kmers, generate_dna_sequence
 
 ctk.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -3828,9 +3827,9 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             avg_other = (others / n_others) if n_others > 0 else 0.0
 
             lines = [f"Assigned k-mers ({len(assigned_sorted)}):"]
-            lines += [f"  {km}: {prob:.4f}" for km, prob in assigned_sorted]
+            lines += [f"  {km}: {prob:.8f}" for km, prob in assigned_sorted]
             if n_others > 0:
-                lines += [f"Others ({n_others}): avg ≈ {avg_other:.4f} (sum ≈ {others:.4f})"]
+                lines += [f"Others ({n_others}): avg ≈ {avg_other:.8f} (sum ≈ {others:.8f})"]
             txt = "\n".join(lines)
 
         self.t3_summary_box.configure(state="normal")
@@ -3865,7 +3864,6 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t1_last_valid_seq_len = int(val)
         sequence.set(f"{int(val):,}")
 
-    # TODO: Fix Synthetic bug, maybe add a design to show the real value the code chooses for length and k-mers
     def generate_sequence(self, frame_num):
         if frame_num == "t1":
             k = self.t1_k_var.get()
@@ -3875,22 +3873,68 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             sequence = self.t1_generated_sequence
             # Fix sequence length in the input box
             self.t1_seq_len_real.configure(text=f"{len(self.t1_generated_sequence):,}")
+            kmer_counts_dict = {'diff_message': "", 'adjust_message': ""}
         elif frame_num == "t2":
             k = 2
             seq_len = int(self.t2_seq_len.get().replace(",", "").strip())
             slider_values = [self.k_var_dict[kmer].get() for kmer in self.t2_kmers]
-            self.t2_generated_sequence, _, _ = generate_dna_sequence(k, seq_len, p_input=slider_values)
+            self.t2_generated_sequence, kmer_counts_dict, _ = generate_dna_sequence(k, seq_len, p_input=slider_values)
             sequence = self.t2_generated_sequence
-            self.t2_seq_len_real.configure(text=f"{len(self.t2_generated_sequence):,}")
+
+            # Update sequence length and k-mer counts in the labels and the scales
+            self.t2_seq_len_real.configure(text=f"{len(sequence):,}")
+
+            probs = []
+            for kmer in self.t2_kmers:
+                c = kmer_counts_dict["counts"].get(kmer, 0)
+                probs.append(c / len(sequence))
+            probs = np.array(probs, dtype=float)
+
+            eps = 1e-12
+            logits = np.log(np.clip(probs, eps, 1.0) * len(self.t2_kmers))
+            logits = np.clip(logits, -3.0, 3.0)
+
+            for kmer, logit in zip(self.t2_kmers, logits):
+                self.k_var_dict[kmer].set(float(logit))
+
+            self.update_all_k_labels()
         elif frame_num == "t3":
             k = self.t3_k_var.get()
             seq_len = int(self.t3_seq_len.get().replace(",", "").strip())
             p_input = self.t3_softmax()
-            self.t3_generated_sequence, _, _ = generate_dna_sequence(k, seq_len, p_input=p_input)
+            self.t3_generated_sequence, kmer_counts_dict, _ = generate_dna_sequence(k, seq_len, p_input=p_input)
             sequence = self.t3_generated_sequence
-            self.t3_seq_len_real.configure(text=f"{len(self.t3_generated_sequence):,}")
+
+            # Update sequence length
+            self.t3_seq_len_real.configure(text=f"{len(sequence):,}")
+
+            probs = np.array([kmer_counts_dict["counts"].get(km, 0) / len(sequence) for km in self.t3_kmers],
+                             dtype=float)
+
+            eps = 1e-12
+            # logits that reproduce probs under softmax (up to clipping)
+            logits = np.log(np.clip(probs, eps, 1.0) * len(self.t3_kmers))
+            logits = np.clip(logits, -3.0, 3.0)
+            self.logits[:] = logits
+
+            # update the currently loaded kmer slider, if any
+            if self.t3_current_kmer is not None:
+                idx = self.kmer_to_idx[self.t3_current_kmer]
+                self.t3_slider_var.set(float(self.logits[idx]))
+                self.t3_kmer_slider.configure(state="normal", button_color=COLORS["BTN_COLOR"])
+            else:
+                self.t3_slider_var.set(0.0)
+                self.t3_kmer_slider.configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+
+            # refresh summary (and prob label updates via trace)
+            self.t3_refresh_summary()
         else:
             return
+        # Show warning message in kmer_counts_dict
+        if kmer_counts_dict['adjust_message'] != "":
+            messagebox.showwarning("Generation Warning", kmer_counts_dict['adjust_message'])
+        elif kmer_counts_dict['diff_message'] != "":
+            messagebox.showwarning("Generation Warning", kmer_counts_dict['diff_message'])
         fcgr = CGR(sequence, k).get_fcgr()
 
         # Prepare plot area
