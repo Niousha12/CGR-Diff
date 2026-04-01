@@ -213,6 +213,7 @@ class App(ctk.CTk):
 
         self.k_var = ctk.IntVar(value=9)  # k-mer selection variable
         self.dist_metric = tkinter.StringVar(value="DSSIM")  # distance metric selection variable
+        self.t1_3d_filter_var = tkinter.StringVar(value="All")  # 3D bar plot filter: All / Over / Under
 
         # Variables for page 1 (CGR Analysis)
         self._t1_progress_status = "Press 'Run Analysis' to start."
@@ -1650,9 +1651,9 @@ class App(ctk.CTk):
             out.append(bits_to_base[(xb, yb)])
         return "".join(out)
 
-    def _plot_fcgr_3d(self, fcgrs, bg=None, fig=None, canvas=None, include_zeros=True):
+    def _plot_fcgr_3d(self, fcgrs, bg=None, fig=None, canvas=None, include_zeros=True, filter_mode=None):
         import time
-        from matplotlib.colors import LinearSegmentedColormap
+        from matplotlib.colors import LinearSegmentedColormap, Normalize
         from mpl_toolkits.mplot3d import proj3d
 
         # ---------- figure ----------
@@ -1672,11 +1673,68 @@ class App(ctk.CTk):
         ax.tick_params(axis="z", pad=2, labelsize=8)
 
         over_under = LinearSegmentedColormap.from_list("over_under", [COLORS[UNDER_REP], COLORS[OVER_REP]])
-        ax.plot_surface(Xfull, Yfull, Zfull, cmap=over_under, linewidth=0, antialiased=False, shade=True)
+
+        avg = float(Zfull.mean())
+
+        if filter_mode in ("Over", "Under"):
+            # --- 3D bar plot for filtered subsets ---
+            xf = Xfull.ravel().astype(float)
+            yf = Yfull.ravel().astype(float)
+            zf = Zfull.ravel()
+            nz_mask = zf > 0
+            xf, yf, zf = xf[nz_mask], yf[nz_mask], zf[nz_mask]
+
+            if filter_mode == "Over":
+                sel = zf >= avg
+                title = f"Over-represented  (≥ avg {avg:.1f})"
+            else:
+                sel = zf < avg
+                title = f"Under-represented  (< avg {avg:.1f})"
+            xf, yf, zf = xf[sel], yf[sel], zf[sel]
+
+            # cap to top-N bars to stay responsive
+            MAX_BARS = 500
+            if zf.size > MAX_BARS:
+                top_idx = np.argpartition(zf, -MAX_BARS)[-MAX_BARS:]
+                xf, yf, zf = xf[top_idx], yf[top_idx], zf[top_idx]
+                title = f"{title}"
+
+            ax.text2D(0.5, 0.97, title, transform=ax.transAxes, ha="center", va="top", fontsize=8, color="black")
+
+            if zf.size > 0:
+                norm = Normalize(vmin=zf.min(), vmax=zf.max())
+                bar_colors = over_under(norm(zf))
+            else:
+                bar_colors = COLORS[UNDER_REP]
+
+            ax.bar3d(xf, yf, np.zeros_like(zf), 0.8, 0.8, zf,
+                     color=bar_colors, shade=True, zsort="average")
+
+            xs = xf.astype(int)
+            ys = yf.astype(int)
+            zs = zf
+            zs_proj = zf   # bar3d is drawn at raw counts, projection matches
+        else:
+            # --- Surface plot for "All" (fast, full resolution) ---
+            # Plot in asinh space so the surface isn't dominated by a few spikes,
+            # but relabel the z-axis ticks with the corresponding real counts.
+            Zdisp = np.arcsinh(Zfull)
+            ax.plot_surface(Xfull, Yfull, Zdisp, cmap=over_under,
+                            linewidth=0, antialiased=False, shade=True)
+
+            # Replace asinh tick values with real counts (sinh is the inverse)
+            from matplotlib.ticker import FuncFormatter
+            ax.zaxis.set_major_formatter(
+                FuncFormatter(lambda v, _: f"{int(round(np.sinh(v)))}")
+            )
+
+            xs = Xfull.ravel().astype(int)
+            ys = Yfull.ravel().astype(int)
+            zs = Zfull.ravel()        # raw counts — shown in tooltip
+            zs_proj = Zdisp.ravel()   # asinh values — match what was rendered
 
         ax.set_zlabel("count", fontsize=10)
         ax.invert_yaxis()
-        # fig.tight_layout()
 
         fig.subplots_adjust(left=0.05, right=0.82, bottom=0.08, top=0.98)
 
@@ -1690,15 +1748,6 @@ class App(ctk.CTk):
                 pass
         self._t1_fcgr3d_cids = []
 
-        # flatten points (ALL points by default)
-        xs = Xfull.ravel().astype(int)
-        ys = Yfull.ravel().astype(int)
-        zs = Zfull.ravel()
-
-        if not include_zeros:
-            m = zs != 0
-            xs, ys, zs = xs[m], ys[m], zs[m]
-
         # Tooltip anchored to axes (stable + readable)
         tooltip = ax.text2D(
             0.02, 0.98, "", transform=ax.transAxes, ha="left", va="top", fontsize=8, color="white",
@@ -1710,7 +1759,8 @@ class App(ctk.CTk):
 
         def _reproject():
             # project 3D points into 2D and then into pixel coords
-            x2, y2, _ = proj3d.proj_transform(xs, ys, zs, ax.get_proj())
+            # zs_proj matches the actual rendered z-space (asinh for surface, raw for bars)
+            x2, y2, _ = proj3d.proj_transform(xs, ys, zs_proj, ax.get_proj())
             disp = ax.transData.transform(np.column_stack([x2, y2]))  # pixel coords
             state["xy_pix"] = disp
             state["view"] = (ax.elev, ax.azim)
@@ -3186,6 +3236,7 @@ class App(ctk.CTk):
                     setattr(self, nav_state_attr, {"pan_on": False})
                 nav_state = getattr(self, nav_state_attr)
                 nav_state["pan_on"] = False
+                nav_state["base_set"] = False  # re-capture base view after each redraw
 
                 BTN_ON = COLORS["BTN_COLOR"]
                 BTN_OFF = COLORS["BORDER_COLOR"]
@@ -3227,6 +3278,8 @@ class App(ctk.CTk):
                         nav_state["base_roll"] = ax0.roll
 
                     nav_state["base_set"] = True
+
+                nav_state["_ensure_base_view"] = _ensure_base_view
 
                 def _zoom_out(step=1.25):
                     _ensure_base_view()
@@ -3331,6 +3384,36 @@ class App(ctk.CTk):
                 _set_btn_active(pan_btn, nav_state["pan_on"])
                 # frame.after(0, _ensure_base_view)
 
+                # Filter segmented button — only for the 3D FCGR bar panel
+                if panel_type == "fcgr_3d":
+                    filter_btn_attr = f"{canvas_attr}_filter_btn"
+                    filter_btn = getattr(self, filter_btn_attr, None)
+                    if filter_btn is None or not filter_btn.winfo_exists() or filter_btn.master is not frame:
+                        def _on_filter_change(_val):
+                            self._draw_panel(
+                                frame=self.t1_3d_fcgr_frame,
+                                fig_attr="t1_3d_fcgr_fig",
+                                canvas_attr="t1_3d_fcgr_canvas",
+                                save_btn_attr="t1_3d_fcgr_save_btn",
+                                save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
+                                placeholder_attr=None,
+                                fcgrs_dict=self.t1_fcgrs_dict,
+                                panel_type="fcgr_3d",
+                            )
+                        filter_btn = ctk.CTkSegmentedButton(
+                            master=frame, values=["All", "Over", "Under"],
+                            variable=self.t1_3d_filter_var,
+                            command=_on_filter_change,
+                            width=165, height=26,
+                            fg_color=COLORS["BORDER_COLOR"],
+                            selected_color=COLORS["BTN_COLOR"],
+                            selected_hover_color=COLORS["BTN_COLOR"],
+                            unselected_color=COLORS["BORDER_COLOR"],
+                            unselected_hover_color=COLORS["FRAME_HOVER_COLOR"],
+                        )
+                        filter_btn.place(relx=0.99, rely=0.01, anchor="ne")
+                        setattr(self, filter_btn_attr, filter_btn)
+
         # --- 3) Clear figure and re-plot ---
         fig.clear()
         if panel_type == "fcgr":
@@ -3340,7 +3423,8 @@ class App(ctk.CTk):
                     fcgrs_dict = pickle.load(handle)
             self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
         if panel_type == "fcgr_3d":
-            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig, canvas=canvas)
+            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig, canvas=canvas,
+                               filter_mode=self.t1_3d_filter_var.get())
         elif panel_type == "chart":
             dists = list(self.t3_cgr_distance_history)
             self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
@@ -3365,15 +3449,14 @@ class App(ctk.CTk):
         # --- 5) Redraw canvas ---
         canvas.draw()
 
-        # capture base limits AFTER plot exists
-        try:
-            nav_state_attr = f"{canvas_attr}_nav_state"
-            if hasattr(self, nav_state_attr):
-                nav_state = getattr(self, nav_state_attr)
-                nav_state["base_set"] = False  # force refresh for new plot
-                frame.after_idle(_ensure_base_view)  # capture correct x/y/z + camera
-        except Exception:
-            pass
+        # Eagerly capture the base view after every redraw so reset always
+        # returns to the initial position of the current plot.
+        nav_state_attr = f"{canvas_attr}_nav_state"
+        if hasattr(self, nav_state_attr):
+            _ns = getattr(self, nav_state_attr)
+            _ebv = _ns.get("_ensure_base_view")
+            if callable(_ebv):
+                frame.after_idle(_ebv)
 
 
 class GenerateSyntheticSequence(ctk.CTkToplevel):
@@ -3604,7 +3687,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         # buttons (reset + generate)
         btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
         btn_frame.grid(row=last_row + 1, column=0, columnspan=3, padx=10, pady=(10, 10), sticky="ew")
-        ctk.CTkButton(btn_frame, text="Reset logits", command=self.t2_reset_logits).pack(side="left")
+        ctk.CTkButton(btn_frame, text="Reset", command=self.t2_reset_logits).pack(side="left")
         ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t2")).pack(side="right")
 
         # ------------------------- Right panel -------------------------
@@ -3727,7 +3810,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         # buttons (reset + generate)
         btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
         btn_frame.grid(row=6, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
-        ctk.CTkButton(btn_frame, text="Reset logits", command=self.t3_reset_logits).pack(side="left")
+        ctk.CTkButton(btn_frame, text="Reset", command=self.t3_reset_logits).pack(side="left")
         ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t3")).pack(side="right")
 
         # ------------------------- Right panel -------------------------
