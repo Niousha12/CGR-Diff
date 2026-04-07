@@ -1738,6 +1738,17 @@ class App(ctk.CTk):
         ax.set_zlabel("count", fontsize=10)
         ax.invert_yaxis()
 
+        # Corner labels – small and slightly inset from the corners
+        corner_labels = [
+            (12, 12, 0, "C", "left", "bottom"),
+            (12, h - 12, 0, "A", "left", "top"),
+            (w - 12, 12, 0, "G", "right", "bottom"),
+            (w - 12, h - 12, 0, "T", "right", "top"),
+        ]
+
+        for cx, cy, cz, lbl, ha, va in corner_labels:
+            ax.text(cx, cy, cz, lbl, fontsize=8, color=COLORS["FRAME_HOVER_COLOR"], ha=ha, va=va, zorder=10)
+
         fig.subplots_adjust(left=0.05, right=0.82, bottom=0.08, top=0.98)
 
         # ---------- hover wiring needs a real canvas ----------
@@ -3484,6 +3495,7 @@ class App(ctk.CTk):
         nav_state_attr = f"{canvas_attr}_nav_state"
         if hasattr(self, nav_state_attr):
             _ns = getattr(self, nav_state_attr)
+            _ns["base_set"] = False  # always re-capture after every redraw (e.g. filter change)
             _ebv = _ns.get("_ensure_base_view")
             if callable(_ebv):
                 frame.after_idle(_ebv)
