@@ -1,34 +1,15 @@
-import random
+from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import List, Tuple, Union
+from typing import List, Union
 
 # =========================
 # DNA utilities
 # =========================
-_COMP = str.maketrans({"A": "T", "C": "G", "G": "C", "T": "A"})
-
-
-def revcomp(s: str) -> str:
-    return s.translate(_COMP)[::-1]
-
-
 def sanitize(seq: str) -> str:
     seq = "".join(seq.split()).upper()
     if any(c not in "ACGT" for c in seq):
         raise ValueError("Only A/C/G/T supported")
     return seq
-
-
-def hamming_match(a: str, b: str, max_mm: int):
-    edits = []
-    mm = 0
-    for i, (x, y) in enumerate(zip(a, b)):
-        if x != y:
-            mm += 1
-            if mm > max_mm:
-                return None
-            edits.append((i, x))  # target base
-    return edits
 
 
 # =========================
@@ -46,53 +27,47 @@ class Copy:
     source: int
 
 
-@dataclass
-class ApproxCopy:
-    target: int
-    length: int
-    source: int
-    edits: List[Tuple[int, str]]  # (offset, new_base)
-
-
-@dataclass
-class RCCopy:
-    target: int
-    length: int
-    source: int
-
-
-@dataclass
-class RCApproxCopy:
-    target: int
-    length: int
-    source: int
-    edits: List[Tuple[int, str]]
-
-
-Token = Union[Lit, Copy, ApproxCopy, RCCopy, RCApproxCopy]
+Token = Union[Lit, Copy]
 
 
 # =========================
-# Compressor
+# Fast compressor
 # =========================
-class SimpleDNACompressor:
+class FastDNACompressor:
     def __init__(
-            self,
-            min_match=20,
-            max_mismatches=2,
-            window=5000,
-            allow_rc=True,
+        self,
+        min_match: int = 20,
+        seed_len: int = 12,
+        window: int = 50000,
+        max_candidates: int = 32,
     ):
         self.min_match = min_match
-        self.max_mismatches = max_mismatches
+        self.seed_len = seed_len
         self.window = window
-        self.allow_rc = allow_rc
+        self.max_candidates = max_candidates
+
+        if self.seed_len > self.min_match:
+            raise ValueError("seed_len should be <= min_match")
+
+    @staticmethod
+    def _extend_match(seq: str, i: int, j: int, n: int) -> int:
+        """Return exact match length between seq[i:] and seq[j:]."""
+        L = 0
+        while i + L < n and j + L < i and seq[i + L] == seq[j + L]:
+            L += 1
+        return L
 
     def compress(self, seq: str) -> List[Token]:
         seq = sanitize(seq)
-        out = ""
+        n = len(seq)
+        if n == 0:
+            return []
+
         tokens: List[Token] = []
         lit_buf = []
+
+        # k-mer seed -> recent source positions
+        index = defaultdict(deque)
 
         def flush_lit():
             nonlocal lit_buf
@@ -100,56 +75,58 @@ class SimpleDNACompressor:
                 tokens.append(Lit("".join(lit_buf)))
                 lit_buf = []
 
+        def add_position(pos: int):
+            """Add one position to seed index."""
+            if pos + self.seed_len <= n:
+                kmer = seq[pos:pos + self.seed_len]
+                dq = index[kmer]
+                dq.append(pos)
+
+                # Drop entries outside sliding window
+                cutoff = pos - self.window
+                while dq and dq[0] < cutoff:
+                    dq.popleft()
+
+                # Limit number of candidates per k-mer
+                while len(dq) > self.max_candidates:
+                    dq.popleft()
+
         i = 0
-        n = len(seq)
-
         while i < n:
-            best = None  # (token, length)
+            best_source = -1
+            best_len = 0
 
-            start = max(0, len(out) - self.window)
+            # Can we try a seed here?
+            if i + self.seed_len <= n:
+                kmer = seq[i:i + self.seed_len]
+                candidates = index.get(kmer, ())
 
-            for j in range(start, len(out)):
-                max_len = min(n - i, len(out) - j)
+                # Search recent candidates from newest to oldest
+                for j in reversed(candidates):
+                    if i - j > self.window:
+                        continue
 
-                for L in range(max_len, self.min_match - 1, -1):
-                    src = out[j:j + L]
-                    tgt = seq[i:i + L]
+                    L = self._extend_match(seq, i, j, n)
+                    if L > best_len:
+                        best_len = L
+                        best_source = j
 
-                    # Exact
-                    if src == tgt:
-                        best = Copy(i, L, j)
-                        break
+                if best_len >= self.min_match:
+                    flush_lit()
+                    tokens.append(Copy(target=i, length=best_len, source=best_source))
 
-                    # Approx
-                    edits = hamming_match(tgt, src, self.max_mismatches)
-                    if edits is not None:
-                        best = ApproxCopy(i, L, j, edits)
-                        break
+                    # Add traversed positions into the index
+                    end = min(i + best_len, n)
+                    for p in range(i, end):
+                        add_position(p)
 
-                    # Reverse complement
-                    if self.allow_rc:
-                        src_rc = revcomp(src)
-                        if src_rc == tgt:
-                            best = RCCopy(i, L, j)
-                            break
-                        edits = hamming_match(tgt, src_rc, self.max_mismatches)
-                        if edits is not None:
-                            best = RCApproxCopy(i, L, j, edits)
-                            break
+                    i += best_len
+                    continue
 
-                if best:
-                    break
-
-            if best:
-                flush_lit()
-                tok, L = best, best.length
-                tokens.append(tok)
-                out += seq[i:i + L]
-                i += L
-            else:
-                lit_buf.append(seq[i])
-                out += seq[i]
-                i += 1
+            # No good match -> literal
+            lit_buf.append(seq[i])
+            add_position(i)
+            i += 1
 
         flush_lit()
         return tokens
@@ -159,69 +136,48 @@ class SimpleDNACompressor:
 # Decompressor
 # =========================
 def decompress(tokens: List[Token]) -> str:
-    out = ""
+    out = []
 
     for t in tokens:
         if isinstance(t, Lit):
-            out += t.s
-
+            out.append(t.s)
         elif isinstance(t, Copy):
-            out += out[-t.dist:-t.dist + t.length]
+            built = "".join(out)
+            out.append(built[t.source:t.source + t.length])
+        else:
+            raise TypeError(f"Unknown token type: {type(t)}")
 
-        elif isinstance(t, ApproxCopy):
-            chunk = list(out[-t.dist:-t.dist + t.length])
-            for pos, base in t.edits:
-                chunk[pos] = base
-            out += "".join(chunk)
-
-        elif isinstance(t, RCCopy):
-            out += revcomp(out[-t.dist:-t.dist + t.length])
-
-        elif isinstance(t, RCApproxCopy):
-            chunk = list(revcomp(out[-t.dist:-t.dist + t.length]))
-            for pos, base in t.edits:
-                chunk[pos] = base
-            out += "".join(chunk)
-
-    return out
+    return "".join(out)
 
 
 # =========================
-# Compressed size (C(x))
+# Simple compressed size
 # =========================
 def compressed_size(tokens: List[Token]) -> int:
-    """
-    Simple deterministic byte cost:
-      - Literal: 1 byte per base
-      - Copy: 8 bytes
-      - ApproxCopy: 8 + 2*len(edits)
-    """
     size = 0
     for t in tokens:
         if isinstance(t, Lit):
             size += len(t.s)
-        elif isinstance(t, Copy) or isinstance(t, RCCopy):
+        elif isinstance(t, Copy):
             size += 1
-        elif isinstance(t, ApproxCopy) or isinstance(t, RCApproxCopy):
-            size += 1 + len(t.edits)
     return size
 
 
 if __name__ == "__main__":
-    seq = ("ACGTTGCAACGTTGCAACGTTGCA"
-           "TTTTTTTT"
-           "ACGTTGCAACGTTGCAACGTTGGA"
-           + revcomp("ACGTTGCAACGTTGCAACGTTGCA")
-           )
-    # seq = ''.join(random.choices(['A', 'C', 'G', 'T'], k=80))
+    seq = (
+        "ACGTTGCAACGTTGCAACGTTGCA"
+        "TTTTTTTT"
+        "ACGTTGCAACGTTGCAACGTTGCA"
+        "GGGGGGGG"
+        "ACGTTGCAACGTTGCAACGTTGCA"
+    )
 
-    comp = SimpleDNACompressor(min_match=8, max_mismatches=2)
-
+    comp = FastDNACompressor(min_match=8, seed_len=8, window=50000)
     toks = comp.compress(seq)
-    size = compressed_size(toks)
-    print(toks)
-    # recon = decompress(toks)
 
+    print(toks)
     print("Original length:", len(seq))
-    print("Compressed size (bytes):", compressed_size(toks))
-    # print("Lossless:", recon == seq)
+    print("Compressed size:", compressed_size(toks))
+
+    recon = decompress(toks)
+    print("Lossless:", recon == seq)
