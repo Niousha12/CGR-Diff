@@ -650,8 +650,9 @@ class App(ctk.CTk):
 
         self.t1_stat_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
         self.t1_stat_frame.grid(row=1, column=2, sticky="nsew", padx=(5, 5), pady=(5, 5), )
-        self.t1_stat_frame.grid_rowconfigure(0, weight=1)
-        self.t1_stat_frame.grid_rowconfigure(1, weight=1)
+        self.t1_stat_frame.grid_rowconfigure(0, weight=0)  # title — fixed height
+        self.t1_stat_frame.grid_rowconfigure(1, weight=1)  # treeview — takes all space
+        self.t1_stat_frame.grid_rowconfigure(2, weight=0)  # button — fixed height
         self.t1_stat_frame.grid_columnconfigure(0, weight=1)
         self.t1_stat_frame.grid_propagate(False)
         if getattr(self, "t1_fcgrs_dict", None) is not None:
@@ -1896,6 +1897,33 @@ class App(ctk.CTk):
 
         tree.grid(row=1, column=0, sticky="nsew")
         sb.grid(row=1, column=1, sticky="ns")
+
+        # ------------------ DOWNLOAD BUTTON ------------------
+        def _download_full_table():
+            from tkinter import filedialog
+            import csv
+            path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialfile=f"{k}mer_counts.csv",
+                title="Save k-mer table",
+            )
+            if not path:
+                return
+            all_rows = self._get_top_kmers_from_fcgr(
+                fcgr, k, top_n=4 ** k, include_zeros=True
+            )
+            with open(path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([f"{k}-mer", "Count"])
+                writer.writerows(all_rows)
+
+        ctk.CTkButton(
+            self.t1_stat_frame, text="⬇ Download Full Table",
+            height=30, fg_color=COLORS["BORDER_COLOR"],
+            hover_color=COLORS["FRAME_HOVER_COLOR"],
+            command=_download_full_table,
+        ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(4, 6))
 
     def t2_sequence_selection_event(self, sender, value):
         # Set its sequence and sequence name
