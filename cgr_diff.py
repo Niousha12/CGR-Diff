@@ -4,6 +4,7 @@ import sys
 import threading
 import tkinter
 import tkinter.messagebox
+from collections import Counter
 from functools import partial
 import random
 
@@ -1714,7 +1715,7 @@ class App(ctk.CTk):
             xs = xf.astype(int)
             ys = yf.astype(int)
             zs = zf
-            zs_proj = zf   # bar3d is drawn at raw counts, projection matches
+            zs_proj = zf  # bar3d is drawn at raw counts, projection matches
         else:
             # --- Surface plot for "All" (fast, full resolution) ---
             # Plot in asinh space so the surface isn't dominated by a few spikes,
@@ -1731,8 +1732,8 @@ class App(ctk.CTk):
 
             xs = Xfull.ravel().astype(int)
             ys = Yfull.ravel().astype(int)
-            zs = Zfull.ravel()        # raw counts — shown in tooltip
-            zs_proj = Zdisp.ravel()   # asinh values — match what was rendered
+            zs = Zfull.ravel()  # raw counts — shown in tooltip
+            zs_proj = Zdisp.ravel()  # asinh values — match what was rendered
 
         ax.set_zlabel("count", fontsize=10)
         ax.invert_yaxis()
@@ -3428,6 +3429,7 @@ class App(ctk.CTk):
                                 fcgrs_dict=self.t1_fcgrs_dict,
                                 panel_type="fcgr_3d",
                             )
+
                         filter_btn = ctk.CTkSegmentedButton(
                             master=frame, values=["All", "Over", "Under"],
                             variable=self.t1_3d_filter_var,
@@ -3503,8 +3505,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.focus_set()
         # size/center relative to parent (not the screen)
         self.parent.update_idletasks()
-        w = int(self.parent.winfo_width() * 0.5)
-        h = int(self.parent.winfo_height() * 0.6)
+        w = int(self.parent.winfo_width() * 0.6)
+        h = int(self.parent.winfo_height() * 0.75)
         x = self.parent.winfo_rootx() + (self.parent.winfo_width() - w) // 2
         y = self.parent.winfo_rooty() + (self.parent.winfo_height() - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
@@ -3538,6 +3540,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t2_placeholder_label = None
         self.k_var_dict = {}
         self.k_value_label_dict = {}
+        self.k_calibrated_label_dict = {}
+        self.k_final_label_dict = {}
         self.t2_kmers = generate_kmers(2)
         self.t2_seq_len = ctk.StringVar(value="500,000")
         self.t2_seq_len_real = None
@@ -3558,6 +3562,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t3_kmer_slider = None
         self.t3_kmer_label = None
         self.t3_summary_box = None
+        self.t3_results_box = None
         self.t3_seq_len = ctk.StringVar(value="500,000")
         self.t3_seq_len_real = None
 
@@ -3645,9 +3650,12 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
                                              command=partial(self._save_figure, "t1_fig"))
             self.t1_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
-        # Save
-        (ctk.CTkButton(tab, text="Save Sequence", command=lambda: self.save_sequence("t1"))
-         .grid(row=1, column=1, padx=5, pady=5))
+        # Cancel / Save
+        btn_row = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_row.grid(row=1, column=1, padx=5, pady=5)
+        (ctk.CTkButton(btn_row, text="Cancel", command=self.cancel_sequence, fg_color="gray40", hover_color="gray30")
+         .pack(side="left", padx=(0, 5)))
+        ctk.CTkButton(btn_row, text="Save Sequence", command=lambda: self.save_sequence("t1")).pack(side="left")
 
     def t1_update_r_label(self, *args):
         self.t1_r_value_label.configure(text=f"{self.t1_r_var.get():.2f}")
@@ -3667,35 +3675,55 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         config_frame.grid_columnconfigure(0, weight=0)
         config_frame.grid_columnconfigure(1, weight=1)
         config_frame.grid_columnconfigure(2, weight=0)
+        config_frame.grid_columnconfigure(3, weight=0)
+        config_frame.grid_columnconfigure(4, weight=0)
         config_frame.grid_propagate(False)
+
+        # Column headers
+        (ctk.CTkLabel(config_frame, text="Input", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+         .grid(row=0, column=2, padx=(20, 0), pady=(5, 0), sticky="w"))
+        (ctk.CTkLabel(config_frame, text="Calibrated", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+         .grid(row=0, column=3, padx=(20, 0), pady=(5, 0), sticky="w"))
+        (ctk.CTkLabel(config_frame, text="Final", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+         .grid(row=0, column=4, padx=(20, 10), pady=(5, 0), sticky="w"))
 
         # k-mer sliders
         last_row = 0
         for i, kmer in enumerate(self.t2_kmers):
-            pad = 0 if i > 0 else 8
-            config_frame.grid_rowconfigure(i, weight=1)
+            pad = 0 if i > 0 else 4
+            config_frame.grid_rowconfigure(i + 1, weight=1)
 
-            ctk.CTkLabel(config_frame, text=f"{kmer}: ").grid(row=i, column=0, padx=(10, 0), pady=(pad, 0), sticky="w")
+            (ctk.CTkLabel(config_frame, text=f"{kmer}: ")
+             .grid(row=i + 1, column=0, padx=(10, 0), pady=(pad, 0), sticky="w"))
 
             var = ctk.DoubleVar(value=0.0)
             self.k_var_dict[kmer] = var
 
             (ctk.CTkSlider(config_frame, from_=-3, to=3, variable=var, width=150, height=14).
-             grid(row=i, column=1, padx=(10, 0), pady=(pad, 0), sticky="ew"))
+             grid(row=i + 1, column=1, padx=(10, 0), pady=(pad, 0), sticky="ew"))
 
             self.k_value_label_dict[kmer] = ctk.CTkLabel(config_frame, text="0.0000", width=60)
-            self.k_value_label_dict[kmer].grid(row=i, column=2, padx=(10, 10), pady=(pad, 0), sticky="w")
+            self.k_value_label_dict[kmer].grid(row=i + 1, column=2, padx=(10, 0), pady=(pad, 0), sticky="w")
+
+            self.k_calibrated_label_dict[kmer] = ctk.CTkLabel(config_frame, text="-", width=60,
+                                                              text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.k_calibrated_label_dict[kmer].grid(row=i + 1, column=3, padx=(10, 0), pady=(pad, 0), sticky="w")
+
+            self.k_final_label_dict[kmer] = ctk.CTkLabel(config_frame, text="-", width=60,
+                                                         text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.k_final_label_dict[kmer].grid(row=i + 1, column=4, padx=(10, 10), pady=(pad, 0), sticky="w")
+
             # Bind the slider to update the label
             try:
                 var.trace_add("write", self.update_all_k_labels)
             except AttributeError:
                 var.trace("w", self.update_all_k_labels)
-            last_row = i + 1
+            last_row = i + 2
         self.update_all_k_labels()
 
         # Sequence length
         seq_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
-        seq_frame.grid(row=last_row, column=0, columnspan=3, padx=(10, 10), pady=(5, 0), sticky="w")
+        seq_frame.grid(row=last_row, column=0, columnspan=5, padx=(10, 10), pady=(5, 0), sticky="w")
         ctk.CTkLabel(seq_frame, text="Sequence length:").grid(row=0, column=0, padx=(0, 5), sticky="w")
         segment_entry = ctk.CTkEntry(seq_frame, textvariable=self.t2_seq_len, width=150)
         segment_entry.grid(row=0, column=1, sticky="w")
@@ -3714,7 +3742,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
 
         # buttons (reset + generate)
         btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
-        btn_frame.grid(row=last_row + 1, column=0, columnspan=3, padx=10, pady=(10, 10), sticky="ew")
+        btn_frame.grid(row=last_row + 1, column=0, columnspan=5, padx=10, pady=(10, 10), sticky="ew")
         ctk.CTkButton(btn_frame, text="Reset", command=self.t2_reset_logits).pack(side="left")
         ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t2")).pack(side="right")
 
@@ -3744,9 +3772,12 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
                                              command=partial(self._save_figure, "t2_fig"))
             self.t2_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
-        # Save
-        (ctk.CTkButton(tab, text="Save Sequence", command=lambda: self.save_sequence("t2"))
-         .grid(row=1, column=1, padx=5, pady=5))
+        # Cancel / Save
+        btn_row = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_row.grid(row=1, column=1, padx=5, pady=5)
+        (ctk.CTkButton(btn_row, text="Cancel", command=self.cancel_sequence, fg_color="gray40", hover_color="gray30")
+         .pack(side="left", padx=(0, 5)))
+        ctk.CTkButton(btn_row, text="Save Sequence", command=lambda: self.save_sequence("t2")).pack(side="left")
 
     def update_all_k_labels(self, *args):
         # collect logits from all sliders
@@ -3777,7 +3808,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         config_frame.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
         config_frame.grid_columnconfigure(0, weight=1)
         config_frame.grid_columnconfigure(1, weight=1)
-        for i in range(7):
+        for i in range(9):
             config_frame.grid_rowconfigure(i, weight=1)
         config_frame.grid_propagate(False)
 
@@ -3830,14 +3861,27 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
 
         # summary textbox
         ctk.CTkLabel(config_frame, text="Summary").grid(row=4, column=0, padx=10, pady=(5, 0), sticky="w")
-        self.t3_summary_box = ctk.CTkTextbox(config_frame, height=160)
-        self.t3_summary_box.grid(row=5, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
+        self.t3_summary_box = ctk.CTkTextbox(config_frame, height=120)
+        self.t3_summary_box.grid(row=5, column=0, columnspan=2, padx=10, pady=(0, 5), sticky="nsew")
 
         self.t3_refresh_summary()
 
+        # generation results textbox
+        ctk.CTkLabel(config_frame, text="Generation Results", text_color=COLORS["TEXT_DISABLE_COLOR"],
+                     font=('Cambria', 10)).grid(row=6, column=0, padx=10, pady=(5, 0), sticky="w")
+        if self.t3_results_box is not None and self.t3_results_box.winfo_exists():
+            prev_txt = self.t3_results_box.get("1.0", tkinter.END)
+        else:
+            prev_txt = ""
+        self.t3_results_box = ctk.CTkTextbox(config_frame, height=120, font=("Courier New", 9))
+        self.t3_results_box.grid(row=7, column=0, columnspan=2, padx=10, pady=(0, 5), sticky="nsew")
+        if prev_txt.strip():
+            self.t3_results_box.insert("1.0", prev_txt)
+        self.t3_results_box.configure(state="disabled")
+
         # buttons (reset + generate)
         btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
-        btn_frame.grid(row=6, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
+        btn_frame.grid(row=8, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
         ctk.CTkButton(btn_frame, text="Reset", command=self.t3_reset_logits).pack(side="left")
         ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t3")).pack(side="right")
 
@@ -3867,9 +3911,12 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
                                              command=partial(self._save_figure, "t3_fig"))
             self.t3_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
-        # Save
-        (ctk.CTkButton(tab, text="Save Sequence", command=lambda: self.save_sequence("t3"))
-         .grid(row=1, column=1, padx=5, pady=5))
+        # Cancel / Save
+        btn_row = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_row.grid(row=1, column=1, padx=5, pady=5)
+        (ctk.CTkButton(btn_row, text="Cancel", command=self.cancel_sequence, fg_color="gray40", hover_color="gray30")
+         .pack(side="left", padx=(0, 5)))
+        ctk.CTkButton(btn_row, text="Save Sequence", command=lambda: self.save_sequence("t3")).pack(side="left")
 
     def t3_set_kmers_event(self, *args):
         self.t3_kmers = generate_kmers(self.t3_k_var.get())
@@ -3992,23 +4039,21 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             self.t2_generated_sequence, kmer_counts_dict, _ = generate_dna_sequence(k, seq_len, p_input=slider_values)
             sequence = self.t2_generated_sequence
 
-            # Update sequence length and k-mer counts in the labels and the scales
+            # Update sequence length
             self.t2_seq_len_real.configure(text=f"{len(sequence):,}")
 
-            probs = []
+            # Calibrated probabilities (after determine_kmer_counts_balanced)
+            cal_total = sum(kmer_counts_dict["counts"].values()) or 1
             for kmer in self.t2_kmers:
-                c = kmer_counts_dict["counts"].get(kmer, 0)
-                probs.append(c / len(sequence))
-            probs = np.array(probs, dtype=float)
+                cal_p = kmer_counts_dict["counts"].get(kmer, 0) / cal_total
+                self.k_calibrated_label_dict[kmer].configure(text=f"{cal_p:.4f}")
 
-            eps = 1e-12
-            logits = np.log(np.clip(probs, eps, 1.0) * len(self.t2_kmers))
-            logits = np.clip(logits, -3.0, 3.0)
-
-            for kmer, logit in zip(self.t2_kmers, logits):
-                self.k_var_dict[kmer].set(float(logit))
-
-            self.update_all_k_labels()
+            # Final probabilities (counted from the generated sequence)
+            seq_total = len(sequence) - k + 1
+            final_counts = Counter(sequence[i:i + k] for i in range(seq_total))
+            for kmer in self.t2_kmers:
+                final_p = final_counts.get(kmer, 0) / seq_total
+                self.k_final_label_dict[kmer].configure(text=f"{final_p:.4f}")
         elif frame_num == "t3":
             k = self.t3_k_var.get()
             seq_len = int(self.t3_seq_len.get().replace(",", "").strip())
@@ -4019,26 +4064,30 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             # Update sequence length
             self.t3_seq_len_real.configure(text=f"{len(sequence):,}")
 
-            probs = np.array([kmer_counts_dict["counts"].get(km, 0) / len(sequence) for km in self.t3_kmers],
-                             dtype=float)
+            # Input probabilities (user's current settings, unchanged)
+            input_probs_arr = p_input  # already computed via t3_softmax() above
 
-            eps = 1e-12
-            # logits that reproduce probs under softmax (up to clipping)
-            logits = np.log(np.clip(probs, eps, 1.0) * len(self.t3_kmers))
-            logits = np.clip(logits, -3.0, 3.0)
-            self.logits[:] = logits
+            # Calibrated probabilities (after determine_kmer_counts_balanced)
+            cal_total = sum(kmer_counts_dict["counts"].values()) or 1
+            cal_probs = [kmer_counts_dict["counts"].get(km, 0) / cal_total for km in self.t3_kmers]
 
-            # update the currently loaded kmer slider, if any
-            if self.t3_current_kmer is not None:
-                idx = self.kmer_to_idx[self.t3_current_kmer]
-                self.t3_slider_var.set(float(self.logits[idx]))
-                self.t3_kmer_slider.configure(state="normal", button_color=COLORS["BTN_COLOR"])
-            else:
-                self.t3_slider_var.set(0.0)
-                self.t3_kmer_slider.configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+            # Final probabilities (counted from the generated sequence)
+            seq_total = len(sequence) - k + 1
+            final_counts = Counter(sequence[i:i + k] for i in range(seq_total))
+            final_probs = [final_counts.get(km, 0) / seq_total for km in self.t3_kmers]
 
-            # refresh summary (and prob label updates via trace)
-            self.t3_refresh_summary()
+            # Populate results box
+            if self.t3_results_box is not None:
+                header = f"{'k-mer':<{k + 2}} {'Input':>9} {'Calibrated':>11} {'Final':>9}"
+                sep = "-" * len(header)
+                lines = [header, sep]
+                for km, ip, cp, fp in zip(self.t3_kmers, input_probs_arr, cal_probs, final_probs):
+                    lines.append(f"{km:<{k + 2}} {ip:>9.6f} {cp:>11.6f} {fp:>9.6f}")
+                txt = "\n".join(lines)
+                self.t3_results_box.configure(state="normal")
+                self.t3_results_box.delete("1.0", tkinter.END)
+                self.t3_results_box.insert("1.0", txt)
+                self.t3_results_box.configure(state="disabled")
         else:
             return
         # Show warning message in kmer_counts_dict
@@ -4132,6 +4181,10 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         # hide instead of destroy -> keeps all vars + widget state
         self.grab_release()
         self.withdraw()
+
+    def cancel_sequence(self):
+        self.grab_release()
+        self.destroy()
 
     def save_sequence(self, tab):
         if tab == "t1":
