@@ -3497,6 +3497,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t1_generated_sequence = ""
         self.t2_generated_sequence = ""
         self.t3_generated_sequence = ""
+        self.t4_generated_sequence = ""
 
         self.title("Generate Synthetic Sequence")
         # make it modal & on top of parent
@@ -3514,7 +3515,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         # We have different tabviews
         tabview = ctk.CTkTabview(self, width=w - 20, height=h - 20)
         tabview.pack(padx=10, pady=10, fill="both", expand=True)
-        tab_names = ["Entropy", "2-mers", "k-mers"]
+        tab_names = ["Entropy", "2-mers", "3-mers", "k-mers"]
         for name in tab_names:
             tabview.add(name)
 
@@ -3546,6 +3547,20 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t2_seq_len = ctk.StringVar(value="500,000")
         self.t2_seq_len_real = None
 
+        # 3mer tab variables
+        self.t4_frame = None
+        self.t4_fig = None
+        self.t4_canvas = None
+        self.t4_save_btn = None
+        self.t4_placeholder_label = None
+        self.t4_var_dict = {}
+        self.t4_value_label_dict = {}
+        self.t4_calibrated_label_dict = {}
+        self.t4_final_label_dict = {}
+        self.t4_kmers = generate_kmers(3)
+        self.t4_seq_len = ctk.StringVar(value="500,000")
+        self.t4_seq_len_real = None
+
         # kmer tab variables
         self.t3_frame = None
         self.t3_fig = None
@@ -3569,7 +3584,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         # ------------------------- Build each tab once (state persists when switching tabs) -------------------------
         self._build_entropy_tab(tabview.tab(tab_names[0]))
         self._build_2mer_tab(tabview.tab(tab_names[1]))
-        self._build_kmer_tab(tabview.tab(tab_names[2]))
+        self._build_3mer_tab(tabview.tab(tab_names[2]))
+        self._build_kmer_tab(tabview.tab(tab_names[3]))
 
     # ------------------------------------------------------------------
     # Tab 1: Entropy
@@ -3795,7 +3811,177 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             self.k_var_dict[k].set(0.0)
 
     # ------------------------------------------------------------------
-    # Tab 3: k-mers (logits)
+    # Tab 3: 3-mers (scrollable sliders)
+    # ------------------------------------------------------------------
+    def _build_3mer_tab(self, tab):
+        tab.grid_rowconfigure(0, weight=50)
+        tab.grid_rowconfigure(1, weight=1)
+        tab.grid_columnconfigure(0, weight=2)
+        tab.grid_columnconfigure(1, weight=1)
+        tab.grid_propagate(False)
+
+        # Outer left container
+        config_outer = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"])
+        config_outer.grid(row=0, column=0, rowspan=2, padx=(5, 5), pady=(5, 5), sticky="nsew")
+        config_outer.grid_rowconfigure(0, weight=1)
+        config_outer.grid_rowconfigure(1, weight=0)
+        config_outer.grid_rowconfigure(2, weight=0)
+        config_outer.grid_columnconfigure(0, weight=1)
+        config_outer.grid_propagate(False)
+
+        # Canvas + scrollbar (avoids CTkScrollableFrame mouse-wheel issues on macOS)
+        scroll_area = ctk.CTkFrame(config_outer, fg_color="transparent")
+        scroll_area.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        scroll_area.grid_rowconfigure(0, weight=1)
+        scroll_area.grid_columnconfigure(0, weight=1)
+        scroll_area.grid_columnconfigure(1, weight=0)
+
+        try:
+            canvas_bg = config_outer._apply_appearance_mode(config_outer.cget("fg_color"))
+        except Exception:
+            canvas_bg = "#2b2b2b"
+
+        scroll_canvas = tkinter.Canvas(scroll_area, bd=0, highlightthickness=0, bg=canvas_bg)
+        scrollbar = ctk.CTkScrollbar(scroll_area, orientation="vertical", command=scroll_canvas.yview)
+        scroll_canvas.configure(yscrollcommand=scrollbar.set)
+        scroll_canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        # Inner content frame placed as a canvas window
+        scroll_frame = ctk.CTkFrame(scroll_canvas, fg_color="transparent", corner_radius=0)
+        window_id = scroll_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        scroll_frame.bind("<Configure>",
+                          lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
+        scroll_canvas.bind("<Configure>",
+                           lambda e: scroll_canvas.itemconfig(window_id, width=e.width))
+
+        def _on_scroll(event):
+            scroll_canvas.yview_scroll(int(-event.delta), "units")
+
+        scroll_canvas.bind("<MouseWheel>", _on_scroll)
+        scroll_frame.bind("<MouseWheel>", _on_scroll)
+
+        scroll_frame.grid_columnconfigure(0, weight=0)
+        scroll_frame.grid_columnconfigure(1, weight=1)
+        scroll_frame.grid_columnconfigure(2, weight=0)
+        scroll_frame.grid_columnconfigure(3, weight=0)
+        scroll_frame.grid_columnconfigure(4, weight=0)
+
+        # Column headers
+        (ctk.CTkLabel(scroll_frame, text="Input", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+         .grid(row=0, column=2, padx=(20, 0), pady=(5, 0), sticky="w"))
+        (ctk.CTkLabel(scroll_frame, text="Calibrated", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+         .grid(row=0, column=3, padx=(20, 0), pady=(5, 0), sticky="w"))
+        (ctk.CTkLabel(scroll_frame, text="Final", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+         .grid(row=0, column=4, padx=(20, 10), pady=(5, 0), sticky="w"))
+
+        # kmer rows (64 total for k=3)
+        for i, kmer in enumerate(self.t4_kmers):
+            row = i + 1
+            pad = 0 if i > 0 else 4
+
+            kmer_lbl = ctk.CTkLabel(scroll_frame, text=f"{kmer}:")
+            kmer_lbl.grid(row=row, column=0, padx=(10, 0), pady=(pad, 1), sticky="w")
+            kmer_lbl.bind("<MouseWheel>", _on_scroll, add="+")
+
+            var = ctk.DoubleVar(value=0.0)
+            self.t4_var_dict[kmer] = var
+
+            ctk.CTkSlider(scroll_frame, from_=-3, to=3, variable=var, width=150, height=14).grid(
+                row=row, column=1, padx=(10, 0), pady=(pad, 1), sticky="ew")
+
+            self.t4_value_label_dict[kmer] = ctk.CTkLabel(scroll_frame, text="0.0000", width=60)
+            self.t4_value_label_dict[kmer].grid(row=row, column=2, padx=(10, 0), pady=(pad, 1), sticky="w")
+            self.t4_value_label_dict[kmer].bind("<MouseWheel>", _on_scroll, add="+")
+
+            self.t4_calibrated_label_dict[kmer] = ctk.CTkLabel(scroll_frame, text="-", width=60,
+                                                               text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.t4_calibrated_label_dict[kmer].grid(row=row, column=3, padx=(10, 0), pady=(pad, 1), sticky="w")
+            self.t4_calibrated_label_dict[kmer].bind("<MouseWheel>", _on_scroll, add="+")
+
+            self.t4_final_label_dict[kmer] = ctk.CTkLabel(scroll_frame, text="-", width=60,
+                                                          text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.t4_final_label_dict[kmer].grid(row=row, column=4, padx=(10, 10), pady=(pad, 1), sticky="w")
+            self.t4_final_label_dict[kmer].bind("<MouseWheel>", _on_scroll, add="+")
+
+            try:
+                var.trace_add("write", self.update_all_t4_labels)
+            except AttributeError:
+                var.trace("w", self.update_all_t4_labels)
+        self.update_all_t4_labels()
+
+        # Sequence length (outside scroll area)
+        seq_frame = ctk.CTkFrame(config_outer, fg_color="transparent")
+        seq_frame.grid(row=1, column=0, padx=(10, 10), pady=(5, 0), sticky="w")
+        ctk.CTkLabel(seq_frame, text="Sequence length:").grid(row=0, column=0, padx=(0, 5), sticky="w")
+        segment_entry = ctk.CTkEntry(seq_frame, textvariable=self.t4_seq_len, width=150)
+        segment_entry.grid(row=0, column=1, sticky="w")
+        segment_entry.bind('<FocusOut>', lambda e: self._sequence_length_change("t4"))
+        segment_entry.bind('<Key-Return>', lambda e: self._sequence_length_change("t4"))
+        (ctk.CTkLabel(seq_frame, text="Length after generate:", text_color=COLORS["TEXT_DISABLE_COLOR"],
+                      font=('Cambria', 10)).grid(row=1, column=0, sticky="w", padx=(0, 5)))
+        if self.t4_seq_len_real is not None and self.t4_seq_len_real.winfo_exists():
+            text = self.t4_seq_len_real.cget("text")
+        else:
+            text = ""
+        self.t4_seq_len_real = ctk.CTkLabel(seq_frame, text=text, font=('Cambria', 10),
+                                            text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
+        self.t4_seq_len_real.grid(row=1, column=1, sticky="ew", padx=(5, 5))
+        self.t4_seq_len_real.grid_propagate(False)
+
+        # Buttons (Reset + Generate)
+        btn_frame = ctk.CTkFrame(config_outer, fg_color="transparent")
+        btn_frame.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="ew")
+        ctk.CTkButton(btn_frame, text="Reset", command=self.t4_reset_logits).pack(side="left")
+        ctk.CTkButton(btn_frame, text="Generate", command=lambda: self.generate_sequence("t4")).pack(side="right")
+
+        # Right panel (plot area)
+        self.t4_frame = ctk.CTkFrame(tab, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
+                                     fg_color="white")
+        self.t4_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        self.t4_frame.grid_columnconfigure(0, weight=1)
+        self.t4_frame.grid_rowconfigure(0, weight=1)
+        self.t4_frame.grid_propagate(False)
+
+        self.t4_placeholder_label = ctk.CTkLabel(master=self.t4_frame, text="Plot Area", text_color="black")
+        self.t4_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
+
+        if getattr(self, "t4_fig", None) is not None:
+            self.t4_canvas = FigureCanvasTkAgg(self.t4_fig, master=self.t4_frame)
+            self.t4_canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t4_canvas.draw()
+
+            if getattr(self, "t4_save_btn", None) is not None and self.t4_save_btn.winfo_exists():
+                try:
+                    self.t4_save_btn.destroy()
+                except Exception:
+                    pass
+            self.t4_save_btn = ctk.CTkButton(master=self.t4_frame, text="💾", width=30, height=30,
+                                             fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                             command=partial(self._save_figure, "t4_fig"))
+            self.t4_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
+
+        # Cancel / Save
+        btn_row = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_row.grid(row=1, column=1, padx=5, pady=5)
+        (ctk.CTkButton(btn_row, text="Cancel", command=self.cancel_sequence,
+                       fg_color="gray40", hover_color="gray30").pack(side="left", padx=(0, 5)))
+        ctk.CTkButton(btn_row, text="Save Sequence", command=lambda: self.save_sequence("t4")).pack(side="left")
+
+    def update_all_t4_labels(self, *args):
+        logits = np.array([self.t4_var_dict[k].get() for k in self.t4_kmers], dtype=float)
+        logits -= logits.max()
+        exp = np.exp(logits)
+        probs = exp / exp.sum()
+        for k, p in zip(self.t4_kmers, probs):
+            self.t4_value_label_dict[k].configure(text=f"{p:.4f}")
+
+    def t4_reset_logits(self):
+        for k in self.t4_kmers:
+            self.t4_var_dict[k].set(0.0)
+
+    # ------------------------------------------------------------------
+    # Tab 4: k-mers (logits)
     # ------------------------------------------------------------------
     def _build_kmer_tab(self, tab):
         tab.grid_rowconfigure(0, weight=50)
@@ -4005,6 +4191,8 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             sequence = self.t2_seq_len
         elif tab == "t3":
             sequence = self.t3_seq_len
+        elif tab == "t4":
+            sequence = self.t4_seq_len
         else:
             return
         val = sequence.get().replace(",", "").strip()
@@ -4088,6 +4276,28 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
                 self.t3_results_box.delete("1.0", tkinter.END)
                 self.t3_results_box.insert("1.0", txt)
                 self.t3_results_box.configure(state="disabled")
+        elif frame_num == "t4":
+            k = 3
+            seq_len = int(self.t4_seq_len.get().replace(",", "").strip())
+            slider_values = [self.t4_var_dict[kmer].get() for kmer in self.t4_kmers]
+            self.t4_generated_sequence, kmer_counts_dict, _ = generate_dna_sequence(k, seq_len, p_input=slider_values)
+            sequence = self.t4_generated_sequence
+
+            # Update sequence length
+            self.t4_seq_len_real.configure(text=f"{len(sequence):,}")
+
+            # Calibrated probabilities (after determine_kmer_counts_balanced)
+            cal_total = sum(kmer_counts_dict["counts"].values()) or 1
+            for kmer in self.t4_kmers:
+                cal_p = kmer_counts_dict["counts"].get(kmer, 0) / cal_total
+                self.t4_calibrated_label_dict[kmer].configure(text=f"{cal_p:.4f}")
+
+            # Final probabilities (counted from the generated sequence)
+            seq_total = len(sequence) - k + 1
+            final_counts = Counter(sequence[i:i + k] for i in range(seq_total))
+            for kmer in self.t4_kmers:
+                final_p = final_counts.get(kmer, 0) / seq_total
+                self.t4_final_label_dict[kmer].configure(text=f"{final_p:.4f}")
         else:
             return
         # Show warning message in kmer_counts_dict
@@ -4196,6 +4406,9 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         elif tab == "t3":
             seq = getattr(self, "t3_generated_sequence", "")
             k = self.t3_k_var.get()
+        elif tab == "t4":
+            seq = getattr(self, "t4_generated_sequence", "")
+            k = 3
         else:
             return
         if not seq:
