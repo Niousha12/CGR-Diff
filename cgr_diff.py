@@ -230,7 +230,8 @@ class App(ctk.CTk):
         self.t1_ds = GUIDataStructure()
         self._t1_last_seq = None
         self.t1_hist_frame = None
-        self.t1_placeholder_label = None
+        self.t1_placeholder_label_sec1 = None
+        self.t1_placeholder_label_sec2 = None
         self.t1_hist_fig = None
         self.t1_hist_canvas = None
         self.t1_hist_save_btn = None
@@ -242,6 +243,7 @@ class App(ctk.CTk):
         self.t1_3d_fcgr_frame = None
         self.t1_3d_fcgr_fig = None
         self.t1_3d_fcgr_canvas = None
+        self.t1_section2_label = None
 
         # Variables for page 2 (CGR Comparator)
         self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
@@ -578,39 +580,75 @@ class App(ctk.CTk):
                                             font=ctk.CTkFont(size=11))
         self.t1_status_label.grid(row=1, column=0, padx=5, pady=(0, 6), sticky="ew")
 
-        display_frame = ctk.CTkFrame(parent, border_width=1, corner_radius=8, border_color=COLORS["BORDER_COLOR"])
+        display_frame = ctk.CTkFrame(parent, fg_color="transparent")
         display_frame.grid(row=1, column=1, padx=(0, 5), pady=(5, 5), sticky="nsew")
         display_frame.grid_columnconfigure(0, weight=1)
         # grid configuration for display content:
         display_frame.grid_rowconfigure(0, weight=1)
         display_frame.grid_rowconfigure(1, weight=2)
-        display_frame.grid_columnconfigure(0, weight=2)  # left
-        display_frame.grid_columnconfigure(1, weight=3)  # right (larger)
-        display_frame.grid_columnconfigure(2, weight=1)
 
-        # top histogram frame (full width)
-        self.t1_hist_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
-        self.t1_hist_frame.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=(5, 5), pady=(5, 0), )
+        # ── Section 1: 3-mers histogram ──────────────────────────────────
+        section1_outer = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1, border_color=COLORS["Blue"],
+                                      fg_color=COLORS["FRAME_NORMAL_COLOR"])
+        section1_outer.grid(row=0, column=0, sticky="nsew")
+        section1_outer.grid_rowconfigure(0, weight=0)
+        section1_outer.grid_rowconfigure(1, weight=1)
+        section1_outer.grid_columnconfigure(0, weight=1)
+
+        section1_header = ctk.CTkFrame(section1_outer, corner_radius=8, border_width=1, border_color=COLORS["Blue"],
+                                       fg_color=COLORS["Blue"], height=28)
+        section1_header.grid(row=0, column=0, sticky="ew", padx=(3, 3), pady=(3, 3))
+        section1_header.grid_propagate(False)
+        section1_header.grid_columnconfigure(0, weight=1)
+        section1_header.grid_rowconfigure(0, weight=1)
+        ctk.CTkLabel(section1_header, text="3-mers", font=HEADER_FONT_BOLD, text_color="white").grid(row=0, column=0)
+
+        self.t1_hist_frame = ctk.CTkFrame(section1_outer, fg_color="transparent")
+        self.t1_hist_frame.grid(row=1, column=0, sticky="nsew", padx=(3, 3), pady=(3, 3), )
         self.t1_hist_frame.grid_rowconfigure(0, weight=1)
         self.t1_hist_frame.grid_columnconfigure(0, weight=1)
         self.t1_hist_frame.grid_propagate(False)
 
-        self.t1_placeholder_label = ctk.CTkLabel(master=display_frame, text="Display Area",
+        self.t1_placeholder_label_sec1 = ctk.CTkLabel(master=section1_outer, text="Display Area",
                                                  font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
-        self.t1_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
+        self.t1_placeholder_label_sec1.place(relx=0.5, rely=0.55, anchor="center")
         if getattr(self, "t1_fcgrs_dict", None) is not None:
-            # Histogram
             self.t1_hist_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["LIGHT_FRAME_COLOR"],
                                          border_color=COLORS["BORDER_COLOR"])
-
             self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
                              save_btn_attr="t1_hist_save_btn", save_command=lambda: self._save_figure("t1_hist_fig"),
-                             placeholder_attr="t1_placeholder_label", fcgrs_dict=self.t1_fcgrs_dict,
+                             placeholder_attr="t1_placeholder_label_sec1", fcgrs_dict=self.t1_fcgrs_dict,
                              panel_type="kmer_hist", )
 
-        # bottom-left frame (smaller)
-        self.t1_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
-        self.t1_fcgr_frame.grid(row=1, column=0, sticky="nsew", padx=(5, 0), pady=(5, 5), )
+        # ── Section 2: k-mers histogram ──────────────────────────────────
+        k = self.k_var.get()
+        section2_outer = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1, border_color=COLORS["Green"],
+                                      fg_color=COLORS["FRAME_NORMAL_COLOR"])
+        section2_outer.grid(row=1, column=0, sticky="nsew", pady=(5, 0))
+        section2_outer.grid_rowconfigure(0, weight=0)
+        section2_outer.grid_rowconfigure(1, weight=1)
+        section2_outer.grid_columnconfigure(0, weight=1)
+
+        section2_header = ctk.CTkFrame(section2_outer, corner_radius=8, border_width=1, border_color=COLORS["Green"],
+                                       fg_color=COLORS["Green"], height=28)
+        section2_header.grid(row=0, column=0, sticky="ew", padx=(3, 3), pady=(3, 3))
+        section2_header.grid_propagate(False)
+        section2_header.grid_columnconfigure(0, weight=1)
+        section2_header.grid_rowconfigure(0, weight=1)
+        self.t1_section2_label = ctk.CTkLabel(section2_header, text=f"{k}-mer", font=HEADER_FONT_BOLD,
+                                              text_color="white")
+        self.t1_section2_label.grid(row=0, column=0)
+
+        section2_content = ctk.CTkFrame(section2_outer, fg_color="transparent")
+        section2_content.grid(row=1, column=0, sticky="nsew", padx=(3, 3), pady=(3, 3))
+        section2_content.grid_rowconfigure(0, weight=1)
+        section2_content.grid_columnconfigure(0, weight=2)  # fcgr image
+        section2_content.grid_columnconfigure(1, weight=3)  # 3d fcgr (larger)
+        section2_content.grid_columnconfigure(2, weight=1)  # stats
+
+        # bottom-left frame (FCGR image)
+        self.t1_fcgr_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
+        self.t1_fcgr_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 0), pady=(0, 0))
         self.t1_fcgr_frame.grid_rowconfigure(0, weight=1)
         self.t1_fcgr_frame.grid_columnconfigure(0, weight=1)
         self.t1_fcgr_frame.grid_propagate(False)
@@ -635,22 +673,28 @@ class App(ctk.CTk):
                                                   command=partial(self._save_figure, "t1_fcgr_fig"))
             self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
-        # bottom-right frame (larger)
-        self.t1_3d_fcgr_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
-        self.t1_3d_fcgr_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 5), pady=(5, 5), )
+        # bottom-middle frame (3D FCGR)
+        self.t1_3d_fcgr_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
+        self.t1_3d_fcgr_frame.grid(row=0, column=1, sticky="nsew", padx=(3, 0), pady=(0, 0))
         self.t1_3d_fcgr_frame.grid_rowconfigure(0, weight=1)
         self.t1_3d_fcgr_frame.grid_columnconfigure(0, weight=1)
         self.t1_3d_fcgr_frame.grid_propagate(False)
+
+        self.t1_placeholder_label_sec2 = ctk.CTkLabel(master=section2_outer, text="Display Area",
+                                                      font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
+        self.t1_placeholder_label_sec2.place(relx=0.5, rely=0.55, anchor="center")
         if getattr(self, "t1_3d_fcgr_fig", None) is not None:
             self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
                                             border_color=COLORS["BORDER_COLOR"])
             self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
                              save_btn_attr="t1_3d_fcgr_save_btn",
-                             save_command=lambda: self._save_figure("t1_3d_fcgr_fig"), placeholder_attr=None,
+                             save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
+                             placeholder_attr="t1_placeholder_label_sec2",
                              fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
 
-        self.t1_stat_frame = ctk.CTkFrame(display_frame, fg_color="transparent")
-        self.t1_stat_frame.grid(row=1, column=2, sticky="nsew", padx=(5, 5), pady=(5, 5), )
+        # bottom-right frame (stats table)
+        self.t1_stat_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
+        self.t1_stat_frame.grid(row=0, column=2, sticky="nsew", padx=(3, 0), pady=(0, 0))
         self.t1_stat_frame.grid_rowconfigure(0, weight=0)  # title — fixed height
         self.t1_stat_frame.grid_rowconfigure(1, weight=1)  # treeview — takes all space
         self.t1_stat_frame.grid_rowconfigure(2, weight=0)  # button — fixed height
@@ -1384,14 +1428,14 @@ class App(ctk.CTk):
                                          border_color=COLORS["BORDER_COLOR"])
             self._draw_panel(frame=self.t1_hist_frame, fig_attr="t1_hist_fig", canvas_attr="t1_hist_canvas",
                              save_btn_attr="t1_hist_save_btn", save_command=lambda: self._save_figure("t1_hist_fig"),
-                             placeholder_attr="t1_placeholder_label", fcgrs_dict=self.t1_fcgrs_dict,
+                             placeholder_attr="t1_placeholder_label_sec1", fcgrs_dict=self.t1_fcgrs_dict,
                              panel_type="kmer_hist", )
             # FCGR plot
             self.t1_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
                                          border_color=COLORS["BORDER_COLOR"])
             self._draw_panel(frame=self.t1_fcgr_frame, fig_attr="t1_fcgr_fig", canvas_attr="t1_fcgr_canvas",
                              save_btn_attr="t1_fcgr_save_btn", save_command=lambda: self._save_figure("t1_fcgr_fig"),
-                             placeholder_attr=None, fcgrs_dict=self.t1_fcgrs_dict,
+                             placeholder_attr="t1_placeholder_label_sec2", fcgrs_dict=self.t1_fcgrs_dict,
                              panel_type="fcgr", )
 
             # 3D FCGR plot
@@ -1399,10 +1443,14 @@ class App(ctk.CTk):
                                             border_color=COLORS["BORDER_COLOR"])
             self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
                              save_btn_attr="t1_3d_fcgr_save_btn",
-                             save_command=lambda: self._save_figure("t1_3d_fcgr_fig"), placeholder_attr=None,
+                             save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
+                             placeholder_attr="t1_placeholder_label_sec2",
                              fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
 
             self._update_t1_stats_table_from_fcgr(top_n=100)
+
+            if self.t1_section2_label is not None and self.t1_section2_label.winfo_exists():
+                self.t1_section2_label.configure(text=f"{self.k_var.get()}-mer")
 
     def _t1_disconnect_hist_events(self):
         if getattr(self, "t1_hist_canvas", None) is not None:
@@ -1937,6 +1985,9 @@ class App(ctk.CTk):
             command=_download_full_table,
         ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(4, 6))
 
+    # --------------------------------------------------
+    # Helper functions for CGR Comparator tab
+    # --------------------------------------------------
     def t2_sequence_selection_event(self, sender, value):
         # Set its sequence and sequence name
         sequence_path = self.uploaded_files[self.file_names.index(value)]
@@ -3710,9 +3761,9 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         # Column headers
         (ctk.CTkLabel(config_frame, text="Input", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
          .grid(row=0, column=2, padx=(20, 0), pady=(5, 0), sticky="w"))
-        (ctk.CTkLabel(config_frame, text="Calibrated", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+        (ctk.CTkLabel(config_frame, text="Calibrated", font=('Cambria', 9), text_color=COLORS["Blue"])
          .grid(row=0, column=3, padx=(20, 0), pady=(5, 0), sticky="w"))
-        (ctk.CTkLabel(config_frame, text="Final", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+        (ctk.CTkLabel(config_frame, text="Output", font=('Cambria', 9), text_color=COLORS["Green"])
          .grid(row=0, column=4, padx=(20, 10), pady=(5, 0), sticky="w"))
 
         # k-mer sliders
@@ -3734,11 +3785,11 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             self.k_value_label_dict[kmer].grid(row=i + 1, column=2, padx=(10, 0), pady=(pad, 0), sticky="w")
 
             self.k_calibrated_label_dict[kmer] = ctk.CTkLabel(config_frame, text="-", width=60,
-                                                              text_color=COLORS["TEXT_DISABLE_COLOR"])
+                                                              text_color=COLORS["Blue"])
             self.k_calibrated_label_dict[kmer].grid(row=i + 1, column=3, padx=(10, 0), pady=(pad, 0), sticky="w")
 
             self.k_final_label_dict[kmer] = ctk.CTkLabel(config_frame, text="-", width=60,
-                                                         text_color=COLORS["TEXT_DISABLE_COLOR"])
+                                                         text_color=COLORS["Green"])
             self.k_final_label_dict[kmer].grid(row=i + 1, column=4, padx=(10, 10), pady=(pad, 0), sticky="w")
 
             # Bind the slider to update the label
@@ -3882,9 +3933,9 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         # Column headers
         (ctk.CTkLabel(scroll_frame, text="Input", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
          .grid(row=0, column=2, padx=(20, 0), pady=(5, 0), sticky="w"))
-        (ctk.CTkLabel(scroll_frame, text="Calibrated", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+        (ctk.CTkLabel(scroll_frame, text="Calibrated", font=('Cambria', 9), text_color=COLORS["Blue"])
          .grid(row=0, column=3, padx=(20, 0), pady=(5, 0), sticky="w"))
-        (ctk.CTkLabel(scroll_frame, text="Final", font=('Cambria', 9), text_color=COLORS["TEXT_DISABLE_COLOR"])
+        (ctk.CTkLabel(scroll_frame, text="Output", font=('Cambria', 9), text_color=COLORS["Green"])
          .grid(row=0, column=4, padx=(20, 10), pady=(5, 0), sticky="w"))
 
         # kmer rows (64 total for k=3)
@@ -3907,12 +3958,12 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             self.t4_value_label_dict[kmer].bind("<MouseWheel>", _on_scroll, add="+")
 
             self.t4_calibrated_label_dict[kmer] = ctk.CTkLabel(scroll_frame, text="-", width=60,
-                                                               text_color=COLORS["TEXT_DISABLE_COLOR"])
+                                                               text_color=COLORS["Blue"])
             self.t4_calibrated_label_dict[kmer].grid(row=row, column=3, padx=(10, 0), pady=(pad, 1), sticky="w")
             self.t4_calibrated_label_dict[kmer].bind("<MouseWheel>", _on_scroll, add="+")
 
             self.t4_final_label_dict[kmer] = ctk.CTkLabel(scroll_frame, text="-", width=60,
-                                                          text_color=COLORS["TEXT_DISABLE_COLOR"])
+                                                          text_color=COLORS["Green"])
             self.t4_final_label_dict[kmer].grid(row=row, column=4, padx=(10, 10), pady=(pad, 1), sticky="w")
             self.t4_final_label_dict[kmer].bind("<MouseWheel>", _on_scroll, add="+")
 
@@ -4278,7 +4329,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
 
             # Populate results box
             if self.t3_results_box is not None:
-                header = f"{'k-mer':<{k + 2}} {'Input':>9} {'Calibrated':>11} {'Final':>9}"
+                header = f"{'k-mer':<{k + 2}} {'Input':>9} {'Calibrated':>11} {'Output':>9}"
                 sep = "-" * len(header)
                 lines = [header, sep]
                 for km, ip, cp, fp in zip(self.t3_kmers, input_probs_arr, cal_probs, final_probs):
@@ -4287,6 +4338,20 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
                 self.t3_results_box.configure(state="normal")
                 self.t3_results_box.delete("1.0", tkinter.END)
                 self.t3_results_box.insert("1.0", txt)
+                # Color Calibrated (blue) and Output (green) columns
+                tb = self.t3_results_box._textbox
+                tb.tag_configure("cal_color", foreground=COLORS["Blue"])
+                tb.tag_configure("out_color", foreground=COLORS["Green"])
+                for tag, word, nchars in [("cal_color", "Calibrated", 10), ("out_color", "Output", 6)]:
+                    idx = tb.search(word, "1.0", stopindex="1.end")
+                    if idx:
+                        tb.tag_add(tag, idx, f"{idx}+{nchars}c")
+                cal_start, cal_end = k + 13, k + 24
+                fin_start, fin_end = k + 25, k + 34
+                num_lines = int(tb.index("end-1c").split(".")[0])
+                for ln in range(3, num_lines + 1):
+                    tb.tag_add("cal_color", f"{ln}.{cal_start}", f"{ln}.{cal_end}")
+                    tb.tag_add("out_color", f"{ln}.{fin_start}", f"{ln}.{fin_end}")
                 self.t3_results_box.configure(state="disabled")
         elif frame_num == "t4":
             k = 3
@@ -4357,6 +4422,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         img_uint8 = FCGRNormalizer.to_uint8_from_01(V, white_is_high=True)
         img = Image.fromarray(img_uint8)
         ax.imshow(img, cmap="gray", origin="upper")
+        ax.set_title("Output", color=COLORS["Green"], fontsize=10, pad=4)
         ax.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
         corner_labels = [("A", (0.00, -0.01), (-0.05, -0.05), "right", "top"),
                          ("C", (0.00, 0.99), (-0.05, +0.05), "right", "bottom"),
