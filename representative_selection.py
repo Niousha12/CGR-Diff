@@ -55,20 +55,27 @@ class ChromosomeRepresentativeSelection:
 
         exclude_indices = None
         if compress:
-            exclude_indices = []
-            compress_sizes = []
-            for i, seq in tqdm(enumerate(segments['segments_sequences'])):
-                if seq.count('N') > 0:
-                    exclude_indices.append(i)
-                    # compress_sizes.append(float('inf'))
-                    continue
-                tokens = self.compression_fn.compress(seq)
-                size = compressed_size(tokens)
-                compress_sizes.append(size)
-                if size < self.compression_threshold:
-                    exclude_indices.append(i)
-            print(f"exclude_indices for chromosome {chromosome_name} are {exclude_indices}")
-            # print(compress_sizes)
+            compress_pickle_path = os.path.join(
+                self.pickle_path_root, f"chr_{chromosome_name}_len_{self.length}_compression_exclude.pickle")
+            if os.path.exists(compress_pickle_path):
+                cached = self.load_pickle(compress_pickle_path)
+                exclude_indices = cached["exclude_indices"]
+                print(f"Loaded cached exclude_indices for chromosome {chromosome_name}")
+            else:
+                exclude_indices = []
+                compress_sizes = []
+                for i, seq in tqdm(enumerate(segments['segments_sequences'])):
+                    if seq.count('N') > 0:
+                        exclude_indices.append(i)
+                        continue
+                    tokens = self.compression_fn.compress(seq)
+                    size = compressed_size(tokens)
+                    compress_sizes.append(size)
+                    if size < self.compression_threshold:
+                        exclude_indices.append(i)
+                print(f"exclude_indices for chromosome {chromosome_name} are {exclude_indices}")
+                self.create_pickle({"exclude_indices": exclude_indices,
+                                    "compress_sizes": compress_sizes}, compress_pickle_path)
 
         fcgrs = self.get_fcgrs_of_segments(chromosome_name)
         distance_matrix = self.get_distance_matrix(chromosome_name)
@@ -365,20 +372,20 @@ class ChromosomeRepresentativeSelection:
 
 
 if __name__ == '__main__':
-    specie = 'Bombina bombina'
+    specie = 'Chimp'
     representative = ChromosomeRepresentativeSelection(specie, 6, 'DSSIM', segment_length=500_000)
 
-    # segment_length, threshold_list, apx_list, rand_list = [], [], [], []
+    segment_length, threshold_list, apx_list, rand_list = [], [], [], []
     for chr_name in representative.chromosomes_holder.get_all_chromosomes_name():
         print(f"Length of chromosome {chr_name} is "
               f"{len(representative.chromosomes_holder.get_chromosome_sequence(chr_name))}")
         # x_range = math.ceil(len(representative.chromosomes_holder.get_chromosome_sequence(chr_name)) / 500000 / 20)
         representative.plot_distance_variations(chr_name, x_range=None, plot_random_outliers=False,
-                                                plot_approximate=False, plot_compress=False)
-        # dist_list, _, _ = representative.get_approximation_error(chr_name, random_outliers=False)
-        # threshold_list.append(np.sum(dist_list < 0.24))
-        # segment_length.append(len(dist_list))
-    # print(sum(threshold_list) / sum(segment_length))
+                                                plot_approximate=False, plot_compress=True)
+        dist_list, _, _ = representative.get_approximation_error(chr_name, random_outliers=False)
+        threshold_list.append(np.sum(dist_list < 0.24))
+        segment_length.append(len(dist_list))
+    print(sum(threshold_list) / sum(segment_length))
 
     # # Run an analysis on some lists
     # list_chr_Y = [41945, 49184, 46501, 50703, 54145, 58752, 59090, 59020, 58642, 57859, 58954, 58884, 56932, 57749, 58476, 57242, 55552, 54265, 5038, 21674, 55863, 17213, 49123, 32422, 7847, 50191, 57366, 57844, 57811, 57167, 58799, 58009, 58509, 57566, 58538, 57056, 58597, 57425, 58569, 58631, 57582, 55018, 39326, 56894, 54800, 55525, 57286, 56418, 55072, 57925, 58696, 52972, 58134, 58236, 54378, 7296, 3883, 7139, 8611, 6063, 4881, 5759, 6047, 5900, 5514, 5577, 6839, 5676, 2861, 5518, 4845, 6901, 6816, 6445, 7298, 5708, 6875, 6256, 6735, 7073, 6127, 4773, 4830, 5831, 3647, 6047, 6594, 6183, 6781, 6123, 5989, 5465, 3933, 6036, 4045, 5794, 6848, 6217, 6033, 6866, 6484, 4973, 5403, 5557, 5430, 5657, 5577, 5816, 5542, 5767, 5519, 5349, 6469, 4853, 5112, 4689, 2963, 5720, 5181, 5533, 4578, 6638, 8944]
