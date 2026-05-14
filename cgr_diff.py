@@ -610,7 +610,7 @@ class App(ctk.CTk):
         self.t1_hist_frame.grid_propagate(False)
 
         self.t1_placeholder_label_sec1 = ctk.CTkLabel(master=section1_outer, text="Display Area",
-                                                 font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
+                                                      font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t1_placeholder_label_sec1.place(relx=0.5, rely=0.55, anchor="center")
         if getattr(self, "t1_fcgrs_dict", None) is not None:
             self.t1_hist_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["LIGHT_FRAME_COLOR"],
@@ -643,7 +643,7 @@ class App(ctk.CTk):
         section2_content.grid(row=1, column=0, sticky="nsew", padx=(3, 3), pady=(3, 3))
         section2_content.grid_rowconfigure(0, weight=1)
         section2_content.grid_columnconfigure(0, weight=2)  # fcgr image
-        section2_content.grid_columnconfigure(1, weight=3)  # 3d fcgr (larger)
+        # section2_content.grid_columnconfigure(1, weight=3)  # 3d fcgr (larger)
         section2_content.grid_columnconfigure(2, weight=1)  # stats
 
         # bottom-left frame (FCGR image)
@@ -673,24 +673,24 @@ class App(ctk.CTk):
                                                   command=partial(self._save_figure, "t1_fcgr_fig"))
             self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
-        # bottom-middle frame (3D FCGR)
-        self.t1_3d_fcgr_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
-        self.t1_3d_fcgr_frame.grid(row=0, column=1, sticky="nsew", padx=(3, 0), pady=(0, 0))
-        self.t1_3d_fcgr_frame.grid_rowconfigure(0, weight=1)
-        self.t1_3d_fcgr_frame.grid_columnconfigure(0, weight=1)
-        self.t1_3d_fcgr_frame.grid_propagate(False)
-
-        self.t1_placeholder_label_sec2 = ctk.CTkLabel(master=section2_outer, text="Display Area",
-                                                      font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
-        self.t1_placeholder_label_sec2.place(relx=0.5, rely=0.55, anchor="center")
-        if getattr(self, "t1_3d_fcgr_fig", None) is not None:
-            self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
-                                            border_color=COLORS["BORDER_COLOR"])
-            self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
-                             save_btn_attr="t1_3d_fcgr_save_btn",
-                             save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
-                             placeholder_attr="t1_placeholder_label_sec2",
-                             fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
+        # # bottom-middle frame (3D FCGR)
+        # self.t1_3d_fcgr_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
+        # self.t1_3d_fcgr_frame.grid(row=0, column=1, sticky="nsew", padx=(3, 0), pady=(0, 0))
+        # self.t1_3d_fcgr_frame.grid_rowconfigure(0, weight=1)
+        # self.t1_3d_fcgr_frame.grid_columnconfigure(0, weight=1)
+        # self.t1_3d_fcgr_frame.grid_propagate(False)
+        #
+        # self.t1_placeholder_label_sec2 = ctk.CTkLabel(master=section2_outer, text="Display Area",
+        #                                               font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
+        # self.t1_placeholder_label_sec2.place(relx=0.5, rely=0.55, anchor="center")
+        # if getattr(self, "t1_3d_fcgr_fig", None) is not None:
+        #     self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+        #                                     border_color=COLORS["BORDER_COLOR"])
+        #     self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
+        #                      save_btn_attr="t1_3d_fcgr_save_btn",
+        #                      save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
+        #                      placeholder_attr="t1_placeholder_label_sec2",
+        #                      fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
 
         # bottom-right frame (stats table)
         self.t1_stat_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
@@ -1203,8 +1203,11 @@ class App(ctk.CTk):
     def t1_upload_files(self, hard_coded=False):
         if hard_coded:
             file_paths = [
+                "Data/Human/chromosomes/Human-chr1.fna",
                 "Data/Human/chromosomes/Human-chr21.fna",
-                "Data/Escherichia coli/chromosomes/E coli-genome.fna"
+                "Data/Escherichia coli/chromosomes/E coli-genome.fna",
+                "Data/Chimp/chromosomes/Chimp-chr1.fna",
+                "Data/Maize/chromosomes/Maize-chr1.fna",
             ]
         else:
             file_paths = filedialog.askopenfilenames(
@@ -1253,7 +1256,9 @@ class App(ctk.CTk):
             on_click = _make_on_click(i)
             card.bind("<Button-1>", on_click)
 
-            name_label = ctk.CTkLabel(card, text=fname, anchor="w", text_color=COLORS["TEXT_NORMAL_COLOR"])
+            normal_text = "black" if ctk.get_appearance_mode() == "Light" else "white"
+
+            name_label = ctk.CTkLabel(card, text=fname, anchor="w", text_color=normal_text)
             name_label.grid(row=0, column=0, padx=(1, 1), pady=(2, 0), sticky="w")
             name_label.bind("<Button-1>", on_click)
 
@@ -1274,11 +1279,12 @@ class App(ctk.CTk):
         self.selected_file_index = index
 
         for i, card in enumerate(self.file_cards):
+            normal_text = "black" if ctk.get_appearance_mode() == "Light" else "white"
             if i == index:
                 # SELECTED STYLE
                 card.configure(fg_color=COLORS["BTN_COLOR"], corner_radius=0)
                 for child in card.winfo_children():
-                    child.configure(fg_color=COLORS["BTN_COLOR"], text_color=COLORS["TEXT_NORMAL_COLOR"])
+                    child.configure(fg_color=COLORS["BTN_COLOR"], text_color=normal_text)
 
                 selected_path = self.uploaded_files[index]
                 self._t1_last_seq = self._read_fasta(selected_path)[1]
@@ -1310,7 +1316,7 @@ class App(ctk.CTk):
                 card.configure(fg_color="transparent")
                 for child in card.winfo_children():
                     if child.grid_info().get("row") == 0:
-                        child.configure(fg_color="transparent", text_color=COLORS["TEXT_NORMAL_COLOR"])
+                        child.configure(fg_color="transparent", text_color=normal_text)
                     else:
                         child.configure(fg_color="transparent", text_color=COLORS["TEXT_DISABLE_COLOR"])
 
@@ -1438,14 +1444,14 @@ class App(ctk.CTk):
                              placeholder_attr="t1_placeholder_label_sec2", fcgrs_dict=self.t1_fcgrs_dict,
                              panel_type="fcgr", )
 
-            # 3D FCGR plot
-            self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
-                                            border_color=COLORS["BORDER_COLOR"])
-            self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
-                             save_btn_attr="t1_3d_fcgr_save_btn",
-                             save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
-                             placeholder_attr="t1_placeholder_label_sec2",
-                             fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
+            # # 3D FCGR plot
+            # self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
+            #                                 border_color=COLORS["BORDER_COLOR"])
+            # self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
+            #                  save_btn_attr="t1_3d_fcgr_save_btn",
+            #                  save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
+            #                  placeholder_attr="t1_placeholder_label_sec2",
+            #                  fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
 
             self._update_t1_stats_table_from_fcgr(top_n=100)
 
@@ -1713,6 +1719,7 @@ class App(ctk.CTk):
 
         ax = fig.add_subplot(111, projection="3d")
         ax.set_facecolor(bg)
+        ax.disable_mouse_rotation()
 
         for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
             axis._axinfo["grid"]["color"] = (0.4, 0.4, 0.4, 0.3)
@@ -1747,7 +1754,6 @@ class App(ctk.CTk):
             if zf.size > MAX_BARS:
                 top_idx = np.argpartition(zf, -MAX_BARS)[-MAX_BARS:]
                 xf, yf, zf = xf[top_idx], yf[top_idx], zf[top_idx]
-                title = f"{title}"
 
             ax.text2D(0.5, 0.97, title, transform=ax.transAxes, ha="center", va="top", fontsize=8, color="black")
 
@@ -1758,30 +1764,33 @@ class App(ctk.CTk):
                 bar_colors = COLORS[UNDER_REP]
 
             ax.bar3d(xf, yf, np.zeros_like(zf), 0.8, 0.8, zf,
-                     color=bar_colors, shade=True, zsort="average")
+                     color=bar_colors, shade=False, edgecolor="none", zsort="average")
 
             xs = xf.astype(int)
             ys = yf.astype(int)
             zs = zf
-            zs_proj = zf  # bar3d is drawn at raw counts, projection matches
+            zs_proj = zf
         else:
-            # --- Surface plot for "All" (fast, full resolution) ---
-            # Plot in asinh space so the surface isn't dominated by a few spikes,
-            # but relabel the z-axis ticks with the corresponding real counts.
-            Zdisp = np.arcsinh(Zfull)
-            ax.plot_surface(Xfull, Yfull, Zdisp, cmap=over_under,
-                            linewidth=0, antialiased=False, shade=True)
+            # --- 3D bar plot for "All" non-zero k-mers ---
+            xf = Xfull.ravel().astype(float)
+            yf = Yfull.ravel().astype(float)
+            zf = Zfull.ravel()
+            nz_mask = zf > 0
+            xf, yf, zf = xf[nz_mask], yf[nz_mask], zf[nz_mask]
 
-            # Replace asinh tick values with real counts (sinh is the inverse)
-            from matplotlib.ticker import FuncFormatter
-            ax.zaxis.set_major_formatter(
-                FuncFormatter(lambda v, _: f"{int(round(np.sinh(v)))}")
-            )
+            if zf.size > 0:
+                norm = Normalize(vmin=zf.min(), vmax=zf.max())
+                bar_colors = over_under(norm(zf))
+            else:
+                bar_colors = COLORS[UNDER_REP]
 
-            xs = Xfull.ravel().astype(int)
-            ys = Yfull.ravel().astype(int)
-            zs = Zfull.ravel()  # raw counts — shown in tooltip
-            zs_proj = Zdisp.ravel()  # asinh values — match what was rendered
+            ax.bar3d(xf, yf, np.zeros_like(zf), 0.8, 0.8, zf,
+                     color=bar_colors, shade=False, edgecolor="none", zsort="average")
+
+            xs = xf.astype(int)
+            ys = yf.astype(int)
+            zs = zf
+            zs_proj = zf
 
         ax.set_zlabel("count", fontsize=10)
         ax.invert_yaxis()
@@ -1933,7 +1942,8 @@ class App(ctk.CTk):
         style.configure("Custom.Treeview.Heading", font=("Segoe UI", 13, "bold"))
 
         # ------------------ TITLE ------------------
-        (ctk.CTkLabel(self.t1_stat_frame, text=f"Top {top_n} {k}-mer Frequencies", font=("Segoe UI", 18, "bold"))
+        (ctk.CTkLabel(self.t1_stat_frame, text=f"Top {top_n} {k}-mer Frequencies", font=("Segoe UI", 18, "bold"),
+                      text_color=COLORS["TEXT_NORMAL_COLOR"])
          .grid(row=0, column=0, columnspan=2, pady=(5, 2)))
 
         # ------------------ TREE ------------------
