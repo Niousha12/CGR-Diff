@@ -47,7 +47,7 @@ def sample_simplex_with_entropy(k, target_entropy=None, tol=0.01, max_iter=100):
 # ===================================
 # Reconstruction
 # ===================================
-def determine_kmer_counts_balanced(p, kmers, L, k, max_iter=1000, tol=1e-6):
+def determine_kmer_counts_balanced(p, kmers, L, k, max_iter=1000, tol=1):
     """
     Convert probabilities to integer k-mer counts while enforcing conservation
     at every (k-1)-mer vertex. More accurate but slightly slower.
