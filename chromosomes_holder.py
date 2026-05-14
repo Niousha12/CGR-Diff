@@ -605,7 +605,7 @@ class ChromosomesHolder:
     @staticmethod
     def _extract_chromosome_number(string):
         # match = re.search(r'(chromosome\s*|chr|scaffold_|contig_)(\d+|[A-Za-z]+)', string, re.IGNORECASE)
-        match = re.search(r'\b(chromosome|chr|scaffold|contig)[ _\-]+([A-Za-z0-9]+)\b', string, re.IGNORECASE)
+        match = re.search(r'\b(chromosome|chr|scaffold|contig)[ _\-]*([A-Za-z0-9]+)\b', string, re.IGNORECASE)
         if match:
             return match.group(2)
 
@@ -634,58 +634,62 @@ class ChromosomesHolder:
 
 
 if __name__ == '__main__':
-    # specie = "Human"
-    # # ChromosomesHolder(specie).create_chromosomes_files("GCA_000011425.1_ASM1142v1_genomic.fna")
-    # genome = ChromosomesHolder(specie)
-    # genome.plot_fcgr("1", start_of_segment=None, segment_length=None, k_mer=9, fcgr_cgr='fcgr',
-    #                  label=True, global_min=None, global_max=None, _3d=True)
-    # genome.plot_fcgr("2", start_of_segment=None, segment_length=None, k_mer=9, fcgr_cgr='fcgr',
-    #                  label=True, global_min=None, global_max=None, _3d=True)
+    specie = "Gorilla"
+    # path = (f"/Users/nioushasadjadi/Desktop/Research/CGR-Diff/Data/{specie}/"
+    #         "GCA_029281585.3_NHGRI_mGorGor1-v2.1_pri_genomic.fna")
+    # ChromosomesHolder(specie).create_chromosomes_files(path)
+    genome = ChromosomesHolder(specie)
+    genome.find_n_counts()
 
-    genome = ChromosomesHolder("Maize")
-    for chr_name in genome.get_all_chromosomes_name():
-        print(f"chromosome length is {len(genome.get_chromosome_sequence(chr_name))}")
-        fcgr, top_kmers, _ = genome.get_max_kmer_values(chr_name, start_of_segment=None, segment_length=None,
-                                                        k_mer=9, top_n=3, bottom_n=0)
-        print(f"Top 3 most frequent k-mers in chromosome {chr_name} of Maize:")
-        for kmer, count in top_kmers:
-            print(f"{kmer}: {count}")
-            print(f"{count / np.sum(fcgr) * 100}")
+    # # genome.plot_fcgr("1", start_of_segment=None, segment_length=None, k_mer=9, fcgr_cgr='fcgr',
+    # #                  label=True, global_min=None, global_max=None, _3d=True)
+    # # genome.plot_fcgr("2", start_of_segment=None, segment_length=None, k_mer=9, fcgr_cgr='fcgr',
+    # #                  label=True, global_min=None, global_max=None, _3d=True)
+    #
+    # genome = ChromosomesHolder("Maize")
+    # for chr_name in genome.get_all_chromosomes_name():
+    #     print(f"chromosome length is {len(genome.get_chromosome_sequence(chr_name))}")
+    #     fcgr, top_kmers, _ = genome.get_max_kmer_values(chr_name, start_of_segment=None, segment_length=None,
+    #                                                     k_mer=9, top_n=3, bottom_n=0)
+    #     print(f"Top 3 most frequent k-mers in chromosome {chr_name} of Maize:")
+    #     for kmer, count in top_kmers:
+    #         print(f"{kmer}: {count}")
+    #         print(f"{count / np.sum(fcgr) * 100}")
+    #
+    #     # print(f"Last 10 most frequent k-mers in chromosome {chr_name} of Human:")
+    #     # for kmer, count in bottom_kmers:
+    #     #     print(f"{kmer}: {count}")
+    #
+    # # genome.find_n_counts()
+    # # genome.plot_fcgr("21", k_mer=9, fcgr_cgr='fcgr', label=True)
+    #
+    # '''FCGR global min and max test'''
+    # # global_m = np.inf
+    # # global_M = 0
+    # # for chr_name in tqdm(genome.get_all_chromosomes_name()):
+    # #     seq = genome.get_chromosome_sequence(chr_name)
+    # #     fcgr = CGR(seq, k_mer=9).get_fcgr()
+    # #     m, M = fcgr.min(), fcgr.max()
+    # #     global_m = min(global_m, m)
+    # #     global_M = max(global_M, M)
+    # # print(global_m, global_M)  # 0 1134132 human / 21 246147 maize
+    #
+    # # global_m = 21
+    # # global_M = 246147
+    # # for chr_name in tqdm(genome.get_all_chromosomes_name()):
+    # # genome.plot_fcgr("21", k_mer=9, fcgr_cgr='fcgr', label=True, global_min=global_m, global_max=global_M)
 
-        # print(f"Last 10 most frequent k-mers in chromosome {chr_name} of Human:")
-        # for kmer, count in bottom_kmers:
-        #     print(f"{kmer}: {count}")
-
-    # genome.find_n_counts()
-    # genome.plot_fcgr("21", k_mer=9, fcgr_cgr='fcgr', label=True)
-
-    '''FCGR global min and max test'''
-    # global_m = np.inf
-    # global_M = 0
-    # for chr_name in tqdm(genome.get_all_chromosomes_name()):
-    #     seq = genome.get_chromosome_sequence(chr_name)
-    #     fcgr = CGR(seq, k_mer=9).get_fcgr()
-    #     m, M = fcgr.min(), fcgr.max()
-    #     global_m = min(global_m, m)
-    #     global_M = max(global_M, M)
-    # print(global_m, global_M)  # 0 1134132 human / 21 246147 maize
-
-    # global_m = 21
-    # global_M = 246147
-    # for chr_name in tqdm(genome.get_all_chromosomes_name()):
-    # genome.plot_fcgr("21", k_mer=9, fcgr_cgr='fcgr', label=True, global_min=global_m, global_max=global_M)
-
-    # '''Genome length test'''
-    # l_so_far = 0
-    # lengths = []
-    # for chr_name in tqdm(genome.get_all_chromosomes_name()):
-    #     seq = genome.get_chromosome_sequence(chr_name)
-    #     l = len(seq)
-    #     lengths.append(l)
-    #     print(f"chr {chr_name} length = ", l)
-    #     l_so_far += l
-    #     # print("Length so far is: ", l_so_far)
-    # print("Total length: ", sum(lengths))
-    # print("Max length: ", max(lengths))
-    # print("Min length: ", min(lengths))
-    # print("Mean length: ", np.mean(lengths))
+    '''Genome length test'''
+    l_so_far = 0
+    lengths = []
+    for chr_name in tqdm(genome.get_all_chromosomes_name()):
+        seq = genome.get_chromosome_sequence(chr_name)
+        l = len(seq)
+        lengths.append(l)
+        print(f"chr {chr_name} length = ", l)
+        l_so_far += l
+        # print("Length so far is: ", l_so_far)
+    print("Total length: ", sum(lengths))
+    print("Max length: ", max(lengths))
+    print("Min length: ", min(lengths))
+    print("Mean length: ", np.mean(lengths))
