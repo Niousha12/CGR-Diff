@@ -202,7 +202,7 @@ class App(ctk.CTk):
         # tab names (used both by navbar and tabview)
         self.nav_buttons = {}
         self.theme_button = None
-        self.tab_names = ["CGR Analysis", "CGR Comparator", "Common Reference", "Multispecies Comparator"]
+        self.tab_names = ["CGR Analysis", "CGR Comparator", "Common Reference"]  # , "Multispecies Comparator"]
         self.active_tab = self.tab_names[0]
 
         # ------------------------- Application state variables -------------------------
@@ -240,6 +240,8 @@ class App(ctk.CTk):
         self.t1_fcgr_fig = None
         self.t1_fcgr_canvas = None
         self.t1_fcgr_save_btn = None
+        self.t1_fcgr_hover_cid = None
+        self.t1_fcgr_tooltip_label = None
         self.t1_3d_fcgr_frame = None
         self.t1_3d_fcgr_fig = None
         self.t1_3d_fcgr_canvas = None
@@ -449,17 +451,17 @@ class App(ctk.CTk):
         top_btn_frame.grid(row=0, column=0, padx=10, pady=(10, 0), sticky="ew")
         top_btn_frame.grid_columnconfigure((0, 1), weight=1)
 
-        search_btn = ctk.CTkButton(top_btn_frame, text="Search and Download", corner_radius=8, height=35,
-                                   font=HEADER_FONT, text_color="white", )
-        search_btn.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        # search_btn = ctk.CTkButton(top_btn_frame, text="Search and Download", corner_radius=8, height=35,
+        #                            font=HEADER_FONT, text_color="white", )
+        # search_btn.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
 
         upload_btn = ctk.CTkButton(top_btn_frame, text="Upload", corner_radius=8, height=35, font=HEADER_FONT,
                                    text_color="white", command=self.t1_upload_files)
-        upload_btn.grid(row=1, column=0, sticky="ew")
+        upload_btn.grid(row=0, column=0, sticky="ew")
 
         generate_btn = ctk.CTkButton(top_btn_frame, text="Generate", corner_radius=8, height=35, font=HEADER_FONT,
                                      text_color="white", command=self.t1_gen_synth_seq_event)
-        generate_btn.grid(row=1, column=1, sticky="ew", padx=(5, 0))
+        generate_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
         # list of genomes
         list_frame = ctk.CTkFrame(config_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
@@ -601,7 +603,7 @@ class App(ctk.CTk):
         section1_header.grid_propagate(False)
         section1_header.grid_columnconfigure(0, weight=1)
         section1_header.grid_rowconfigure(0, weight=1)
-        ctk.CTkLabel(section1_header, text="3-mers", font=HEADER_FONT_BOLD, text_color="white").grid(row=0, column=0)
+        ctk.CTkLabel(section1_header, text="3-mer", font=HEADER_FONT_BOLD, text_color="white").grid(row=0, column=0)
 
         self.t1_hist_frame = ctk.CTkFrame(section1_outer, fg_color="transparent")
         self.t1_hist_frame.grid(row=1, column=0, sticky="nsew", padx=(3, 3), pady=(3, 3), )
@@ -646,6 +648,11 @@ class App(ctk.CTk):
         # section2_content.grid_columnconfigure(1, weight=3)  # 3d fcgr (larger)
         section2_content.grid_columnconfigure(2, weight=1)  # stats
 
+        if getattr(self, "t1_fcgrs_dict", None) is None:
+            self.t1_placeholder_label_sec2 = ctk.CTkLabel(master=section2_outer, text="Display Area",
+                                                          font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
+            self.t1_placeholder_label_sec2.place(relx=0.5, rely=0.55, anchor="center")
+
         # bottom-left frame (FCGR image)
         self.t1_fcgr_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
         self.t1_fcgr_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 0), pady=(0, 0))
@@ -673,26 +680,6 @@ class App(ctk.CTk):
                                                   command=partial(self._save_figure, "t1_fcgr_fig"))
             self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
-        # # bottom-middle frame (3D FCGR)
-        # self.t1_3d_fcgr_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
-        # self.t1_3d_fcgr_frame.grid(row=0, column=1, sticky="nsew", padx=(3, 0), pady=(0, 0))
-        # self.t1_3d_fcgr_frame.grid_rowconfigure(0, weight=1)
-        # self.t1_3d_fcgr_frame.grid_columnconfigure(0, weight=1)
-        # self.t1_3d_fcgr_frame.grid_propagate(False)
-        #
-        # self.t1_placeholder_label_sec2 = ctk.CTkLabel(master=section2_outer, text="Display Area",
-        #                                               font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
-        # self.t1_placeholder_label_sec2.place(relx=0.5, rely=0.55, anchor="center")
-        # if getattr(self, "t1_3d_fcgr_fig", None) is not None:
-        #     self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
-        #                                     border_color=COLORS["BORDER_COLOR"])
-        #     self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
-        #                      save_btn_attr="t1_3d_fcgr_save_btn",
-        #                      save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
-        #                      placeholder_attr="t1_placeholder_label_sec2",
-        #                      fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
-
-        # bottom-right frame (stats table)
         self.t1_stat_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
         self.t1_stat_frame.grid(row=0, column=2, sticky="nsew", padx=(3, 0), pady=(0, 0))
         self.t1_stat_frame.grid_rowconfigure(0, weight=0)  # title — fixed height
@@ -1194,8 +1181,8 @@ class App(ctk.CTk):
                                    text_color="black")
         stats_label.place(relx=0.5, rely=0.01, anchor="n")
 
-    def _build_multispecies_comparator(self, parent):
-        pass
+    # def _build_multispecies_comparator(self, parent):
+    #     pass
 
     # --------------------------------------------------
     # Helper functions for CGR analysis tab
@@ -1394,7 +1381,7 @@ class App(ctk.CTk):
         self.after(20, self.t1_check_thread)
 
     def t1_run(self, seq, start, end, k):
-        self._t1_progress_status = "Counting 3-mers..."
+        self._t1_progress_status = "Counting 3-mer..."
         self._t1_progress = 0.0
 
         # Count kmers (map internal 0..1 to 0..0.55)
@@ -1443,15 +1430,6 @@ class App(ctk.CTk):
                              save_btn_attr="t1_fcgr_save_btn", save_command=lambda: self._save_figure("t1_fcgr_fig"),
                              placeholder_attr="t1_placeholder_label_sec2", fcgrs_dict=self.t1_fcgrs_dict,
                              panel_type="fcgr", )
-
-            # # 3D FCGR plot
-            # self.t1_3d_fcgr_frame.configure(corner_radius=8, border_width=1, fg_color=COLORS["FRAME_COLOR"],
-            #                                 border_color=COLORS["BORDER_COLOR"])
-            # self._draw_panel(frame=self.t1_3d_fcgr_frame, fig_attr="t1_3d_fcgr_fig", canvas_attr="t1_3d_fcgr_canvas",
-            #                  save_btn_attr="t1_3d_fcgr_save_btn",
-            #                  save_command=lambda: self._save_figure("t1_3d_fcgr_fig"),
-            #                  placeholder_attr="t1_placeholder_label_sec2",
-            #                  fcgrs_dict=self.t1_fcgrs_dict, panel_type="fcgr_3d")
 
             self._update_t1_stats_table_from_fcgr(top_n=100)
 
@@ -3275,6 +3253,55 @@ class App(ctk.CTk):
 
         return fig
 
+    def _attach_t1_fcgr_hover(self, canvas, fig, fcgrs_dict, frame):
+        """Attach a hover tooltip to the t1 FCGR frame showing k-mer and count."""
+        # Disconnect previous handler
+        if self.t1_fcgr_hover_cid is not None:
+            try:
+                canvas.mpl_disconnect(self.t1_fcgr_hover_cid)
+            except Exception:
+                pass
+            self.t1_fcgr_hover_cid = None
+
+        # Create or reuse a label anchored to the top-left corner of the frame
+        if not hasattr(self, "t1_fcgr_tooltip_label") or self.t1_fcgr_tooltip_label is None \
+                or not self.t1_fcgr_tooltip_label.winfo_exists():
+            self.t1_fcgr_tooltip_label = ctk.CTkLabel(
+                master=frame,
+                text="",
+                font=ctk.CTkFont(size=11),
+                fg_color=("#3a3a3a", "#3a3a3a"),
+                text_color="white",
+                corner_radius=6,
+                justify="left",
+                anchor="w",
+            )
+        tooltip = self.t1_fcgr_tooltip_label
+
+        fcgr = np.asarray(fcgrs_dict["fcgr"])
+        k = int(fcgrs_dict["k"])
+        N = fcgr.shape[0]
+
+        def on_hover(event):
+            if not fig.axes or event.inaxes is not fig.axes[0]:
+                tooltip.place_forget()
+                return
+            xd, yd = event.xdata, event.ydata
+            if xd is None or yd is None:
+                tooltip.place_forget()
+                return
+            col = int(round(xd))
+            row = int(round(yd))
+            if not (0 <= col < N and 0 <= row < N):
+                tooltip.place_forget()
+                return
+            kmer = self._xy_to_kmer(col, row, k)
+            count = int(fcgr[row, col])
+            tooltip.configure(text=f"{kmer}\n{count:,}")
+            tooltip.place(relx=0.02, rely=0.04, anchor="nw")
+
+        self.t1_fcgr_hover_cid = canvas.mpl_connect("motion_notify_event", on_hover)
+
     def _draw_panel(self, frame, fig_attr, canvas_attr, save_btn_attr, save_command, placeholder_attr, fcgrs_dict,
                     index=None, panel_type="fcgr", D=None):
         # --- 1) Figure setup ---
@@ -3525,8 +3552,7 @@ class App(ctk.CTk):
                     fcgrs_dict = pickle.load(handle)
             self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
         if panel_type == "fcgr_3d":
-            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig, canvas=canvas,
-                               filter_mode=self.t1_3d_filter_var.get())
+            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig, canvas=canvas, filter_mode=self.t1_3d_filter_var.get())
         elif panel_type == "chart":
             dists = list(self.t3_cgr_distance_history)
             self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
@@ -3550,6 +3576,10 @@ class App(ctk.CTk):
 
         # --- 5) Redraw canvas ---
         canvas.draw()
+
+        # --- 6) Attach hover tooltip for t1 FCGR ---
+        if fig_attr == "t1_fcgr_fig" and fcgrs_dict is not None:
+            self._attach_t1_fcgr_hover(canvas, fig, fcgrs_dict, frame)
 
         # Eagerly capture the base view after every redraw so reset always
         # returns to the initial position of the current plot.
