@@ -30,6 +30,7 @@ try:
 except Exception:
     mplcursors = None
 
+from scipy.stats import spearmanr
 from chaos_game_representation import CGR
 from distances.distance_metrics import get_dist
 from sequence_generation.sequence_generation import generate_kmers, generate_dna_sequence
@@ -1177,9 +1178,15 @@ class App(ctk.CTk):
         stats_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
                                    fg_color=COLORS["FRAME_COLOR"])
         stats_frame.grid(row=1, column=0, rowspan=2, padx=(5, 0), pady=(5, 5), sticky="nsew")
+        stats_frame.grid_rowconfigure(0, weight=0)
+        stats_frame.grid_rowconfigure(1, weight=1)
+        stats_frame.grid_columnconfigure(0, weight=1)
+        self.t3_stats_frame = stats_frame
+        stats_frame.grid_propagate(False)
+        self.t3_stats_frame.grid_propagate(False)
         stats_label = ctk.CTkLabel(stats_frame, text="Statistical Analysis", font=HEADER_FONT,
                                    text_color="black")
-        stats_label.place(relx=0.5, rely=0.01, anchor="n")
+        stats_label.grid(row=0, column=0, padx=5, pady=(5, 0))
 
     # def _build_multispecies_comparator(self, parent):
     #     pass
@@ -2481,6 +2488,7 @@ class App(ctk.CTk):
 
             ref = fcgrs_dict.get("ref")
             self.t3_ref_info = {"b": ref.get("b"), "e": ref.get("e")} if isinstance(ref, dict) else None
+            self.t3_ref_fcgr = ref["fcgr"].copy() if isinstance(ref, dict) else None
             del fcgrs_dict
 
             # MDS (3d)
@@ -2508,6 +2516,67 @@ class App(ctk.CTk):
                          canvas_attr="t3_plot_canvas", save_btn_attr="t3_plot_save_btn",
                          save_command=lambda: self._save_figure("t3_plot_fig"),
                          placeholder_attr="t3_plot_placeholder_label", fcgrs_dict=None, index=index, panel_type="chart")
+        # Spearman correlation in stats frame
+        self._update_t3_stats(index)
+
+    def _update_t3_stats(self, index):
+        """Display Spearman correlation scatter plot between reference and selected segment FCGR."""
+        ref_fcgr = getattr(self, "t3_ref_fcgr", None)
+        frame = getattr(self, "t3_stats_frame", None)
+        if ref_fcgr is None or frame is None:
+            return
+
+        try:
+            with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as f:
+                fcgrs_dict = pickle.load(f)
+            seg_data = fcgrs_dict.get(index)
+            if seg_data is None:
+                return
+            seg_fcgr = seg_data["fcgr"]
+        except Exception:
+            return
+
+        ref_flat = ref_fcgr.flatten().astype(float)
+        seg_flat = seg_fcgr.flatten().astype(float)
+        rho, pvalue = spearmanr(ref_flat, seg_flat)
+        p_str = "p < 1e-05" if pvalue < 1e-5 else f"p = {pvalue:.5f}"
+
+        k = self.k_var.get()
+        bg = frame.cget("fg_color")
+
+        fig = getattr(self, "t3_stats_fig", None)
+        if fig is None:
+            fig = plt.Figure(dpi=80)
+            fig.patch.set_facecolor(bg)
+            setattr(self, "t3_stats_fig", fig)
+
+        canvas = getattr(self, "t3_stats_canvas", None)
+        needs_new_canvas = (canvas is None
+                            or not canvas.get_tk_widget().winfo_exists()
+                            or canvas.get_tk_widget().master is not frame)
+        if needs_new_canvas:
+            canvas = FigureCanvasTkAgg(fig, master=frame)
+            canvas.get_tk_widget().grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+            setattr(self, "t3_stats_canvas", canvas)
+
+        fig.clear()
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(bg)
+        ax.set_xlabel("Reference k-mer freq.", fontsize=8)
+        ax.set_ylabel("Segment k-mer freq.", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.set_title(f"Spearman ρ = {rho:.3f},  {p_str}", fontsize=9)
+
+        if k >= 5:
+            ax.hexbin(ref_flat, seg_flat, gridsize=30, cmap="Blues", bins="log")
+        else:
+            ax.scatter(ref_flat, seg_flat, s=10, alpha=0.7, color="steelblue")
+            m, b_int = np.polyfit(ref_flat, seg_flat, 1)
+            x_range = np.linspace(ref_flat.min(), ref_flat.max(), 100)
+            ax.plot(x_range, m * x_range + b_int, color="steelblue", linewidth=1.2)
+
+        fig.tight_layout()
+        canvas.draw()
 
     def t3_move_previous(self, value):
         pic_num = self.t3_pic_num
