@@ -112,8 +112,15 @@ def determine_kmer_counts_balanced(p, kmers, L, k, max_iter=1000, tol=1):
     final_warning_threshold = 0.01  # 1 percentage point per k-mer
 
     if max_abs_diff > final_warning_threshold:
-        return_dict['diff_message'] = ("The requested k-mer distribution could not be matched exactly, "
-                                       "so it was adjusted to generate a valid sequence.")
+        abs_diffs = np.abs(p_final - p)
+        mean_abs_diff = np.mean(abs_diffs)
+        worst_kmer = kmers[int(np.argmax(abs_diffs))]
+        return_dict['diff_message'] = (
+            f"The requested k-mer distribution could not be matched exactly, "
+            f"so it was adjusted to generate a valid sequence. "
+            f"Max deviation: {max_abs_diff:.4f} (at '{worst_kmer}'), "
+            f"mean deviation: {mean_abs_diff:.4f}."
+        )
 
     return return_dict
 
