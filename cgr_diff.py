@@ -688,6 +688,10 @@ class App(ctk.CTk):
                                                   command=partial(self._save_figure, "t1_fcgr_fig"))
             self.t1_fcgr_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
+            if getattr(self, "t1_fcgrs_dict", None) is not None:
+                self._attach_t1_fcgr_hover(self.t1_fcgr_canvas, self.t1_fcgr_fig,
+                                           self.t1_fcgrs_dict, self.t1_fcgr_frame)
+
         self.t1_stat_frame = ctk.CTkFrame(section2_content, fg_color="transparent")
         self.t1_stat_frame.grid(row=0, column=2, sticky="nsew", padx=(3, 0), pady=(0, 0))
         self.t1_stat_frame.grid_rowconfigure(0, weight=0)  # title — fixed height
@@ -1265,7 +1269,7 @@ class App(ctk.CTk):
             # make everything inside the card clickable
             def _make_on_click(index):
                 def _on_click(event=None):
-                    return self.t1_set_selected_uploaded(index, reset_range=True)
+                    return self.t1_set_selected_uploaded(index, reset_range=True, user_click=True)
 
                 return _on_click
 
@@ -1291,7 +1295,26 @@ class App(ctk.CTk):
             else:
                 self.selected_file_index = None
 
-    def t1_set_selected_uploaded(self, index, reset_range=False):
+    def t1_set_selected_uploaded(self, index, reset_range=False, user_click=False):
+        if self.selected_file_index == index and user_click:
+            # clicking the already-selected card deselects it
+            self.selected_file_index = None
+            self._t1_last_seq = None
+            self.t1_ds.seq = ""
+            self.t1_start_entry.configure(state="disabled")
+            self.t1_end_entry.configure(state="disabled")
+            self.t1_ds.start_txt.set("")
+            self.t1_ds.end_txt.set("")
+            self.t1_len_label.configure(text="Length=0")
+            normal_text = "black" if ctk.get_appearance_mode() == "Light" else "white"
+            for card in self.file_cards:
+                card.configure(fg_color="transparent")
+                for child in card.winfo_children():
+                    row = child.grid_info().get("row", 0)
+                    child.configure(fg_color="transparent",
+                                    text_color=normal_text if row == 0 else COLORS["TEXT_DISABLE_COLOR"])
+            return
+
         self.selected_file_index = index
 
         for i, card in enumerate(self.file_cards):
@@ -1374,12 +1397,16 @@ class App(ctk.CTk):
                 # Set the generated sequence as selected
                 self.t1_set_selected_uploaded(len(self.uploaded_files) - 1, reset_range=True)
 
+        init_seq = self._t1_last_seq if self.selected_file_index is not None and self._t1_last_seq else None
+
         # create once, reuse forever
         if (not hasattr(self, "t1_synth_dialog") or self.t1_synth_dialog is None or
                 not self.t1_synth_dialog.winfo_exists()):
-            self.t1_synth_dialog = GenerateSyntheticSequence(self, on_save=_accept_sequence)
+            self.t1_synth_dialog = GenerateSyntheticSequence(self, on_save=_accept_sequence, init_seq=init_seq)
         else:
             self.t1_synth_dialog.on_save = _accept_sequence  # update callback if needed
+            if init_seq:
+                self.t1_synth_dialog._init_sliders_from_seq(init_seq)
             self.t1_synth_dialog.show()  # bring back & focus
 
         self.wait_window(self.t1_synth_dialog)
@@ -3798,7 +3825,7 @@ class App(ctk.CTk):
 
 
 class GenerateSyntheticSequence(ctk.CTkToplevel):
-    def __init__(self, parent, on_save):
+    def __init__(self, parent, on_save, init_seq=None):
         super().__init__(parent)
         self.parent = parent
         self.on_save = on_save
@@ -3894,6 +3921,41 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self._build_2mer_tab(tabview.tab(tab_names[1]))
         self._build_3mer_tab(tabview.tab(tab_names[2]))
         self._build_kmer_tab(tabview.tab(tab_names[3]))
+
+        if init_seq:
+            self._init_sliders_from_seq(init_seq)
+
+    def _init_sliders_from_seq(self, seq):
+        """Initialize all k-mer slider logits from the frequencies in seq."""
+        eps = 1e-9
+
+        def counts_to_logits(counts):
+            total = counts.sum()
+            if total == 0:
+                return np.zeros(len(counts), dtype=float)
+            probs = counts / float(total)
+            logits = np.log(probs + eps)
+            logits -= logits.mean()
+            return np.clip(logits, -3.0, 3.0)
+
+        # Tab 2: 2-mers
+        counts2 = self.parent._count_kmers(seq, 2)
+        logits2 = counts_to_logits(counts2)
+        for i, kmer in enumerate(self.t2_kmers):
+            self.k_var_dict[kmer].set(float(logits2[i]))
+
+        # Tab 3: 3-mers
+        counts3 = self.parent._count_kmers(seq, 3)
+        logits3 = counts_to_logits(counts3)
+        for i, kmer in enumerate(self.t4_kmers):
+            self.t4_var_dict[kmer].set(float(logits3[i]))
+
+        # Tab 4 (k-mer): use the current k selection
+        k = self.t3_k_var.get()
+        countsk = self.parent._count_kmers(seq, k)
+        logitsk = counts_to_logits(countsk)
+        self.logits[:] = logitsk
+        self.t3_refresh_summary()
 
     # ------------------------------------------------------------------
     # Tab 1: Entropy
@@ -4421,6 +4483,17 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t3_kmer_entry.delete(0, tkinter.END)
         self.t3_slider_var.set(0.0)
         self.t3_kmer_slider.configure(state="disabled", button_color=COLORS["DISABLED_BTN_COLOR"])
+        # Re-initialize logits from the selected sequence if one is available
+        seq = getattr(self.parent, "_t1_last_seq", None)
+        if seq:
+            k = self.t3_k_var.get()
+            counts = self.parent._count_kmers(seq, k)
+            total = counts.sum()
+            if total > 0:
+                probs = counts / float(total)
+                logits = np.log(probs + 1e-9)
+                logits -= logits.mean()
+                self.logits[:] = np.clip(logits, -3.0, 3.0)
         self.t3_refresh_summary()
 
     def t3_load_kmer_into_slider(self, *args):
