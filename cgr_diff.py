@@ -34,6 +34,7 @@ from scipy.stats import spearmanr
 from chaos_game_representation import CGR
 from distances.distance_metrics import get_dist
 from sequence_generation.sequence_generation import generate_kmers, generate_dna_sequence
+from representative_selection import ChromosomeRepresentativeSelection
 
 ctk.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -309,6 +310,12 @@ class App(ctk.CTk):
         self.t3_plot_canvas = None
         self.t3_plot_save_btn = None
         self._t3_plot_cids = []  # mpl_connect ids to disconnect when redrawing
+
+        self.t3_stats_frame = None
+        self.t3_stats_placeholder_label = None
+        self.t3_stats_fig = None
+        self.t3_stats_canvas = None
+        self.t3_stats_save_btn = None
 
         self.t3_scale = None
         self.t3_pic_num = ctk.IntVar(value=0)
@@ -1175,18 +1182,33 @@ class App(ctk.CTk):
          .grid(row=0, column=2, padx=(0, 0)))
 
         # Statistics frame
-        stats_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
-                                   fg_color=COLORS["FRAME_COLOR"])
-        stats_frame.grid(row=1, column=0, rowspan=2, padx=(5, 0), pady=(5, 5), sticky="nsew")
-        stats_frame.grid_rowconfigure(0, weight=0)
-        stats_frame.grid_rowconfigure(1, weight=1)
-        stats_frame.grid_columnconfigure(0, weight=1)
-        self.t3_stats_frame = stats_frame
-        stats_frame.grid_propagate(False)
+        self.t3_stats_frame = ctk.CTkFrame(display_frame, corner_radius=8, border_width=1,
+                                           border_color=COLORS["BORDER_COLOR"], fg_color="#4A4A4A")
+        self.t3_stats_frame.grid(row=1, column=0, rowspan=2, padx=(5, 0), pady=(5, 5), sticky="nsew")
+        self.t3_stats_frame.grid_rowconfigure(0, weight=1)
+        self.t3_stats_frame.grid_columnconfigure(0, weight=1)
         self.t3_stats_frame.grid_propagate(False)
-        stats_label = ctk.CTkLabel(stats_frame, text="Statistical Analysis", font=HEADER_FONT,
-                                   text_color="black")
-        stats_label.grid(row=0, column=0, padx=5, pady=(5, 0))
+        self.t3_stats_placeholder_label = ctk.CTkLabel(self.t3_stats_frame, text="Statistical Analysis",
+                                                       font=HEADER_FONT, text_color=COLORS["LIGHT_FRAME_COLOR"])
+        self.t3_stats_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
+
+        if getattr(self, "t3_stats_fig", None) is not None:
+            self.t3_stats_canvas = FigureCanvasTkAgg(self.t3_stats_fig, master=self.t3_stats_frame)
+            widget = self.t3_stats_canvas.get_tk_widget()
+            widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.t3_stats_canvas.draw()
+
+            if getattr(self, "t3_stats_save_btn", None) is not None and self.t3_stats_save_btn.winfo_exists():
+                try:
+                    self.t3_stats_save_btn.destroy()
+                except Exception:
+                    pass
+
+            self.t3_stats_save_btn = ctk.CTkButton(master=self.t3_stats_frame, text="💾", width=30, height=30,
+                                                   fg_color=COLORS["BORDER_COLOR"],
+                                                   hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                                   command=partial(self._save_figure, "t3_stats_fig"))
+            self.t3_stats_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
     # def _build_multispecies_comparator(self, parent):
     #     pass
@@ -2313,7 +2335,7 @@ class App(ctk.CTk):
     def t3_use_rep_checkbox_event(self):
         if self.t3_use_rep_algo.get() == 1:
             # Enable the algo type combobox
-            self.t3_rep_type_combobox.configure(state="normal")
+            self.t3_rep_type_combobox.configure(state="readonly")
             if self.t3_rep_algo_type.get() == "aRepSeg":
                 self.t3_rep_n_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
             # Disable start and end
@@ -2456,10 +2478,134 @@ class App(ctk.CTk):
                 pickle.dump(D, f)
 
         elif self.t3_use_rep_algo.get() == 1:
-            # TODO: need to fill the run for representative algorithm
-            pass
+            algo_type = self.t3_rep_algo_type.get()
+            ref_seq = self.t3_ds['2'].seq
+            ref_len = len(ref_seq)
+            n_ref_segments = ref_len // seg_size
+
+            self._t3_progress_status = "Finding the representative of the Reference sequence..."
+            self._t3_progress = 0.0
+
+            if algo_type == "RepSeg":
+                # Compute FCGR for every non-overlapping segment of the reference
+                ref_fcgrs = []
+                for i in range(n_ref_segments):
+                    self._t3_progress_status = f"Computing FCGR for reference segment {i + 1} of {n_ref_segments}..."
+                    self._t3_progress = i / (n_ref_segments + 1)
+                    seg = ref_seq[i * seg_size:(i + 1) * seg_size]
+                    ref_fcgrs.append(CGR(seg, self.k_var.get()).get_fcgr())
+
+                # Build pairwise distance matrix over the reference segments
+                ref_dist_matrix = np.zeros((n_ref_segments, n_ref_segments))
+                for i in range(n_ref_segments):
+                    for j in range(i + 1):
+                        ref_dist_matrix[i, j] = get_dist(ref_fcgrs[i], ref_fcgrs[j], dist_m=self.dist_metric.get())
+                        ref_dist_matrix[j, i] = ref_dist_matrix[i, j]
+
+                # The centroid segment is the representative
+                centroid_idx = ChromosomeRepresentativeSelection.find_centroid(ref_dist_matrix)
+                im1 = ref_fcgrs[centroid_idx]
+                ref_b = centroid_idx * seg_size
+                ref_e = (centroid_idx + 1) * seg_size
+
+            else:  # aRepSeg
+                n_samples = self._parse_int(self.t3_rep_number.get())
+                random_seqs = []
+                avgs = None
+                iteration = 0
+                while len(random_seqs) < n_samples:
+                    iteration += 1
+                    needed = n_samples - len(random_seqs)
+                    self._t3_progress_status = (
+                        f"aRepSeg iter {iteration}: sampling {needed} segment(s) "
+                        f"({len(random_seqs)}/{n_samples} retained so far)...")
+                    self._t3_progress = len(random_seqs) / n_samples
+
+                    for s in range(needed):
+                        self._t3_progress_status = (
+                            f"aRepSeg iter {iteration}: computing FCGR for segment "
+                            f"{len(random_seqs)}/{n_samples}...")
+                        self._t3_progress = (len(random_seqs) + s) / n_samples
+                        rand_idx = random.randint(0, n_ref_segments - 1)
+                        seg = ref_seq[rand_idx * seg_size:(rand_idx + 1) * seg_size]
+                        fcgr = CGR(seg, self.k_var.get()).get_fcgr()
+                        random_seqs.append({'idx': rand_idx, 'fcgr': fcgr})
+
+                    # Pairwise distances among the sampled segments
+                    self._t3_progress_status = (
+                        f"aRepSeg iter {iteration}: computing pairwise distances "
+                        f"for {len(random_seqs)} segments...")
+                    n_seqs = len(random_seqs)
+                    n_pairs = n_seqs * (n_seqs + 1) // 2
+                    ref_dist_matrix = np.zeros((n_seqs, n_seqs))
+                    pair_count = 0
+                    for i in range(n_seqs):
+                        self._t3_progress_status = (
+                            f"aRepSeg iter {iteration}: pairwise distances — "
+                            f"{i + 1}/{n_seqs} ({pair_count}/{n_pairs} pairs done)...")
+                        for j in range(i + 1):
+                            ref_dist_matrix[i, j] = get_dist(random_seqs[i]['fcgr'],
+                                                             random_seqs[j]['fcgr'],
+                                                             dist_m=self.dist_metric.get())
+                            ref_dist_matrix[j, i] = ref_dist_matrix[i, j]
+                            pair_count += 1
+
+                    avgs = np.mean(ref_dist_matrix, axis=1)
+                    outlier_indices = ChromosomeRepresentativeSelection.get_outliers_index_iqr(avgs)
+                    random_seqs = [item for k, item in enumerate(random_seqs)
+                                   if k not in outlier_indices]
+                    self._t3_progress_status = (
+                        f"aRepSeg iter {iteration}: dropped {len(outlier_indices)} outlier(s), "
+                        f"{len(random_seqs)} retained.")
+
+                # Pick the sample with the lowest mean pairwise distance
+                rep = random_seqs[np.argmin(avgs)]
+                im1 = rep['fcgr']
+                ref_b = rep['idx'] * seg_size
+                ref_e = (rep['idx'] + 1) * seg_size
+
+            fcgrs_dict["ref"] = {"fcgr": im1, "b": ref_b, "e": ref_e, "seq_len": ref_len}
+
+            # Compare the representative against consecutive segments of the sliding sequence
+            t3_step_length = len(self.t3_ds["1"].seq) // seg_size
+            distance_matrix = np.zeros((t3_step_length, t3_step_length))
+
+            for i in range(t3_step_length):
+                self._t3_progress_status = f"Processing segment {i + 1} of {t3_step_length}..."
+                self._t3_progress = (i + 1) / (t3_step_length + 1)
+                b2 = i * seg_size
+                e2 = (i + 1) * seg_size
+                cgr2 = CGR(self.t3_ds["1"].seq[b2:e2], self.k_var.get())
+                im2 = cgr2.get_fcgr()
+
+                diff = im2 - im1
+                dist = get_dist(im1, im2, dist_m=self.dist_metric.get())
+                self.t3_cgr_distance_history.append(dist)
+
+                fcgrs_dict[i] = {"fcgr": im2, "b": b2, "e": e2,
+                                 "seq_len": len(self.t3_ds["1"].seq),
+                                 "diff": diff, "distance": dist}
+
+                # Build pairwise distance matrix among the sliding segments
+                for j in range(i + 1):
+                    distance_matrix[i, j] = get_dist(fcgrs_dict[i]["fcgr"], fcgrs_dict[j]["fcgr"],
+                                                     dist_m=self.dist_metric.get())
+                    distance_matrix[j, i] = distance_matrix[i, j]
+
+            ref_d = np.asarray(self.t3_cgr_distance_history, dtype=np.float32)
+            D = np.zeros((t3_step_length + 1, t3_step_length + 1), dtype=np.float32)
+            D[0, 1:] = ref_d
+            D[1:, 0] = ref_d
+            D[1:, 1:] = distance_matrix.astype(np.float32)
+
+            self._t3_progress_status = f"Done!"
+
+            with open(f"{path}/t3_run.pkl", 'wb') as f:
+                pickle.dump(fcgrs_dict, f)
+            with open(f"{path}/t3_distance_matrix.pkl", 'wb') as f:
+                pickle.dump(D, f)
         else:
-            messagebox.showerror("Error", "Unknown representative algorithm option.")
+            self.after(0, lambda: messagebox.showerror("Error", "Unknown representative algorithm option."))
 
     def t3_check_thread(self):
         if self.t3_progress_bar is not None:
@@ -2517,24 +2663,17 @@ class App(ctk.CTk):
                          save_command=lambda: self._save_figure("t3_plot_fig"),
                          placeholder_attr="t3_plot_placeholder_label", fcgrs_dict=None, index=index, panel_type="chart")
         # Spearman correlation in stats frame
-        self._update_t3_stats(index)
+        self._draw_panel(frame=self.t3_stats_frame, fig_attr="t3_stats_fig",
+                         canvas_attr="t3_stats_canvas", save_btn_attr="t3_stats_save_btn",
+                         save_command=lambda: self._save_figure("t3_stats_fig"),
+                         placeholder_attr="t3_stats_placeholder_label", fcgrs_dict=None, index=index,
+                         panel_type="stats")
 
-    def _update_t3_stats(self, index):
+    def _update_t3_stats(self, index, fig, bg, canvas, fcgrs_dict):
         """Display Spearman correlation scatter plot between reference and selected segment FCGR."""
         ref_fcgr = getattr(self, "t3_ref_fcgr", None)
-        frame = getattr(self, "t3_stats_frame", None)
-        if ref_fcgr is None or frame is None:
-            return
-
-        try:
-            with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as f:
-                fcgrs_dict = pickle.load(f)
-            seg_data = fcgrs_dict.get(index)
-            if seg_data is None:
-                return
-            seg_fcgr = seg_data["fcgr"]
-        except Exception:
-            return
+        seg_data = fcgrs_dict.get(index)
+        seg_fcgr = seg_data["fcgr"]
 
         ref_flat = ref_fcgr.flatten().astype(float)
         seg_flat = seg_fcgr.flatten().astype(float)
@@ -2542,30 +2681,17 @@ class App(ctk.CTk):
         p_str = "p < 1e-05" if pvalue < 1e-5 else f"p = {pvalue:.5f}"
 
         k = self.k_var.get()
-        bg = frame.cget("fg_color")
-
-        fig = getattr(self, "t3_stats_fig", None)
-        if fig is None:
-            fig = plt.Figure(dpi=80)
-            fig.patch.set_facecolor(bg)
-            setattr(self, "t3_stats_fig", fig)
-
-        canvas = getattr(self, "t3_stats_canvas", None)
-        needs_new_canvas = (canvas is None
-                            or not canvas.get_tk_widget().winfo_exists()
-                            or canvas.get_tk_widget().master is not frame)
-        if needs_new_canvas:
-            canvas = FigureCanvasTkAgg(fig, master=frame)
-            canvas.get_tk_widget().grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
-            setattr(self, "t3_stats_canvas", canvas)
 
         fig.clear()
+        fig.patch.set_facecolor(bg)
         ax = fig.add_subplot(111)
         ax.set_facecolor(bg)
-        ax.set_xlabel("Reference k-mer freq.", fontsize=8)
-        ax.set_ylabel("Segment k-mer freq.", fontsize=8)
-        ax.tick_params(labelsize=7)
-        ax.set_title(f"Spearman ρ = {rho:.3f},  {p_str}", fontsize=9)
+        ax.set_xlabel("Reference k-mer freq.", fontsize=8, color="white")
+        ax.set_ylabel("Segment k-mer freq.", fontsize=8, color="white")
+        ax.tick_params(labelsize=7, colors="white")
+        ax.set_title(f"Spearman ρ = {rho:.3f},  {p_str}", fontsize=9, color="white")
+        for spine in ax.spines.values():
+            spine.set_edgecolor("white")
 
         if k >= 5:
             ax.hexbin(ref_flat, seg_flat, gridsize=30, cmap="Blues", bins="log")
@@ -2576,7 +2702,6 @@ class App(ctk.CTk):
             ax.plot(x_range, m * x_range + b_int, color="steelblue", linewidth=1.2)
 
         fig.tight_layout()
-        canvas.draw()
 
     def t3_move_previous(self, value):
         pic_num = self.t3_pic_num
@@ -3382,12 +3507,19 @@ class App(ctk.CTk):
 
             if fig_attr == "t3_fcgr_fig" or fig_attr == "t3_plot_fig":
                 dpi = 80
+            elif fig_attr == "t3_stats_fig":
+                dpi = 120
             elif fig_attr == "t3_3d_fig":
                 dpi = 150
             else:
                 dpi = 120
 
-            fig = plt.Figure(dpi=dpi)
+            if fig_attr == "t3_stats_fig":
+                fw = max(frame.winfo_width() - 20, 100)
+                fh = max(frame.winfo_height() - 20, 100)
+                fig = plt.Figure(figsize=(fw / dpi, fh / dpi), dpi=dpi)
+            else:
+                fig = plt.Figure(dpi=dpi)
             fig.patch.set_facecolor(bg)
             setattr(self, fig_attr, fig)
 
@@ -3403,7 +3535,7 @@ class App(ctk.CTk):
             setattr(self, canvas_attr, canvas)
 
             # --- Save button setup ---
-            if panel_type in ("fcgr", "chart", "kmer_hist"):
+            if panel_type in ("fcgr", "chart", "kmer_hist", "stats"):
                 save_btn = getattr(self, save_btn_attr, None)
                 if save_btn is None or not save_btn.winfo_exists() or save_btn.master is not frame:
                     save_btn = ctk.CTkButton(master=frame, text="💾", width=30, height=30,
@@ -3633,6 +3765,10 @@ class App(ctk.CTk):
             counts = fcgrs_dict["counts"]
             labels = fcgrs_dict["labels"]
             self._plot_kmer_histogram(fig=fig, bg=bg, seq_len=seq_len, k=3, counts=counts, labels=labels, canvas=canvas)
+        elif panel_type == "stats":
+            with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as f:
+                fcgrs_dict = pickle.load(f)
+            self._update_t3_stats(index=index, fig=fig, bg=bg, canvas=canvas, fcgrs_dict=fcgrs_dict)
 
         # --- 4) Hide placeholder if present ---
         if placeholder_attr:
@@ -4580,8 +4716,9 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.withdraw()
 
     def cancel_sequence(self):
+        # Hide instead of destroy so sliders, plots, and generated sequences are preserved
         self.grab_release()
-        self.destroy()
+        self.withdraw()
 
     def save_sequence(self, tab):
         if tab == "t1":
