@@ -457,7 +457,7 @@ class App(ctk.CTk):
         # top buttons
         top_btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
         top_btn_frame.grid(row=0, column=0, padx=10, pady=(10, 0), sticky="ew")
-        top_btn_frame.grid_columnconfigure((0, 1), weight=1)
+        top_btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         # search_btn = ctk.CTkButton(top_btn_frame, text="Search and Download", corner_radius=8, height=35,
         #                            font=HEADER_FONT, text_color="white", )
@@ -465,11 +465,16 @@ class App(ctk.CTk):
 
         upload_btn = ctk.CTkButton(top_btn_frame, text="Upload", corner_radius=8, height=35, font=HEADER_FONT,
                                    text_color="white", command=self.t1_upload_files)
-        upload_btn.grid(row=0, column=0, sticky="ew")
+        upload_btn.grid(row=0, column=0, sticky="ew", padx=(0, 0))
 
         generate_btn = ctk.CTkButton(top_btn_frame, text="Generate", corner_radius=8, height=35, font=HEADER_FONT,
                                      text_color="white", command=self.t1_gen_synth_seq_event)
         generate_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        self.t1_download_btn = ctk.CTkButton(top_btn_frame, text="Download", corner_radius=8, height=35, font=HEADER_FONT,
+                                             text_color="white", command=self.t1_download_seq_event,
+                                             state="disabled")
+        self.t1_download_btn.grid(row=0, column=2, sticky="ew", padx=(5, 0))
 
         # list of genomes
         list_frame = ctk.CTkFrame(config_frame, corner_radius=8, border_width=1, border_color=COLORS["BORDER_COLOR"],
@@ -909,7 +914,7 @@ class App(ctk.CTk):
         seq_frame.grid(row=0, column=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
         seq_frame.grid_columnconfigure(0, weight=1)
         seq_frame.grid_columnconfigure(1, weight=1)
-        for i in range(6):
+        for i in range(7):
             seq_frame.grid_rowconfigure(i, weight=1)
 
         # Original sequence selection combobox and reference selection combobox
@@ -994,6 +999,12 @@ class App(ctk.CTk):
                                              text_color=COLORS["TEXT_DISABLE_COLOR"], anchor="w")
         self.t3_rep_len_label.grid(row=6, column=0, columnspan=2, sticky="ew", padx=(15, 10), pady=(0, 10))
         self.t3_rep_len_label.grid_propagate(False)
+
+        self.t3_download_btn = ctk.CTkButton(seq_frame, text="Download reference/representative",
+                                             corner_radius=8, height=35,
+                                             font=HEADER_FONT, text_color="white",
+                                             command=self.t3_download_seq_event, state="disabled")
+        self.t3_download_btn.grid(row=7, column=0, columnspan=2, padx=(5, 5), pady=(0, 10))
 
         # Frame for k-mer selection and distance selection
         # k-mer selection
@@ -1303,6 +1314,7 @@ class App(ctk.CTk):
             self.t1_ds.seq = ""
             self.t1_start_entry.configure(state="disabled")
             self.t1_end_entry.configure(state="disabled")
+            self.t1_download_btn.configure(state="disabled")
             self.t1_ds.start_txt.set("")
             self.t1_ds.end_txt.set("")
             self.t1_len_label.configure(text="Length=0")
@@ -1332,6 +1344,7 @@ class App(ctk.CTk):
 
                 self.t1_start_entry.configure(state="normal")
                 self.t1_end_entry.configure(state="normal")
+                self.t1_download_btn.configure(state="normal")
 
                 if reset_range:
                     start, end = 0, seq_len
@@ -1410,6 +1423,33 @@ class App(ctk.CTk):
             self.t1_synth_dialog.show()  # bring back & focus
 
         self.wait_window(self.t1_synth_dialog)
+
+    def t1_download_seq_event(self):
+        if self.selected_file_index is None or not self._t1_last_seq:
+            return
+
+        start = self._parse_int(self.t1_ds.start_txt.get()) or 0
+        end = self._parse_int(self.t1_ds.end_txt.get()) or len(self._t1_last_seq)
+        seq = self._t1_last_seq[start:end]
+
+        original_path = self.uploaded_files[self.selected_file_index]
+        base_name = os.path.basename(original_path).rsplit(".", 1)[0]
+        seq_name, _ = self._read_fasta(original_path)
+
+        save_path = filedialog.asksaveasfilename(
+            title="Save sequence as FASTA",
+            initialfile=f"{base_name}_download.fna",
+            defaultextension=".fna",
+            filetypes=[("FASTA files", "*.fna *.fasta *.fa"), ("All files", "*.*")],
+        )
+        if not save_path:
+            return
+
+        with open(save_path, "w") as f:
+            f.write(f">{base_name} [{start}:{end}]\n")
+            # write sequence in 60-character lines
+            for i in range(0, len(seq), 60):
+                f.write(seq[i:i + 60] + "\n")
 
     def t1_run_manager(self, event):
         if self.selected_file_index is None:
@@ -2436,6 +2476,8 @@ class App(ctk.CTk):
             return messagebox.showerror("Error", "Please choose the distance measure.")
         if self.t3_plot_type.get() == "":
             return messagebox.showerror("Error", "Please choose the plot type.")
+        if self.t3_download_btn is not None:
+            self.t3_download_btn.configure(state="disabled")
         global foo_thread_2
         foo_thread_2 = threading.Thread(target=self.t3_run)
         foo_thread_2.daemon = True
@@ -2664,6 +2706,9 @@ class App(ctk.CTk):
             self.t3_ref_fcgr = ref["fcgr"].copy() if isinstance(ref, dict) else None
             del fcgrs_dict
 
+            if self.t3_ref_info is not None and self.t3_download_btn is not None:
+                self.t3_download_btn.configure(state="normal")
+
             # MDS (3d)
             self._t3_mds_drawn = False
             self._draw_panel(frame=self.t3_3d_display_frame, fig_attr="t3_3d_fig",
@@ -2695,6 +2740,70 @@ class App(ctk.CTk):
                          save_command=lambda: self._save_figure("t3_stats_fig"),
                          placeholder_attr="t3_stats_placeholder_label", fcgrs_dict=None, index=index,
                          panel_type="stats")
+
+    def t3_download_seq_event(self):
+        if self.t3_ref_info is None or not self.t3_ds['2'].seq:
+            return
+
+        use_rep = self.t3_use_rep_algo.get() == 1
+        ref_b = self.t3_ref_info.get("b", 0)
+        ref_e = self.t3_ref_info.get("e", len(self.t3_ds['2'].seq))
+        seq_name = self.t3_ds['2'].seq_name.get() or "sequence"
+
+        # Build choice dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Download sequence")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        label_text = (
+            f"Choose which sequence to download:\n\n"
+            f"• {'Representative' if use_rep else 'Reference'}: bases {ref_b:,}–{ref_e:,} "
+            f"({ref_e - ref_b:,} bp)\n"
+            f"• Full reference: {len(self.t3_ds['2'].seq):,} bp"
+        )
+        ctk.CTkLabel(dialog, text=label_text, anchor="w", justify="left",
+                     font=HEADER_FONT).grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 10), sticky="w")
+
+        chosen = [None]
+
+        def _pick(which):
+            chosen[0] = which
+            dialog.destroy()
+
+        ctk.CTkButton(dialog, text="Representative" if use_rep else "Reference",
+                      command=lambda: _pick("segment")).grid(row=1, column=0, padx=(20, 5), pady=(0, 20), sticky="ew")
+        ctk.CTkButton(dialog, text="Full reference",
+                      command=lambda: _pick("full")).grid(row=1, column=1, padx=(5, 20), pady=(0, 20), sticky="ew")
+        dialog.columnconfigure((0, 1), weight=1)
+
+        self.wait_window(dialog)
+        if chosen[0] is None:
+            return
+
+        if chosen[0] == "segment":
+            seq = self.t3_ds['2'].seq[ref_b:ref_e]
+            label = "representative" if use_rep else "reference"
+            default_name = f"{seq_name}_{label}_{ref_b}_{ref_e}.fna"
+            header = f">{seq_name} [{ref_b}:{ref_e}]"
+        else:
+            seq = self.t3_ds['2'].seq
+            default_name = f"{seq_name}_full.fna"
+            header = f">{seq_name}"
+
+        save_path = filedialog.asksaveasfilename(
+            title="Save sequence as FASTA",
+            initialfile=default_name,
+            defaultextension=".fna",
+            filetypes=[("FASTA files", "*.fna *.fasta *.fa"), ("All files", "*.*")],
+        )
+        if not save_path:
+            return
+
+        with open(save_path, "w") as f:
+            f.write(header + "\n")
+            for i in range(0, len(seq), 60):
+                f.write(seq[i:i + 60] + "\n")
 
     def _update_t3_stats(self, index, fig, bg, canvas, fcgrs_dict):
         """Display Spearman correlation scatter plot between reference and selected segment FCGR."""
