@@ -3925,37 +3925,59 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         if init_seq:
             self._init_sliders_from_seq(init_seq)
 
+    @staticmethod
+    def _counts_to_logits(counts):
+        total = counts.sum()
+        if total == 0:
+            return np.zeros(len(counts), dtype=float)
+        probs = counts / float(total)
+        logits = np.log(probs + 1e-9)
+        logits -= logits.mean()
+        return np.clip(logits, -3.0, 3.0)
+
     def _init_sliders_from_seq(self, seq):
-        """Initialize all k-mer slider logits from the frequencies in seq."""
-        eps = 1e-9
+        """Initialize all k-mer slider logits from seq in a background thread."""
+        self._set_init_status(f"Computing k-mer frequencies for {len(seq):,} bases… please wait.")
+        self._init_result = None
 
-        def counts_to_logits(counts):
-            total = counts.sum()
-            if total == 0:
-                return np.zeros(len(counts), dtype=float)
-            probs = counts / float(total)
-            logits = np.log(probs + eps)
-            logits -= logits.mean()
-            return np.clip(logits, -3.0, 3.0)
+        def _worker():
+            counts2 = self.parent._count_kmers(seq, 2)
+            logits2 = self._counts_to_logits(counts2)
+            counts3 = self.parent._count_kmers(seq, 3)
+            logits3 = self._counts_to_logits(counts3)
+            k = self.t3_k_var.get()
+            countsk = self.parent._count_kmers(seq, k)
+            logitsk = self._counts_to_logits(countsk)
+            self._init_result = (logits2, logits3, logitsk)
 
-        # Tab 2: 2-mers
-        counts2 = self.parent._count_kmers(seq, 2)
-        logits2 = counts_to_logits(counts2)
-        for i, kmer in enumerate(self.t2_kmers):
-            self.k_var_dict[kmer].set(float(logits2[i]))
+        self._init_thread = threading.Thread(target=_worker, daemon=True)
+        self._init_thread.start()
+        self.after(100, self._check_init_thread)
 
-        # Tab 3: 3-mers
-        counts3 = self.parent._count_kmers(seq, 3)
-        logits3 = counts_to_logits(counts3)
-        for i, kmer in enumerate(self.t4_kmers):
-            self.t4_var_dict[kmer].set(float(logits3[i]))
+    def _check_init_thread(self):
+        if self._init_thread.is_alive():
+            self.after(100, self._check_init_thread)
+        elif self._init_result is not None:
+            logits2, logits3, logitsk = self._init_result
+            self._init_result = None
+            for i, kmer in enumerate(self.t2_kmers):
+                self.k_var_dict[kmer].set(float(logits2[i]))
+            for i, kmer in enumerate(self.t4_kmers):
+                self.t4_var_dict[kmer].set(float(logits3[i]))
+            self.logits[:] = logitsk
+            self.t3_refresh_summary()
+            self._set_init_status(None)
 
-        # Tab 4 (k-mer): use the current k selection
-        k = self.t3_k_var.get()
-        countsk = self.parent._count_kmers(seq, k)
-        logitsk = counts_to_logits(countsk)
+    def _apply_kmer_logits(self, logitsk):
         self.logits[:] = logitsk
         self.t3_refresh_summary()
+        self._set_init_status(None)
+
+    def _set_init_status(self, text):
+        if text:
+            self.title(f"Generate Synthetic Sequence  —  {text}")
+        else:
+            self.title("Generate Synthetic Sequence")
 
     # ------------------------------------------------------------------
     # Tab 1: Entropy
@@ -4487,14 +4509,25 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         seq = getattr(self.parent, "_t1_last_seq", None)
         if seq:
             k = self.t3_k_var.get()
-            counts = self.parent._count_kmers(seq, k)
-            total = counts.sum()
-            if total > 0:
-                probs = counts / float(total)
-                logits = np.log(probs + 1e-9)
-                logits -= logits.mean()
-                self.logits[:] = np.clip(logits, -3.0, 3.0)
-        self.t3_refresh_summary()
+            self._set_init_status(f"Computing {k}-mer frequencies for {len(seq):,} bases… please wait.")
+            self._kmer_result = None
+
+            def _worker():
+                counts = self.parent._count_kmers(seq, k)
+                self._kmer_result = self._counts_to_logits(counts)
+
+            self._kmer_thread = threading.Thread(target=_worker, daemon=True)
+            self._kmer_thread.start()
+            self.after(100, self._check_kmer_thread)
+        else:
+            self.t3_refresh_summary()
+
+    def _check_kmer_thread(self):
+        if self._kmer_thread.is_alive():
+            self.after(100, self._check_kmer_thread)
+        elif self._kmer_result is not None:
+            self._apply_kmer_logits(self._kmer_result)
+            self._kmer_result = None
 
     def t3_load_kmer_into_slider(self, *args):
         kmer = self.t3_kmer_entry.get().strip().upper()
