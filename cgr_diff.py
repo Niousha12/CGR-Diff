@@ -35,6 +35,7 @@ from chaos_game_representation import CGR
 from distances.distance_metrics import get_dist
 from sequence_generation.sequence_generation import generate_kmers, generate_dna_sequence
 from representative_selection import ChromosomeRepresentativeSelection
+from compress_dna import FastDNACompressor, compressed_size
 
 ctk.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -471,7 +472,8 @@ class App(ctk.CTk):
                                      text_color="white", command=self.t1_gen_synth_seq_event)
         generate_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
-        self.t1_download_btn = ctk.CTkButton(top_btn_frame, text="Download", corner_radius=8, height=35, font=HEADER_FONT,
+        self.t1_download_btn = ctk.CTkButton(top_btn_frame, text="Download", corner_radius=8, height=35,
+                                             font=HEADER_FONT,
                                              text_color="white", command=self.t1_download_seq_event,
                                              state="disabled")
         self.t1_download_btn.grid(row=0, column=2, sticky="ew", padx=(5, 0))
@@ -1001,9 +1003,9 @@ class App(ctk.CTk):
         self.t3_rep_len_label.grid_propagate(False)
 
         self.t3_download_btn = ctk.CTkButton(seq_frame, text="Download reference/representative",
-                                             corner_radius=8, height=35,
-                                             font=HEADER_FONT, text_color="white",
-                                             command=self.t3_download_seq_event, state="disabled")
+                                             corner_radius=8, height=35, font=HEADER_FONT, text_color="white",
+                                             command=self.t3_download_seq_event, state="disabled",
+                                             fg_color=COLORS["DISABLED_BTN_COLOR"])
         self.t3_download_btn.grid(row=7, column=0, columnspan=2, padx=(5, 5), pady=(0, 10))
 
         # Frame for k-mer selection and distance selection
@@ -2477,7 +2479,7 @@ class App(ctk.CTk):
         if self.t3_plot_type.get() == "":
             return messagebox.showerror("Error", "Please choose the plot type.")
         if self.t3_download_btn is not None:
-            self.t3_download_btn.configure(state="disabled")
+            self.t3_download_btn.configure(state="disabled", fg_color=COLORS["DISABLED_BTN_COLOR"])
         global foo_thread_2
         foo_thread_2 = threading.Thread(target=self.t3_run)
         foo_thread_2.daemon = True
@@ -2558,10 +2560,18 @@ class App(ctk.CTk):
             if algo_type == "RepSeg":
                 # Compute FCGR for every non-overlapping segment of the reference
                 ref_fcgrs = []
+                exclude_indices = []
+                _compressor = FastDNACompressor()
                 for i in range(n_ref_segments):
                     self._t3_progress_status = f"Computing FCGR for reference segment {i + 1} of {n_ref_segments}..."
                     self._t3_progress = i / (n_ref_segments + 1)
                     seg = ref_seq[i * seg_size:(i + 1) * seg_size]
+                    if 'N' in seg.upper():
+                        exclude_indices.append(i)
+                    else:
+                        tokens = _compressor.compress(seg)
+                        if compressed_size(tokens) / len(seg) < 0.04:
+                            exclude_indices.append(i)
                     ref_fcgrs.append(CGR(seg, self.k_var.get()).get_fcgr())
 
                 # Build pairwise distance matrix over the reference segments
@@ -2572,7 +2582,7 @@ class App(ctk.CTk):
                         ref_dist_matrix[j, i] = ref_dist_matrix[i, j]
 
                 # The centroid segment is the representative
-                centroid_idx = ChromosomeRepresentativeSelection.find_centroid(ref_dist_matrix)
+                centroid_idx = ChromosomeRepresentativeSelection.find_centroid(ref_dist_matrix, exclude_indices=exclude_indices)
                 im1 = ref_fcgrs[centroid_idx]
                 ref_b = centroid_idx * seg_size
                 ref_e = (centroid_idx + 1) * seg_size
@@ -2582,6 +2592,7 @@ class App(ctk.CTk):
                 random_seqs = []
                 avgs = None
                 iteration = 0
+                _compressor = FastDNACompressor()
                 while len(random_seqs) < n_samples:
                     iteration += 1
                     needed = n_samples - len(random_seqs)
@@ -2597,6 +2608,11 @@ class App(ctk.CTk):
                         self._t3_progress = (len(random_seqs) + s) / n_samples
                         rand_idx = random.randint(0, n_ref_segments - 1)
                         seg = ref_seq[rand_idx * seg_size:(rand_idx + 1) * seg_size]
+                        if 'N' in seg.upper():
+                            continue
+                        tokens = _compressor.compress(seg)
+                        if compressed_size(tokens) / len(seg) < 0.04:
+                            continue
                         fcgr = CGR(seg, self.k_var.get()).get_fcgr()
                         random_seqs.append({'idx': rand_idx, 'fcgr': fcgr})
 
@@ -2707,7 +2723,7 @@ class App(ctk.CTk):
             del fcgrs_dict
 
             if self.t3_ref_info is not None and self.t3_download_btn is not None:
-                self.t3_download_btn.configure(state="normal")
+                self.t3_download_btn.configure(state="normal", fg_color=COLORS["BTN_COLOR"])
 
             # MDS (3d)
             self._t3_mds_drawn = False
