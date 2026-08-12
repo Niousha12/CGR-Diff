@@ -43,6 +43,7 @@ HEADER_FONT = ('Cambria', 15)
 HEADER_FONT_BOLD = ('Cambria', 15, 'bold')
 UNDER_REP = "Lavender"
 OVER_REP = "Blue"
+MAX_NUM_SEG = 600
 
 # main colors in the theme
 COLORS = dict(
@@ -205,7 +206,7 @@ class App(ctk.CTk):
         # tab names (used both by navbar and tabview)
         self.nav_buttons = {}
         self.theme_button = None
-        self.tab_names = ["CGR Analysis", "CGR Comparator", "Common Reference"]  # , "Multispecies Comparator"]
+        self.tab_names = ["CGR Analysis", "CGR Comparison", "Representative Comparison"]  # , "Multispecies Comparator"]
         self.active_tab = self.tab_names[0]
 
         # ------------------------- Application state variables -------------------------
@@ -250,7 +251,7 @@ class App(ctk.CTk):
         self.t1_3d_fcgr_canvas = None
         self.t1_section2_label = None
 
-        # Variables for page 2 (CGR Comparator)
+        # Variables for page 2 (CGR Comparison)
         self.t2_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
         self.t2_segment_size_toggle = tkinter.IntVar(value=0)  # 0: Variable, 1: Fix
         self.t2_segment_size = tkinter.StringVar(value="")  # Segment size entry variable
@@ -269,7 +270,7 @@ class App(ctk.CTk):
         self.t2_canvas = None
         self.t2_save_btn = None
 
-        # Variables for page 3 (Common Reference)
+        # Variables for page 3 (Representative Comparison)
         self.t3_ds = {'1': GUIDataStructure(), '2': GUIDataStructure()}
         self.t3_segment_size = tkinter.StringVar(value="")  # 500,000 for test
         self.t3_use_rep_algo = tkinter.IntVar(value=1)  # 0: use start and end, 1: use algo
@@ -296,6 +297,7 @@ class App(ctk.CTk):
         self.t3_3d_fig = None
         self.t3_3d_canvas = None
         self._t3_mds_drawn = False
+        self._t3_n_segments = 0
         self.t3_seg_info = None
         self.t3_ref_info = None
 
@@ -310,6 +312,7 @@ class App(ctk.CTk):
         self.t3_plot_fig = None
         self.t3_plot_canvas = None
         self.t3_plot_save_btn = None
+        self.t3_plot_csv_btn = None
         self._t3_plot_cids = []  # mpl_connect ids to disconnect when redrawing
 
         self.t3_stats_frame = None
@@ -423,9 +426,9 @@ class App(ctk.CTk):
 
         if self.active_tab == "CGR Analysis":
             self._build_cgr_analysis(main)
-        elif self.active_tab == "CGR Comparator":
+        elif self.active_tab == "CGR Comparison":
             self._build_cgr_comparator(main)
-        elif self.active_tab == "Common Reference":
+        elif self.active_tab == "Representative Comparison":
             self._build_common_reference(main)
         # elif self.active_tab == "Multispecies Comparator":
         #     self._build_multispecies_comparator(main)
@@ -468,7 +471,7 @@ class App(ctk.CTk):
                                    text_color="white", command=self.t1_upload_files)
         upload_btn.grid(row=0, column=0, sticky="ew", padx=(0, 0))
 
-        generate_btn = ctk.CTkButton(top_btn_frame, text="Generate", corner_radius=8, height=35, font=HEADER_FONT,
+        generate_btn = ctk.CTkButton(top_btn_frame, text="Generator", corner_radius=8, height=35, font=HEADER_FONT,
                                      text_color="white", command=self.t1_gen_synth_seq_event)
         generate_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
@@ -922,14 +925,14 @@ class App(ctk.CTk):
         # Original sequence selection combobox and reference selection combobox
         # Sequence selection
         t3_seq_combobox = {}  # combobox dictionary for sequence and reference selection
-        (ctk.CTkLabel(seq_frame, text=f"Sequence: ", font=HEADER_FONT_BOLD)
+        (ctk.CTkLabel(seq_frame, text=f"Query: ", font=HEADER_FONT_BOLD)
          .grid(row=0, column=0, sticky="w", padx=(10, 0), pady=(10, 0)))
         t3_seq_combobox["1"] = ctk.CTkComboBox(seq_frame, values=self.file_names, state="readonly",
                                                variable=self.t3_ds['1'].seq_name,
                                                command=partial(self.t3_sequence_selection_event, "1"))
         t3_seq_combobox["1"].grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(10, 0))
 
-        (ctk.CTkLabel(seq_frame, text=f"Reference: ", font=HEADER_FONT_BOLD)
+        (ctk.CTkLabel(seq_frame, text=f"Representative: ", font=HEADER_FONT_BOLD)
          .grid(row=1, column=0, sticky="w", padx=(10, 0), pady=(30, 0)))
         t3_seq_combobox["2"] = ctk.CTkComboBox(seq_frame, values=self.file_names, state="readonly",
                                                variable=self.t3_ds['2'].seq_name,
@@ -1177,6 +1180,17 @@ class App(ctk.CTk):
                                                   command=partial(self._save_figure, "t3_plot_fig"))
             self.t3_plot_save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
 
+            if getattr(self, "t3_plot_csv_btn", None) is not None and self.t3_plot_csv_btn.winfo_exists():
+                try:
+                    self.t3_plot_csv_btn.destroy()
+                except Exception:
+                    pass
+            self.t3_plot_csv_btn = ctk.CTkButton(master=self.t3_plot_display_frame, text="CSV", width=40, height=30,
+                                                 fg_color=COLORS["BORDER_COLOR"],
+                                                 hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                                 command=self.t3_download_distances_csv)
+            self.t3_plot_csv_btn.place(relx=0.01, rely=0.99, anchor="sw", x=35)
+
         # Changing the picture with slider frame
         changing_frame = ctk.CTkFrame(display_frame, fg_color="transparent", height=20)
         changing_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 5), pady=(0, 5))
@@ -1241,6 +1255,7 @@ class App(ctk.CTk):
                 "Data/Escherichia coli/chromosomes/E coli-genome.fna",
                 "Data/Chimp/chromosomes/Chimp-chr1.fna",
                 "Data/Maize/chromosomes/Maize-chr1.fna",
+                "Data/Lungfish/chromosomes/Lungfish-chr1.fna",
             ]
         else:
             file_paths = filedialog.askopenfilenames(
@@ -2072,7 +2087,7 @@ class App(ctk.CTk):
         ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(4, 6))
 
     # --------------------------------------------------
-    # Helper functions for CGR Comparator tab
+    # Helper functions for CGR Comparison tab
     # --------------------------------------------------
     def t2_sequence_selection_event(self, sender, value):
         # Set its sequence and sequence name
@@ -2378,7 +2393,7 @@ class App(ctk.CTk):
         ds.end_seq.set(start + seg_size)
 
     # --------------------------------------------------
-    # Helper functions for Common Reference tab
+    # Helper functions for Representative Comparison tab
     # --------------------------------------------------
     def t3_sequence_selection_event(self, sender, value):
         sequence_path = self.uploaded_files[self.file_names.index(value)]
@@ -2468,7 +2483,7 @@ class App(ctk.CTk):
         seg_size = self._parse_int(seg_str)
         if seg_size is None:
             return messagebox.showerror("Error", "Segment size must be a positive integer.")
-        if seg_size <= 0 or seg_size > len(self.t3_ds["2"].seq):
+        if seg_size <= 0 or seg_size > len(self.t3_ds["1"].seq):
             return messagebox.showerror("Error", "Segment size is out of range.")
 
         # check the validity of other options
@@ -2575,14 +2590,20 @@ class App(ctk.CTk):
                     ref_fcgrs.append(CGR(seg, self.k_var.get()).get_fcgr())
 
                 # Build pairwise distance matrix over the reference segments
+                n_pairs = n_ref_segments * (n_ref_segments + 1) // 2
+                pairs_done = 0
                 ref_dist_matrix = np.zeros((n_ref_segments, n_ref_segments))
                 for i in range(n_ref_segments):
+                    self._t3_progress_status = f"Building distance matrix: row {i + 1} of {n_ref_segments}..."
+                    self._t3_progress = pairs_done / n_pairs
                     for j in range(i + 1):
                         ref_dist_matrix[i, j] = get_dist(ref_fcgrs[i], ref_fcgrs[j], dist_m=self.dist_metric.get())
                         ref_dist_matrix[j, i] = ref_dist_matrix[i, j]
+                        pairs_done += 1
 
                 # The centroid segment is the representative
-                centroid_idx = ChromosomeRepresentativeSelection.find_centroid(ref_dist_matrix, exclude_indices=exclude_indices)
+                centroid_idx = ChromosomeRepresentativeSelection.find_centroid(ref_dist_matrix,
+                                                                               exclude_indices=exclude_indices)
                 im1 = ref_fcgrs[centroid_idx]
                 ref_b = centroid_idx * seg_size
                 ref_e = (centroid_idx + 1) * seg_size
@@ -2727,6 +2748,7 @@ class App(ctk.CTk):
 
             # MDS (3d)
             self._t3_mds_drawn = False
+            self._t3_n_segments = D.shape[0] - 1  # D includes the reference as row/col 0
             self._draw_panel(frame=self.t3_3d_display_frame, fig_attr="t3_3d_fig",
                              canvas_attr="t3_3d_canvas", save_btn_attr=None,
                              save_command=lambda: self._save_figure("t3_3d_fig"),
@@ -2738,9 +2760,9 @@ class App(ctk.CTk):
 
     def t3_change_images(self, index, value):
         index = round(value) if value is not None else index
-        # MDS change color
-        # self._t3_mds_set_selected(index)
-        self._plot_mds(fig=self.t3_3d_fig, bg=None, D=None, index=index, canvas=self.t3_3d_canvas)
+        # MDS change color — skip entirely when the segment count exceeds the threshold
+        if getattr(self, "_t3_n_segments", 0) <= MAX_NUM_SEG:
+            self._plot_mds(fig=self.t3_3d_fig, bg=None, D=None, index=index, canvas=self.t3_3d_canvas)
         # FCGR image
         self._draw_panel(frame=self.t3_fcgr_display_frame, fig_attr="t3_fcgr_fig", canvas_attr="t3_fcgr_canvas",
                          save_btn_attr="t3_fcgr_save_btn", save_command=lambda: self._save_figure("t3_fcgr_fig"),
@@ -2854,6 +2876,36 @@ class App(ctk.CTk):
             ax.plot(x_range, m * x_range + b_int, color="steelblue", linewidth=1.2)
 
         fig.tight_layout()
+
+    def t3_download_distances_csv(self):
+        if not self.t3_cgr_distance_history:
+            messagebox.showwarning("No data", "Run the analysis first before downloading the distance values.")
+            return
+
+        path = fd.asksaveasfilename(
+            title="Save distances as CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            initialfile="distances.csv",
+        )
+        if not path:
+            return
+
+        seg_info = getattr(self, "t3_seg_info", None) or {}
+        metric = self.dist_metric.get()
+        seg_size = self._parse_int(self.t3_segment_size.get()) if self.t3_segment_size.get() else None
+
+        try:
+            with open(path, "w", newline="") as fh:
+                fh.write(f"segment_index,start,end,{metric}_distance\n")
+                for i, dist in enumerate(self.t3_cgr_distance_history):
+                    info = seg_info.get(i, {})
+                    b = info.get("b", i * seg_size if seg_size else "")
+                    e = info.get("e", (i + 1) * seg_size if seg_size else "")
+                    fh.write(f"{i},{b},{e},{dist}\n")
+            messagebox.showinfo("Saved", f"Distances saved to:\n{path}")
+        except Exception as exc:
+            messagebox.showerror("Error", f"Could not save file:\n{exc}")
 
     def t3_move_previous(self, value):
         pic_num = self.t3_pic_num
@@ -3140,6 +3192,19 @@ class App(ctk.CTk):
             self._t3_mds_set_selected(index)
             _t3_update_seg_legend(index)
             canvas.draw_idle()
+            return
+
+        # Skip MDS when there are too many segments — it is slow and uninformative
+        if getattr(self, "_t3_n_segments", 0) > MAX_NUM_SEG:
+            fig.clear()
+            ax = fig.add_subplot(111)
+            ax.axis("off")
+            ax.text(0.5, 0.5, f"MDS is not applicable for genomes with more than {MAX_NUM_SEG} segments.\n"
+                              "Reduce the segment size or use a shorter sequence.",
+                    ha="center", va="center", fontsize=11, wrap=True, transform=ax.transAxes)
+            if canvas is not None:
+                canvas.draw_idle()
+            self._t3_mds_drawn = True  # prevent retries
             return
 
         D = np.asarray(D, dtype=float)
@@ -3695,6 +3760,16 @@ class App(ctk.CTk):
                                              command=save_command, )
                     save_btn.place(relx=0.01, rely=0.99, anchor="sw", x=0)
                     setattr(self, save_btn_attr, save_btn)
+
+            # --- CSV download button (chart panel only) ---
+            if panel_type == "chart":
+                csv_btn = getattr(self, "t3_plot_csv_btn", None)
+                if csv_btn is None or not csv_btn.winfo_exists() or csv_btn.master is not frame:
+                    csv_btn = ctk.CTkButton(master=frame, text="CSV", width=40, height=30,
+                                            fg_color=COLORS["BORDER_COLOR"], hover_color=COLORS["FRAME_HOVER_COLOR"],
+                                            command=self.t3_download_distances_csv)
+                    csv_btn.place(relx=0.01, rely=0.99, anchor="sw", x=35)
+                    self.t3_plot_csv_btn = csv_btn
             if panel_type in ("mds", "fcgr_3d"):
                 toolbar_attr = f"{canvas_attr}_toolbar"
                 toolbar = getattr(self, toolbar_attr, None)
@@ -4784,7 +4859,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         elif frame_num == "t3":
             k = self.t3_k_var.get()
             seq_len = int(self.t3_seq_len.get().replace(",", "").strip())
-            p_input = self.t3_softmax()
+            p_input = self.logits  # self.t3_softmax()
             self.t3_generated_sequence, kmer_counts_dict, _ = generate_dna_sequence(k, seq_len, p_input=p_input)
             sequence = self.t3_generated_sequence
 
