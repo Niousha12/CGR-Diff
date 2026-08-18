@@ -4891,6 +4891,10 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             # Final probabilities (counted from the generated sequence)
             seq_total = len(sequence) - k + 1
             final_counts = Counter(sequence[i:i + k] for i in range(seq_total))
+            logits2 = np.array(slider_values, dtype=float)
+            inp2 = np.exp(logits2 - logits2.max()); inp2 /= inp2.sum()
+            out2 = np.array([final_counts.get(km, 0) / seq_total for km in self.t2_kmers])
+            self._plot_l1 = float(np.sum(np.abs(out2 - inp2)))
             for kmer in self.t2_kmers:
                 final_p = final_counts.get(kmer, 0) / seq_total
                 self.k_final_label_dict[kmer].configure(text=f"{final_p:.4f}")
@@ -4942,6 +4946,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
                     tb.tag_add("cal_color", f"{ln}.{cal_start}", f"{ln}.{cal_end}")
                     tb.tag_add("out_color", f"{ln}.{fin_start}", f"{ln}.{fin_end}")
                 self.t3_results_box.configure(state="disabled")
+            self._plot_l1 = float(np.sum(np.abs(np.array(final_probs) - np.array(input_probs_arr))))
         elif frame_num == "t4":
             k = 3
             seq_len = int(self.t4_seq_len.get().replace(",", "").strip())
@@ -4961,6 +4966,10 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
             # Final probabilities (counted from the generated sequence)
             seq_total = len(sequence) - k + 1
             final_counts = Counter(sequence[i:i + k] for i in range(seq_total))
+            logits4 = np.array(slider_values, dtype=float)
+            inp4 = np.exp(logits4 - logits4.max()); inp4 /= inp4.sum()
+            out4 = np.array([final_counts.get(km, 0) / seq_total for km in self.t4_kmers])
+            self._plot_l1 = float(np.sum(np.abs(out4 - inp4)))
             for kmer in self.t4_kmers:
                 final_p = final_counts.get(kmer, 0) / seq_total
                 self.t4_final_label_dict[kmer].configure(text=f"{final_p:.4f}")
@@ -5013,6 +5022,11 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         ax.imshow(img, cmap="gray", origin="upper")
         ax.set_title("Output", color=COLORS["Green"], fontsize=10, pad=4)
         ax.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+        if frame_num in ("t2", "t3", "t4") and hasattr(self, "_plot_l1"):
+            ax.set_xlabel(
+                f"Σ|Output − Input| = {self._plot_l1:.4f}",
+                fontsize=8, labelpad=6
+            )
         corner_labels = [("A", (0.00, -0.01), (-0.05, -0.05), "right", "top"),
                          ("C", (0.00, 0.99), (-0.05, +0.05), "right", "bottom"),
                          ("T", (1.00, -0.01), (+0.05, -0.05), "left", "top"),
