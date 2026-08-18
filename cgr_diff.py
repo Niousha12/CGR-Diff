@@ -207,7 +207,7 @@ class App(ctk.CTk):
         # tab names (used both by navbar and tabview)
         self.nav_buttons = {}
         self.theme_button = None
-        self.tab_names = ["FCGR Analysis", "FCGR Comparison", "Representative Comparison"]  # , "Multispecies Comparator"]
+        self.tab_names = ["FCGR Analysis", "FCGR Comparison", "Representative Comparison"]
         self.active_tab = self.tab_names[0]
 
         # ------------------------- Application state variables -------------------------
