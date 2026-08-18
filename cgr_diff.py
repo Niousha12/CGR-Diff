@@ -51,12 +51,13 @@ COLORS = dict(
     CTK_FRAME_COLORS=ctk.ThemeManager.theme["CTkFrame"]["fg_color"],
     DISABLED_BTN_COLOR="#888888",
     TEXT_NORMAL_COLOR=ctk.ThemeManager.theme["CTkButton"]["text_color"],
-    TEXT_DISABLE_COLOR="#707370",  # BTN_THEME.get("text_color_disabled", TEXT_NORMAL_COLOR)
-    FRAME_COLOR="#707370",
-    FRAME_NORMAL_COLOR="#2B2B2B",
-    FRAME_HOVER_COLOR="#444444",
-    BORDER_COLOR="#333333",
-    LIGHT_FRAME_COLOR="#DBDBDB",
+    LABEL_TEXT_COLOR=ctk.ThemeManager.theme["CTkLabel"]["text_color"],
+    TEXT_DISABLE_COLOR=("#888888", "#888888"),
+    FRAME_COLOR=("#F0F0F0", "#1E1E1E"),         # plot/display panel backgrounds
+    FRAME_NORMAL_COLOR=("#FAFAFA", "#252526"),   # standard panel backgrounds
+    FRAME_HOVER_COLOR=("#E0E0E0", "#444444"),    # button hover
+    BORDER_COLOR=("#C8C8C8", "#3D3D3D"),         # subtle border in both modes
+    LIGHT_FRAME_COLOR=("#FFFFFF", "#2E2E2E"),    # histogram / light panels
     Green="#2E8B57",
     Blue="#3668A0",  # 3668A0
     Blue_Gray="#7492B9",
@@ -381,6 +382,69 @@ class App(ctk.CTk):
         self.theme_button.configure(text="☀️" if new_mode == "Dark" else "🌙")
         self._update_tk_canvas_theme()
         self._restyle_uploaded_cards()
+        self._refresh_mpl_backgrounds()
+        if getattr(self, "t1_fcgrs_dict", None) is not None:
+            self._update_t1_stats_table_from_fcgr(top_n=100)
+
+    def _refresh_mpl_backgrounds(self):
+        """Update all matplotlib figure backgrounds and text when the theme changes."""
+        text_color = "white" if ctk.get_appearance_mode() == "Dark" else "#333333"
+        panels = [
+            ("t1_hist_fig",      "t1_hist_canvas",      "t1_hist_frame"),
+            ("t1_fcgr_fig",      "t1_fcgr_canvas",      "t1_fcgr_frame"),
+            ("t1_3d_fcgr_fig",   "t1_3d_fcgr_canvas",   "t1_3d_fcgr_frame"),
+            ("t2_fig",           "t2_canvas",            "t2_display_frame"),
+            ("t3_3d_fig",        "t3_3d_canvas",         "t3_3d_display_frame"),
+            ("t3_fcgr_fig",      "t3_fcgr_canvas",       "t3_fcgr_display_frame"),
+            ("t3_plot_fig",      "t3_plot_canvas",       "t3_plot_display_frame"),
+            ("t3_stats_fig",     "t3_stats_canvas",      "t3_stats_frame"),
+        ]
+        for fig_attr, canvas_attr, frame_attr in panels:
+            fig = getattr(self, fig_attr, None)
+            canvas = getattr(self, canvas_attr, None)
+            frame = getattr(self, frame_attr, None)
+            if fig is None or canvas is None or frame is None:
+                continue
+            try:
+                bg = self._resolve_ctk_color(frame.cget("fg_color"))
+                # Use white text on dark frames, dark text on light frames
+                try:
+                    r, g, b, *_ = to_rgba(bg)
+                    lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+                    frame_text_color = "white" if lum < 0.5 else "#333333"
+                except Exception:
+                    frame_text_color = text_color
+                fig.patch.set_facecolor(bg)
+                for ax in fig.axes:
+                    ax.set_facecolor(bg)
+                    ax.tick_params(colors=frame_text_color)
+                    ax.xaxis.label.set_color(frame_text_color)
+                    ax.yaxis.label.set_color(frame_text_color)
+                    ax.title.set_color(frame_text_color)
+                    for spine in ax.spines.values():
+                        spine.set_edgecolor(frame_text_color)
+                    for txt in ax.texts:
+                        if not getattr(txt, "_skip_theme_refresh", False):
+                            txt.set_color(frame_text_color)
+                    for line in ax.lines:
+                        if line.get_label() == "_avg_line":
+                            line.set_color(frame_text_color)
+                for txt in fig.texts:
+                    txt.set_color(frame_text_color)
+                _is_dark = ctk.get_appearance_mode() == "Dark"
+                for leg in fig.legends:
+                    if hasattr(leg, "_legend_dark_bg"):
+                        leg_bg = leg._legend_dark_bg if _is_dark else leg._legend_light_bg
+                        leg.get_frame().set_facecolor(leg_bg)
+                        for lt in leg.get_texts():
+                            lt.set_color("white")
+                    elif not getattr(leg, "_skip_theme_refresh", False):
+                        leg.get_frame().set_facecolor(bg)
+                        for lt in leg.get_texts():
+                            lt.set_color(frame_text_color)
+                canvas.draw_idle()
+            except Exception:
+                pass
 
     def _create_top_navbar(self):
         nav = ctk.CTkFrame(self, corner_radius=100, border_color=COLORS["BORDER_COLOR"], border_width=1)
@@ -404,7 +468,7 @@ class App(ctk.CTk):
 
         # ---- right side: theme toggle button ----
         self.theme_button = ctk.CTkButton(nav, width=32, height=32, text="☀️", corner_radius=100,
-                                          fg_color=COLORS["FRAME_HOVER_COLOR"], hover_color=COLORS["FRAME_COLOR"],
+                                          fg_color="#444444", hover_color="#333333",
                                           command=self._toggle_theme)
         self.theme_button.grid(row=0, column=1, padx=(0, 10), pady=7, sticky="e")
 
@@ -741,7 +805,7 @@ class App(ctk.CTk):
         self.t2_display_frame.grid_propagate(False)
 
         self.t2_placeholder_label = ctk.CTkLabel(master=self.t2_display_frame, text="Display Area", font=HEADER_FONT,
-                                                 text_color="black")
+                                                 text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t2_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
         # ---------- Designing the config frame (F2) ----------
@@ -1107,7 +1171,7 @@ class App(ctk.CTk):
         self.t3_3d_display_frame.grid_propagate(False)
 
         self.t3_3d_placeholder_label = ctk.CTkLabel(master=self.t3_3d_display_frame, text="Display Area",
-                                                    font=HEADER_FONT, text_color="black")
+                                                    font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t3_3d_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
         if getattr(self, "t3_3d_fig", None) is not None:
             distance_path = f"{self.temp_output_path}/t3_run/t3_distance_matrix.pkl"
@@ -1129,7 +1193,7 @@ class App(ctk.CTk):
         self.t3_fcgr_display_frame.grid_propagate(False)
 
         self.t3_fcgr_placeholder_label = ctk.CTkLabel(master=self.t3_fcgr_display_frame, text="Display Area",
-                                                      font=HEADER_FONT, text_color="black")
+                                                      font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t3_fcgr_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
         if getattr(self, "t3_fcgr_fig", None) is not None:
             # Create a new canvas for the existing figure, attached to the new frame
@@ -1160,7 +1224,7 @@ class App(ctk.CTk):
         self.t3_plot_display_frame.grid_propagate(False)
 
         self.t3_plot_placeholder_label = ctk.CTkLabel(master=self.t3_plot_display_frame, text="Plot Area",
-                                                      font=HEADER_FONT, text_color="black")
+                                                      font=HEADER_FONT, text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t3_plot_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
         if getattr(self, "t3_plot_fig", None) is not None:
@@ -1221,7 +1285,7 @@ class App(ctk.CTk):
         self.t3_stats_frame.grid_columnconfigure(0, weight=1)
         self.t3_stats_frame.grid_propagate(False)
         self.t3_stats_placeholder_label = ctk.CTkLabel(self.t3_stats_frame, text="Statistical Analysis",
-                                                       font=HEADER_FONT, text_color=COLORS["LIGHT_FRAME_COLOR"])
+                                                       font=HEADER_FONT, text_color="white")
         self.t3_stats_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
         if getattr(self, "t3_stats_fig", None) is not None:
@@ -1559,7 +1623,7 @@ class App(ctk.CTk):
                     pass
         self._t1_hist_cids = []
 
-    def _plot_kmer_histogram(self, fig, bg, seq_len, k, counts, labels, canvas):
+    def _plot_kmer_histogram(self, fig, bg, seq_len, k, counts, labels, canvas, text_color="black"):
         # avoid duplicate hover handlers
         self._t1_disconnect_hist_events()
 
@@ -1581,17 +1645,17 @@ class App(ctk.CTk):
         colors = np.where(counts >= avg, COLORS[OVER_REP], COLORS[UNDER_REP])  # green / blue
         bars = ax.bar(x, counts, width=0.85, color=colors)
 
-        ax.axhline(avg, linestyle="--", linewidth=1.0, alpha=0.8, color="#2B2B2B")
+        ax.axhline(avg, linestyle="--", linewidth=1.0, alpha=0.5, color=text_color, label="_avg_line")
         ax.text(0.99, avg, f"avg: {int(round(avg)):,}", ha="right", va="bottom",
-                fontsize=8, fontweight="bold", transform=ax.get_yaxis_transform())
+                fontsize=8, fontweight="bold", color=text_color, transform=ax.get_yaxis_transform())
 
         fig.subplots_adjust(left=0.07, right=0.995, bottom=0.15, top=0.95)
-        fig.text(0.07, 1, subtitle, ha="left", va="top", fontsize=8)
+        fig.text(0.07, 1, subtitle, ha="left", va="top", fontsize=8, color=text_color)
 
         # X-axis ticks (clean spacing, not glued to y-axis)
         ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=60, ha="center", fontsize=7)
-        ax.tick_params(axis="x", pad=2)
+        ax.set_xticklabels(labels, rotation=60, ha="center", fontsize=7, color=text_color)
+        ax.tick_params(axis="x", pad=2, colors=text_color)
         ax.margins(x=0.01)
         ax.set_xlim(-0.8, len(counts) - 0.2)
 
@@ -1602,7 +1666,9 @@ class App(ctk.CTk):
         ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{int(round(v)):,}"))
 
-        ax.tick_params(axis="y", labelsize=7)
+        ax.tick_params(axis="y", labelsize=7, colors=text_color)
+        for spine in ax.spines.values():
+            spine.set_edgecolor(text_color)
         ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.25)
 
         # HOVER
@@ -1614,7 +1680,8 @@ class App(ctk.CTk):
             tooltip = ax.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points", ha="left",
                                   va="bottom", fontsize=8, color="white",
                                   bbox=dict(boxstyle="round,pad=0.35,rounding_size=0.15",
-                                            fc=(0.25, 0.25, 0.25, 0.90), ec=(1, 1, 1, 0.20), lw=0.8))
+                                            fc=(0.1, 0.1, 0.1, 0.92), ec=(1, 1, 1, 0.15), lw=0.8))
+            tooltip._skip_theme_refresh = True
             tooltip.set_visible(False)
             tooltip.xyann = (12, 12)  # default offset
 
@@ -1799,7 +1866,7 @@ class App(ctk.CTk):
             out.append(bits_to_base[(xb, yb)])
         return "".join(out)
 
-    def _plot_fcgr_3d(self, fcgrs, bg=None, fig=None, canvas=None, include_zeros=True, filter_mode=None):
+    def _plot_fcgr_3d(self, fcgrs, bg=None, fig=None, canvas=None, include_zeros=True, filter_mode=None, text_color="black"):
         import time
         from matplotlib.colors import LinearSegmentedColormap, Normalize
         from mpl_toolkits.mplot3d import proj3d
@@ -1817,9 +1884,9 @@ class App(ctk.CTk):
             axis._axinfo["grid"]["color"] = (0.4, 0.4, 0.4, 0.3)
             axis._axinfo["grid"]["linewidth"] = 0.5
             axis._axinfo["grid"]["linestyle"] = "-"
-        ax.tick_params(axis="x", pad=0, labelsize=8)
-        ax.tick_params(axis="y", pad=0, labelsize=8)
-        ax.tick_params(axis="z", pad=2, labelsize=8)
+        ax.tick_params(axis="x", pad=0, labelsize=8, colors=text_color)
+        ax.tick_params(axis="y", pad=0, labelsize=8, colors=text_color)
+        ax.tick_params(axis="z", pad=2, labelsize=8, colors=text_color)
 
         over_under = LinearSegmentedColormap.from_list("over_under", [COLORS[UNDER_REP], COLORS[OVER_REP]])
 
@@ -2029,13 +2096,29 @@ class App(ctk.CTk):
         rows = self._get_top_kmers_from_fcgr(fcgr, k, top_n=top_n, include_zeros=False)
 
         # ------------------ STYLE ------------------
+        _is_dark = ctk.get_appearance_mode() == "Dark"
+        if _is_dark:
+            _odd_bg, _even_bg = "#2b2b2b", "#242424"
+            _fg = "#DCE4EE"
+            _head_bg, _head_fg = "#1E1E1E", "#DCE4EE"
+            _field_bg = "#2b2b2b"
+        else:
+            _odd_bg, _even_bg = "#EBEBEB", "#F5F5F5"
+            _fg = "#1A1A1A"
+            _head_bg, _head_fg = "#D0D0D0", "#1A1A1A"
+            _field_bg = "#F5F5F5"
+
         style = ttk.Style()
-        style.configure("Custom.Treeview", font=("Segoe UI", 12))
-        style.configure("Custom.Treeview.Heading", font=("Segoe UI", 13, "bold"))
+        style.configure("Custom.Treeview", font=("Segoe UI", 12),
+                        background=_field_bg, foreground=_fg, fieldbackground=_field_bg,
+                        borderwidth=0, rowheight=22)
+        style.configure("Custom.Treeview.Heading", font=("Segoe UI", 13, "bold"),
+                        background=_head_bg, foreground=_head_fg)
+        style.map("Custom.Treeview", background=[("selected", "#3B78C0")],
+                  foreground=[("selected", "white")])
 
         # ------------------ TITLE ------------------
-        (ctk.CTkLabel(self.t1_stat_frame, text=f"Top {top_n} {k}-mer Frequencies", font=("Segoe UI", 18, "bold"),
-                      text_color=COLORS["TEXT_NORMAL_COLOR"])
+        (ctk.CTkLabel(self.t1_stat_frame, text=f"Top {top_n} {k}-mer Frequencies", font=("Segoe UI", 18, "bold"))
          .grid(row=0, column=0, columnspan=2, pady=(5, 2)))
 
         # ------------------ TREE ------------------
@@ -2048,8 +2131,8 @@ class App(ctk.CTk):
         tree.column("kmer", anchor="center", width=110)
         tree.column("value", anchor="center", width=90)
 
-        tree.tag_configure("oddrow", background="#2b2b2b")
-        tree.tag_configure("evenrow", background="#242424")
+        tree.tag_configure("oddrow", background=_odd_bg, foreground=_fg)
+        tree.tag_configure("evenrow", background=_even_bg, foreground=_fg)
         for i, (km, v) in enumerate(rows):
             tag = "evenrow" if i % 2 == 0 else "oddrow"
             tree.insert("", "end", values=(km, f"{v:,}"), tags=(tag,))
@@ -2422,7 +2505,7 @@ class App(ctk.CTk):
             # Enable the algo type combobox
             self.t3_rep_type_combobox.configure(state="readonly")
             if self.t3_rep_algo_type.get() == "aRepSeg":
-                self.t3_rep_n_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
+                self.t3_rep_n_entry.configure(state="normal", text_color=COLORS["LABEL_TEXT_COLOR"])
             # Disable start and end
             self.t3_start_label.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
             self.t3_start_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
@@ -2433,15 +2516,15 @@ class App(ctk.CTk):
             self.t3_rep_type_combobox.configure(state="disabled")
             self.t3_rep_n_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
             # Enable start and end
-            self.t3_start_label.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
-            self.t3_start_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
-            self.t3_end_label.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
-            self.t3_end_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
+            self.t3_start_label.configure(state="normal", text_color=COLORS["LABEL_TEXT_COLOR"])
+            self.t3_start_entry.configure(state="normal", text_color=COLORS["LABEL_TEXT_COLOR"])
+            self.t3_end_label.configure(state="normal", text_color=COLORS["LABEL_TEXT_COLOR"])
+            self.t3_end_entry.configure(state="normal", text_color=COLORS["LABEL_TEXT_COLOR"])
 
     def t3_rep_algo_change_event(self, value):
         if value == "aRepSeg":
             self.t3_rep_number.set("30")
-            self.t3_rep_n_entry.configure(state="normal", text_color=COLORS["TEXT_NORMAL_COLOR"])
+            self.t3_rep_n_entry.configure(state="normal", text_color=COLORS["LABEL_TEXT_COLOR"])
         elif value == "RepSeg":
             self.t3_rep_number.set("1")
             self.t3_rep_n_entry.configure(state="disable", text_color=COLORS["TEXT_DISABLE_COLOR"])
@@ -2844,7 +2927,7 @@ class App(ctk.CTk):
             for i in range(0, len(seq), 60):
                 f.write(seq[i:i + 60] + "\n")
 
-    def _update_t3_stats(self, index, fig, bg, canvas, fcgrs_dict):
+    def _update_t3_stats(self, index, fig, bg, canvas, fcgrs_dict, text_color="black"):
         """Display Spearman correlation scatter plot between reference and selected segment FCGR."""
         ref_fcgr = getattr(self, "t3_ref_fcgr", None)
         seg_data = fcgrs_dict.get(index)
@@ -2861,12 +2944,12 @@ class App(ctk.CTk):
         fig.patch.set_facecolor(bg)
         ax = fig.add_subplot(111)
         ax.set_facecolor(bg)
-        ax.set_xlabel("Reference k-mer freq.", fontsize=8, color="white")
-        ax.set_ylabel("Segment k-mer freq.", fontsize=8, color="white")
-        ax.tick_params(labelsize=7, colors="white")
-        ax.set_title(f"Spearman ρ = {rho:.3f},  {p_str}", fontsize=9, color="white")
+        ax.set_xlabel("Reference k-mer freq.", fontsize=8, color=text_color)
+        ax.set_ylabel("Segment k-mer freq.", fontsize=8, color=text_color)
+        ax.tick_params(labelsize=7, colors=text_color)
+        ax.set_title(f"Spearman ρ = {rho:.3f},  {p_str}", fontsize=9, color=text_color)
         for spine in ax.spines.values():
-            spine.set_edgecolor("white")
+            spine.set_edgecolor(text_color)
 
         if k >= 5:
             ax.hexbin(ref_flat, seg_flat, gridsize=30, cmap="Blues", bins="log")
@@ -2942,7 +3025,7 @@ class App(ctk.CTk):
                     pass
         self._t3_plot_cids = []
 
-    def _plot_charts(self, fig, bg, dists, index, canvas):
+    def _plot_charts(self, fig, bg, dists, index, canvas, text_color="black"):
         # --- Clamp index safely (important on first draw) ---
         try:
             index = int(index)
@@ -2959,8 +3042,11 @@ class App(ctk.CTk):
         ax = fig.add_subplot(111)
         ax.set_facecolor(bg)
 
-        ax.set_xlabel("Segment index")
-        ax.set_ylabel(f"{self.dist_metric.get()} distance")
+        ax.set_xlabel("Segment index", color=text_color)
+        ax.set_ylabel(f"{self.dist_metric.get()} distance", color=text_color)
+        ax.tick_params(colors=text_color)
+        for spine in ax.spines.values():
+            spine.set_edgecolor(text_color)
 
         plot_type = self.t3_plot_type.get().strip()
 
@@ -2985,9 +3071,6 @@ class App(ctk.CTk):
             colors[index] = selected_color
 
             sc = ax.scatter(xs, ys, c=colors, s=30, picker=True, zorder=2)
-
-            ax.set_xlabel("Segment index")
-            ax.set_ylabel(f"{self.dist_metric.get()} distance")
 
             hovered_idx = {"idx": None}
 
@@ -3168,7 +3251,7 @@ class App(ctk.CTk):
         sc_seg.set_facecolors(sc_seg._t3_colors)
         canvas.draw_idle()
 
-    def _plot_mds(self, fig, bg, D, index, canvas):
+    def _plot_mds(self, fig, bg, D, index, canvas, text_color="black"):
         def _t3_update_seg_legend(seg_index: int):
             leg = getattr(canvas, "_t3_mds_legend", None)
             if leg is None or not hasattr(leg, "_t3_seg_texts"):
@@ -3237,7 +3320,7 @@ class App(ctk.CTk):
             axis._axinfo["grid"]["linestyle"] = "-"
 
         # Labels
-        label_tick_color = "black"
+        label_tick_color = text_color
         ax.set_xlabel("X", labelpad=-5, size=5, color=label_tick_color)
         ax.set_ylabel("Y", labelpad=-5, size=5, color=label_tick_color)
         ax.set_zlabel("Z", labelpad=-5, size=5, color=label_tick_color)
@@ -3391,11 +3474,15 @@ class App(ctk.CTk):
         ]
 
         leg = fig.legend(handles=legend_elements, fontsize=5, loc="upper left", bbox_to_anchor=(0.0, 1.00),
-                         frameon=True, labelspacing=0.25, borderpad=0.35, handlelength=0.8, handletextpad=0.4, )
-        # make legend background semi-transparent
+                         frameon=True, labelspacing=0.25, borderpad=0.35, handlelength=0.8, handletextpad=0.4,
+                         labelcolor="white")
+        # Theme-aware background: medium-dark in dark mode, deep-dark in light mode
+        leg._legend_dark_bg = (0.26, 0.26, 0.30, 0.90)   # ~#424249, visible on dark plot bg
+        leg._legend_light_bg = (0.15, 0.15, 0.18, 0.90)  # ~#262629, visible on light plot bg
+        _is_dark = ctk.get_appearance_mode() == "Dark"
         frame = leg.get_frame()
-        frame.set_alpha(0.5)  # 0.0 = fully transparent, 1.0 = opaque
-        frame.set_facecolor("white")
+        frame.set_facecolor(leg._legend_dark_bg if _is_dark else leg._legend_light_bg)
+        frame.set_edgecolor((1, 1, 1, 0.15))
 
         # Text order matches the labels above.
         texts = leg.get_texts()
@@ -3530,7 +3617,7 @@ class App(ctk.CTk):
         except Exception:
             messagebox.showerror("Error", "Could not save figure.")
 
-    def _plot_fcgrs(self, fcgrs, bg=None, fig=None, index=0):
+    def _plot_fcgrs(self, fcgrs, bg=None, fig=None, index=0, text_color="black"):
         if fig is None:
             fig = plt.Figure()
         extent = (0, 1, 0, 1)
@@ -3557,14 +3644,14 @@ class App(ctk.CTk):
             img = Image.fromarray(img_uint8)
             ax.imshow(img, cmap="gray", origin="upper")
             ax.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax.set_title(f'{round(b / scale, 2)} - {round(e / scale, 2)} {scaling}')
+            ax.set_title(f'{round(b / scale, 2)} - {round(e / scale, 2)} {scaling}', color=text_color)
             corner_labels = [("A", (0.00, -0.01), (-0.05, -0.05), "right", "top"),  # bottom-left
                              ("C", (0.00, 0.99), (-0.05, +0.05), "right", "bottom"),  # top-left
                              ("T", (1.00, -0.01), (+0.05, -0.05), "left", "top"),  # bottom-right
                              ("G", (1.00, 0.99), (+0.05, +0.05), "left", "bottom")]  # top-right
             for text, xy, offset, ha, va in corner_labels:
                 ax.annotate(text, xy=xy, xycoords="axes fraction", xytext=offset, textcoords="offset points",
-                            ha=ha, va=va, fontsize=10, color="black", clip_on=False)
+                            ha=ha, va=va, fontsize=10, color=text_color, clip_on=False)
 
         if fig == self.t2_fig:
             ax1, ax2, ax3 = fig.subplots(1, 3)
@@ -3590,13 +3677,13 @@ class App(ctk.CTk):
             img1 = Image.fromarray(img_uint8)
             ax1.imshow(img1, cmap="gray", origin="upper")
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax1.set_title(f'Sequence 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+            ax1.set_title(f'Sequence 1\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}', color=text_color)
 
             import matplotlib.colors as mcolors
             norm = mcolors.TwoSlopeNorm(vmin=-100, vcenter=0, vmax=100)
             im2 = ax2.imshow(fcgrs['diff'], cmap='seismic', norm=norm, extent=extent)
             ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}')
+            ax2.set_title(f'Difference\ndistance = {round(fcgrs["distance"], 4)}', color=text_color)
 
             # # img2 = CGR.array2img(fcgrs["2"]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
             # # img2 = Image.fromarray(img2)
@@ -3609,17 +3696,17 @@ class App(ctk.CTk):
             img2 = Image.fromarray(img_uint8)
             ax3.imshow(img2, cmap="gray", origin="upper")
             ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax3.set_title(f'Sequence 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
+            ax3.set_title(f'Sequence 2\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}', color=text_color)
 
             # --- add color panel ---
             fig.subplots_adjust(bottom=0.2)  # Adjust the bottom margin
             cbar_ax2 = fig.add_axes([0.36, 0.1, 0.3, 0.02])  # Adjust position as needed
             cbar = fig.colorbar(im2, cax=cbar_ax2, orientation='horizontal')
-            cbar.set_label(f'Red: Greater k-mer value in Sequence 1 , Blue: Greater k-mer value in Sequence 2',
-                           fontsize=10)
+            cbar.set_label('Red: Greater k-mer value in Sequence 1 , Blue: Greater k-mer value in Sequence 2',
+                           fontsize=10, color=text_color)
             cbar.ax.xaxis.set_label_position('top')  # Position label at top of colorbar
             cbar.ax.xaxis.labelpad = 5
-            cbar.ax.tick_params(labelsize=8)
+            cbar.ax.tick_params(labelsize=8, colors=text_color)
 
         elif fig == self.t3_fcgr_fig:
             ax1, ax3 = fig.subplots(1, 2)
@@ -3644,7 +3731,7 @@ class App(ctk.CTk):
             img1 = Image.fromarray(img_uint8)
             ax1.imshow(img1, cmap="gray", origin="upper")
             ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax1.set_title(f'Reference\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}')
+            ax1.set_title(f'Reference\n{round(b1 / scale_1, 2)} - {round(e1 / scale_1, 2)} {scaling_1}', color=text_color)
 
             # img2 = CGR.array2img(fcgrs[index]["fcgr"], bits=8, resolution=RESOLUTION_DICT[self.k_var.get()])
             # img2 = Image.fromarray(img2)
@@ -3656,12 +3743,12 @@ class App(ctk.CTk):
             img2 = Image.fromarray(img_uint8)
             ax3.imshow(img2, cmap="gray", origin="upper")
             ax3.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
-            ax3.set_title(f'Segment\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}')
+            ax3.set_title(f'Segment\n{round(b2 / scale_2, 2)} - {round(e2 / scale_2, 2)} {scaling_2}', color=text_color)
 
             # --- add distance text below both panels ---
             fig.subplots_adjust(bottom=0.12)  # make room for the text
             fig.text(0.5, 0.06, f"Distance = {round(fcgrs[index]['distance'], 4)}",
-                     ha="center", va="center", fontsize=14)
+                     ha="center", va="center", fontsize=14, color=text_color)
 
         return fig
 
@@ -3717,7 +3804,8 @@ class App(ctk.CTk):
     def _draw_panel(self, frame, fig_attr, canvas_attr, save_btn_attr, save_command, placeholder_attr, fcgrs_dict,
                     index=None, panel_type="fcgr", D=None):
         # --- 1) Figure setup ---
-        bg = frame.cget("fg_color")
+        bg = self._resolve_ctk_color(frame.cget("fg_color"))
+        text_color = "white" if ctk.get_appearance_mode() == "Dark" else "#333333"
 
         fig = getattr(self, fig_attr, None)
         if fig is None:
@@ -3979,24 +4067,24 @@ class App(ctk.CTk):
             if fig_attr == "t3_fcgr_fig" and not fcgrs_dict:
                 with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as handle:
                     fcgrs_dict = pickle.load(handle)
-            self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index)
+            self._plot_fcgrs(fcgrs_dict, bg=bg, fig=fig, index=index, text_color=text_color)
         if panel_type == "fcgr_3d":
-            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig, canvas=canvas, filter_mode=self.t1_3d_filter_var.get())
+            self._plot_fcgr_3d(fcgrs_dict, bg=bg, fig=fig, canvas=canvas, filter_mode=self.t1_3d_filter_var.get(), text_color=text_color)
         elif panel_type == "chart":
             dists = list(self.t3_cgr_distance_history)
-            self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas)
+            self._plot_charts(fig=fig, bg=bg, dists=dists, index=index, canvas=canvas, text_color=text_color)
         elif panel_type == "mds":
-            self._plot_mds(fig=fig, bg=bg, D=D, index=index, canvas=canvas)
+            self._plot_mds(fig=fig, bg=bg, D=D, index=index, canvas=canvas, text_color=text_color)
         elif panel_type == "kmer_hist":
             seq_len = fcgrs_dict["e"] - fcgrs_dict["b"]
             # k = fcgrs_dict["k"]
             counts = fcgrs_dict["counts"]
             labels = fcgrs_dict["labels"]
-            self._plot_kmer_histogram(fig=fig, bg=bg, seq_len=seq_len, k=3, counts=counts, labels=labels, canvas=canvas)
+            self._plot_kmer_histogram(fig=fig, bg=bg, seq_len=seq_len, k=3, counts=counts, labels=labels, canvas=canvas, text_color=text_color)
         elif panel_type == "stats":
             with open(f"{self.temp_output_path}/t3_run/t3_run.pkl", 'rb') as f:
                 fcgrs_dict = pickle.load(f)
-            self._update_t3_stats(index=index, fig=fig, bg=bg, canvas=canvas, fcgrs_dict=fcgrs_dict)
+            self._update_t3_stats(index=index, fig=fig, bg=bg, canvas=canvas, fcgrs_dict=fcgrs_dict, text_color=text_color)
 
         # --- 4) Hide placeholder if present ---
         if placeholder_attr:
@@ -4252,7 +4340,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t1_frame.grid_rowconfigure(0, weight=1)
         self.t1_frame.grid_propagate(False)
 
-        self.t1_placeholder_label = ctk.CTkLabel(master=self.t1_frame, text="Plot Area", text_color="black")
+        self.t1_placeholder_label = ctk.CTkLabel(master=self.t1_frame, text="Plot Area", text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t1_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
         if getattr(self, "t1_fig", None) is not None:
@@ -4380,7 +4468,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t2_frame.grid_rowconfigure(0, weight=1)
         self.t2_frame.grid_propagate(False)
 
-        self.t2_placeholder_label = ctk.CTkLabel(master=self.t2_frame, text="Plot Area", text_color="black")
+        self.t2_placeholder_label = ctk.CTkLabel(master=self.t2_frame, text="Plot Area", text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t2_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
         if getattr(self, "t2_fig", None) is not None:
@@ -4558,7 +4646,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t4_frame.grid_rowconfigure(0, weight=1)
         self.t4_frame.grid_propagate(False)
 
-        self.t4_placeholder_label = ctk.CTkLabel(master=self.t4_frame, text="Plot Area", text_color="black")
+        self.t4_placeholder_label = ctk.CTkLabel(master=self.t4_frame, text="Plot Area", text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t4_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
         if getattr(self, "t4_fig", None) is not None:
@@ -4702,7 +4790,7 @@ class GenerateSyntheticSequence(ctk.CTkToplevel):
         self.t3_frame.grid_rowconfigure(0, weight=1)
         self.t3_frame.grid_propagate(False)
 
-        self.t3_placeholder_label = ctk.CTkLabel(master=self.t3_frame, text="Plot Area", text_color="black")
+        self.t3_placeholder_label = ctk.CTkLabel(master=self.t3_frame, text="Plot Area", text_color=COLORS["TEXT_DISABLE_COLOR"])
         self.t3_placeholder_label.place(relx=0.5, rely=0.01, anchor="n")
 
         if getattr(self, "t3_fig", None) is not None:
